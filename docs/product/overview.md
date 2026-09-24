@@ -19,11 +19,7 @@ The primary experience resembles an interactive podcast player: users listen, se
 - Distinguish **pause**, which lets background work continue, from **interrupt**, which redirects the conversation and cancels unfinished tool calls.
 - Support multiple speakers and visual explanations without requiring them in every conversation.
 
-## Interaction expectations
-
-A quiet player does not necessarily mean work is complete: agents may still be working and sending progress. Questions can appear before their spoken explanation finishes; answering does not cut off that narration. Users can explicitly interrupt when they want to redirect immediately.
-
-Revisiting speech does not rerun agent work. Replayable presentation tools can show content again as playback moves forward. Connection loss pauses progression rather than abandoning background work, and recoverable failures offer an explicit continuation retry rather than restarting the conversation.
+See the [interaction model](interaction-model.md) for player controls and recovery expectations.
 
 ## Scope
 
