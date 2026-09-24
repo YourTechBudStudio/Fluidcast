@@ -13,6 +13,8 @@ The browser talks only to the application backend, never directly to Core or mod
 
 ## Consequential decisions
 
+See the [architecture decision records](../adrs/README.md) for the rationale and tradeoffs behind these boundaries.
+
 - **[Core SDK](core-sdk.md):** Stateless generation, action streams, speakers, and TTS.
 - **[Harness lifecycle](harness-lifecycle.md):** Cursor-driven execution, continuation, interruption, and recovery.
 - **[Tools and agents](tools-and-agents.md):** Generic tool policies and agent-pool ownership.

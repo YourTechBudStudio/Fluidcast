@@ -15,4 +15,8 @@ These documents capture product intent, architectural scope, and consequential d
 - [Tools and agents](architecture/tools-and-agents.md): Tool policies and agent pools.
 - [Browser integration](architecture/browser-integration.md): Connection, playback, and audio boundaries.
 
+## ADRs: durable rationale
+
+[Architecture decision records](adrs/README.md) explain why the long-term boundaries were chosen and what tradeoffs they introduce. Topic documents describe the connected design; ADRs preserve its rationale.
+
 Start with the product overview, then read the architecture. Keep these documents small: add detail only when it preserves a consequential decision or clarifies ownership. API signatures, transport schemas, and implementation mechanics belong in later design work, if needed.
