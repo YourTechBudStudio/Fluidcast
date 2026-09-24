@@ -1,0 +1,12 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+catalog:
+  '@types/node': 26.4.1
+  oxfmt: 0.66.0
+  oxlint: 1.81.0
+  typescript: 7.0.2
+
+# Package-specific dependencies stay local; shared versions opt into catalog:.
+catalogMode: manual

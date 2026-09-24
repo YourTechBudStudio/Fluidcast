@@ -1,0 +1,31 @@
+{
+  "name": "@yourtechbudstudio/fluidcast-core",
+  "version": "0.0.0",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "check": "pnpm lint && pnpm build && pnpm typecheck && pnpm test && pnpm format:check",
+    "fix": "oxlint . --fix && oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint . --deny-warnings",
+    "test": "node --test \"src/**/*.test.ts\"",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@yourtechbudstudio/fluidcast-typescript-config": "workspace:*",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "typescript": "catalog:"
+  }
+}

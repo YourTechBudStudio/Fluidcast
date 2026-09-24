@@ -1,0 +1,23 @@
+{
+  "name": "@fluidcast/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "pnpm lint && pnpm typecheck && pnpm format:check",
+    "fix": "oxlint . --fix && oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint . --deny-warnings",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@yourtechbudstudio/fluidcast-browser": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@yourtechbudstudio/fluidcast-typescript-config": "workspace:*",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "typescript": "catalog:"
+  }
+}

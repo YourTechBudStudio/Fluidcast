@@ -1,0 +1,22 @@
+{
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    "out",
+    "build",
+    "release",
+    ".next",
+    ".turbo",
+    "coverage",
+    "**/tests/fixtures/**",
+    ".agents"
+  ],
+  "semi": true,
+  "singleQuote": true,
+  "sortImports": {
+    "internalPattern": ["@fluidcast/", "@yourtechbudstudio/fluidcast-"]
+  },
+  "sortPackageJson": {
+    "sortScripts": true
+  }
+}

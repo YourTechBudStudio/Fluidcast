@@ -10,12 +10,12 @@ An **iteration** is one generation call. An **agentic turn** begins with user in
 
 After generation and playback finish, with the player neither paused nor disconnected:
 
-| Outstanding work | Harness behavior |
-| --- | --- |
-| A blocking tool is unfinished | Wait for its final completion, even if other results are ready. |
+| Outstanding work                                        | Harness behavior                                                                                                        |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| A blocking tool is unfinished                           | Wait for its final completion, even if other results are ready.                                                         |
 | Eligible results or enabled progress updates are queued | Batch briefly, then submit them with queued context in another iteration. Other nonblocking tools may still be running. |
-| Tools are running, but no eligible responses are queued | Wait; an empty playback queue does not mean the turn is complete. |
-| No tools or eligible responses remain | Finish the agentic turn and await user input. |
+| Tools are running, but no eligible responses are queued | Wait; an empty playback queue does not mean the turn is complete.                                                       |
+| No tools or eligible responses remain                   | Finish the agentic turn and await user input.                                                                           |
 
 A successful response-free tool can finish the turn without another iteration. The harness assembles input from user messages, tool responses, and queued key-value context. Context alone does not trigger continuation.
 
