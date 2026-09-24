@@ -11,14 +11,9 @@
 
 The browser talks only to the application backend, never directly to Core or model providers. Integration is transport-neutral; neither a server framework nor HTTP/SSE versus WebSockets is prescribed.
 
-## Core contract
-
-Core accepts caller-owned history, instructions, tool definitions, and speaker profiles. The model produces a JSON array of **speak** and **tool-call** actions rather than native LLM tool calls. Core exposes parsed actions incrementally.
-
-One speak action belongs to one speaker; speaker profiles describe identity and personality, with explicit voice configuration and no tone field initially. Core targets OpenAI-compatible chat completions and TTS. The existing Fluidcast is a behavioral reference, not an architectural dependency.
-
 ## Consequential decisions
 
+- **[Core SDK](core-sdk.md):** Stateless generation, action streams, speakers, and TTS.
 - **[Harness lifecycle](harness-lifecycle.md):** Cursor-driven execution, continuation, interruption, and recovery.
 - **[Tools and agents](tools-and-agents.md):** Generic tool policies and agent-pool ownership.
 - **[Browser integration](browser-integration.md):** Connection coordination, playback delegation, and audio caching.
