@@ -11,7 +11,8 @@
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
-    "@yourtechbudstudio/fluidcast-browser": "workspace:*"
+    "@yourtechbudstudio/fluidcast-browser": "workspace:*",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

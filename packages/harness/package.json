@@ -27,8 +27,12 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@yourtechbudstudio/fluidcast-typescript-config": "workspace:*",
+    "effect": "catalog:",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "effect": "catalog:"
   }
 }

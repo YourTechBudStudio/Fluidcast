@@ -110,6 +110,9 @@ catalogs:
     '@types/node':
       specifier: 26.4.1
       version: 26.4.1
+    effect:
+      specifier: 4.0.0-rc.117
+      version: 4.0.0-rc.117
     oxfmt:
       specifier: 0.66.0
       version: 0.66.0
@@ -148,6 +151,9 @@ importers:
       '@yourtechbudstudio/fluidcast-harness':
         specifier: workspace:*
         version: link:../../packages/harness
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.117
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -170,6 +176,9 @@ importers:
       '@yourtechbudstudio/fluidcast-browser':
         specifier: workspace:*
         version: link:../../packages/browser
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.117
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -195,6 +204,9 @@ importers:
       '@yourtechbudstudio/fluidcast-typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.117
       oxfmt:
         specifier: 'catalog:'
         version: 0.66.0
@@ -213,6 +225,9 @@ importers:
       '@yourtechbudstudio/fluidcast-typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.117
       oxfmt:
         specifier: 'catalog:'
         version: 0.66.0
@@ -235,6 +250,9 @@ importers:
       '@yourtechbudstudio/fluidcast-typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.117
       oxfmt:
         specifier: 'catalog:'
         version: 0.66.0
@@ -623,6 +641,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  effect@4.0.0-rc.117:
+    resolution: {integrity: sha512-UUyi9QiOW4nySFIBM3KnYbNMd9EZliOdKfBcyLD0mPMPheO2fkuXS5y0opjWc9oqzlJxPQICEGm8gGw3kh9j/w==}
+
   oxfmt@0.66.0:
     resolution: {integrity: sha512-FfvqR8RFtV6JJpRrpkfqyVCQ7HDvZ/VriWFx7veftCgL1B5ZO9qNr+1rvPieycMQnNfVG0PWyJQiy7p0hq1I5w==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -840,6 +861,8 @@ snapshots:
 
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
+
+  effect@4.0.0-rc.117: {}
 
   oxfmt@0.66.0:
     dependencies:

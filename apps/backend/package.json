@@ -23,7 +23,8 @@
   },
   "dependencies": {
     "@yourtechbudstudio/fluidcast-core": "workspace:*",
-    "@yourtechbudstudio/fluidcast-harness": "workspace:*"
+    "@yourtechbudstudio/fluidcast-harness": "workspace:*",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
