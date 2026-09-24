@@ -11,6 +11,10 @@
 
 The browser talks only to the application backend, never directly to Core or model providers. Integration is transport-neutral; neither a server framework nor HTTP/SSE versus WebSockets is prescribed.
 
+## Execution model
+
+The project is [Effect v4-native](../adrs/0005-effect-native-execution.md), including public SDK operations and streams. Effect supplies the shared concurrency, resource-lifecycle, and failure-handling model; external APIs are adapted at integration boundaries. It is an intentional foundational dependency, not a change to component ownership.
+
 ## Consequential decisions
 
 See the [architecture decision records](../adrs/README.md) for the rationale and tradeoffs behind these boundaries.

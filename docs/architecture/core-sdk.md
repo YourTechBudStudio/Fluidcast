@@ -4,7 +4,7 @@
 
 Core accepts caller-owned conversation history, system instructions, tool definitions, and speaker profiles. It targets OpenAI-compatible chat completions and asks the model for a JSON array of **speak** and **tool-call** actions rather than native tool calls, allowing speech and multiple tool requests in one response.
 
-Core parses that output incrementally into an asynchronous action stream and assigns action IDs itself. It stores neither those IDs nor conversation history. Generation and parsing failures surface to the harness, which owns recovery.
+Core parses that output incrementally into an Effect-native action stream and assigns action IDs itself. It stores neither those IDs nor conversation history. Generation and parsing failures surface to the harness, which owns recovery.
 
 Tool results and queued key-value context accompany subsequent conversation input. XML-style envelopes and TypeScript-style schema descriptions are the intended prompting direction; exact formats remain open. There is no model-generated end action, and runtime error actions belong to the harness.
 
