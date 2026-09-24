@@ -15,10 +15,15 @@ Fluidcast is a set of SDKs that provide a voice-and-visual interface for working
 
 ## Rules
 
-- Always start by reading `docs/README.md`, then read the product and architecture docs relevant to the task.
+- Always start by reading:
+  - `docs/README.md`, then the product and architecture docs relevant to the task.
+  - `docs/engineering-guidance/README.md`
+  - `docs/engineering-guidance/principles.md`
+  - `docs/engineering-guidance/how-to-use.md`
+  - `docs/adrs/README.md` (use it as an index; read only ADRs relevant to the task)
+  - Additionally, make sure to read any relevant engineering guidance lenses before starting to code.
 - Never hard-wrap prose in Markdown files. Keep each paragraph and list item on one source line.
 - After code changes, run `pnpm check`. Each package has its own `check` command. Use `pnpm fix` to fix formatting issues.
-- Keep SDK packages dependency-light. The browser talks only to the application backend, never directly to Core or model providers, and provider credentials never belong in the browser.
 - Shared dependency versions live in the `pnpm-workspace.yaml` catalog and are referenced with `catalog:`. Package-specific dependencies stay local.
 - Never start persistent processes such as servers, `pnpm run dev`, or `pnpm run start`. Instead, suggest that the user run those commands. Finite automated tests and probes may start temporary listeners they own, and must tear them down before finishing.
 - Do not run state-changing Git commands unless the user explicitly asks. Read-only Git commands such as diffs, status, and commit history are allowed.
