@@ -6,10 +6,15 @@
     "dist"
   ],
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./actions": {
+      "types": "./dist/actions/index.d.ts",
+      "default": "./dist/actions/index.js"
     }
   },
   "scripts": {
@@ -20,6 +25,9 @@
     "lint": "oxlint . --deny-warnings",
     "test": "node --test \"src/**/*.test.ts\"",
     "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@effect/ai-openai": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

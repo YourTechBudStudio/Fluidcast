@@ -1,11 +1,12 @@
 {
-  "name": "@yourtechbudstudio/fluidcast-browser",
+  "name": "@yourtechbudstudio/fluidcast-client",
   "version": "0.0.0",
   "private": true,
   "files": [
     "dist"
   ],
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

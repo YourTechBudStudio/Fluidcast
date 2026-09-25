@@ -8,7 +8,7 @@ Fluidcast is a set of SDKs that provide a voice-and-visual interface for working
 
 - `packages/core` is the Core SDK: stateless action generation through provider-neutral language models, and text-to-speech. It stores neither action IDs nor conversation history.
 - `packages/harness` is the Harness SDK: conversation history, action state, the playback cursor, tool execution, and iteration scheduling. It builds on Core.
-- `packages/browser` is the Client SDK: communication with the application backend, playback coordination with the harness, and audio prefetching and caching. Applications supply actual playback.
+- `packages/client` is the Client SDK: communication with the application backend, playback coordination with the harness, and audio prefetching and caching. Applications supply actual playback.
 - `packages/typescript-config` contains the shared TypeScript configuration.
 - `apps/backend` is the reference application backend that wires Core and the harness to a transport.
 - `apps/web` is the reference browser application that exercises the experience through the Client SDK.

@@ -4,21 +4,34 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "vite build",
     "check": "pnpm lint && pnpm typecheck && pnpm format:check",
+    "dev": "vite",
     "fix": "oxlint . --fix && oxfmt --write .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint . --deny-warnings",
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
-    "@yourtechbudstudio/fluidcast-browser": "workspace:*",
-    "effect": "catalog:"
+    "@fontsource-variable/fira-code": "^5.3.0",
+    "@fontsource-variable/sora": "^5.3.0",
+    "@fontsource-variable/source-sans-3": "^5.3.0",
+    "@yourtechbudstudio/fluidcast-client": "workspace:*",
+    "effect": "catalog:",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "catalog:",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "@yourtechbudstudio/fluidcast-typescript-config": "workspace:*",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
-    "typescript": "catalog:"
+    "tailwindcss": "^4.3.3",
+    "typescript": "catalog:",
+    "vite": "^8.3.0"
   }
 }

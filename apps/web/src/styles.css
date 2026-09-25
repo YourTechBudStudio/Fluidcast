@@ -1,0 +1,131 @@
+@import 'tailwindcss';
+
+/* Self-hosted fonts; no CDN dependency. */
+@import '@fontsource-variable/sora';
+@import '@fontsource-variable/source-sans-3';
+@import '@fontsource-variable/fira-code';
+
+/* Design tokens, copied from Isagi (Catppuccin Macchiato). Dark only. */
+@theme {
+  /* Type families */
+  --font-display: 'Sora Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Source Sans 3 Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Fira Code Variable', ui-monospace, SFMono-Regular, monospace;
+
+  /* Surfaces — the deep canvas and its elevations */
+  --color-canvas: #24273a;
+  --color-subtle: #2e3244;
+  --color-elevated: #363a4f;
+  --color-overlay: #3a3f57;
+  --color-line: #5b6078;
+  --color-scrim: #141622;
+
+  /* Foreground / text steps */
+  --color-fg: #cad3f5;
+  --color-fg-muted: #a5adcb;
+  --color-fg-subtle: #6e738d;
+
+  /* Accent palette (raw Catppuccin names) */
+  --color-blue: #8aadf4;
+  --color-violet: #c6a0f6;
+  --color-amber: #f5a97f;
+  --color-green: #a6da95;
+  --color-red: #ed8796;
+  --color-cyan: #91d7e3;
+
+  /* Attention semantics — alias the palette by meaning. */
+  --color-working: var(--color-violet);
+  --color-waiting: var(--color-cyan);
+  --color-idle: var(--color-fg-subtle);
+  --color-error: var(--color-red);
+
+  /* Motion — one easing curve everywhere (fast start, soft landing) */
+  --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-micro: 110ms;
+  --duration-ui: 190ms;
+  --duration-surface: 320ms;
+  --duration-room: 600ms;
+
+  /* Radii */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  /* Depth — soft, layered, never a crisp drop shadow */
+  --shadow-soft: 0 16px 48px rgb(0 0 0 / 0.4);
+  --shadow-lift: 0 24px 64px rgb(0 0 0 / 0.45);
+
+  /* Ambient attention motion — calm, never frantic. */
+  --animate-breathe: breathe 2.6s var(--ease-expo) infinite;
+  --animate-glow: glow 2.8s var(--ease-expo) infinite;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-waiting) 40%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-waiting) 0%, transparent);
+  }
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  font-family: var(--font-sans);
+  color: var(--color-fg);
+  background: var(--color-canvas);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Atmospheric halos — the signature backdrop, never a flat canvas. */
+body::before {
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  content: '';
+  background:
+    radial-gradient(circle at 16% 16%, rgb(138 173 244 / 14%), transparent 34rem),
+    radial-gradient(circle at 84% 10%, rgb(198 160 246 / 12%), transparent 36rem),
+    radial-gradient(circle at 50% 96%, rgb(145 215 227 / 10%), transparent 32rem);
+}
+
+/* Faint grain to take the digital sheen off. */
+body::after {
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  content: '';
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Scrollbars — slim, inset, and quiet. */
+* {
+  scrollbar-color: color-mix(in srgb, var(--color-line) 36%, transparent) transparent;
+  scrollbar-width: thin;
+}
