@@ -254,6 +254,13 @@ importers:
         version: 8.3.0(@types/node@26.4.1)(jiti@2.7.0)
 
   packages/client:
+    dependencies:
+      '@yourtechbudstudio/fluidcast-core':
+        specifier: workspace:*
+        version: link:../core
+      '@yourtechbudstudio/fluidcast-harness':
+        specifier: workspace:*
+        version: link:../harness
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

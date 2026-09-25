@@ -22,6 +22,10 @@
     "test": "node --test \"src/**/*.test.ts\"",
     "typecheck": "tsc --project tsconfig.json"
   },
+  "dependencies": {
+    "@yourtechbudstudio/fluidcast-core": "workspace:*",
+    "@yourtechbudstudio/fluidcast-harness": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "catalog:",
     "@yourtechbudstudio/fluidcast-typescript-config": "workspace:*",

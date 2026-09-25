@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./protocol": {
+      "types": "./dist/session/protocol.d.ts",
+      "default": "./dist/session/protocol.js"
     }
   },
   "scripts": {
