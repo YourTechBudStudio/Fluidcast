@@ -27,7 +27,7 @@ export function Subtitle({ line }: { readonly line: SubtitleLine | null }) {
   return (
     <div
       aria-live="polite"
-      className="relative h-[calc(3*1.4em)] w-full max-w-165 font-display text-[clamp(18px,2.2vw,23px)] leading-[1.4] font-light tracking-[-0.01em] max-sm:h-[calc(4*1.4em)]"
+      className="relative h-[calc(3*1.4em)] w-full max-w-220 font-display text-[clamp(18px,2.2vw,23px)] leading-[1.4] font-light tracking-[-0.01em] max-sm:h-[calc(4*1.4em)]"
     >
       <AnimatePresence initial={false}>
         {line && (
@@ -46,7 +46,7 @@ export function Subtitle({ line }: { readonly line: SubtitleLine | null }) {
               </span>
             )}
             <span
-              className={`block max-w-[42ch] text-balance transition-colors duration-(--duration-room) ease-expo ${toneClass[line.tone]}`}
+              className={`block max-w-[60ch] text-balance transition-colors duration-(--duration-room) ease-expo ${toneClass[line.tone]}`}
             >
               {line.text}
             </span>

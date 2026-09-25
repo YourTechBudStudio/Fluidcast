@@ -28,7 +28,7 @@ export function Transcript({
       ref={scroller}
       className="absolute inset-0 overflow-y-auto px-4 pt-2 pb-6 [mask-image:linear-gradient(transparent,#000_28px)]"
     >
-      <ol aria-label="Transcript" className="mx-auto max-w-170">
+      <ol aria-label="Transcript" className="mx-auto max-w-220">
         {rows.length === 0 ? (
           <Row node={<Node kind="you" />} first last>
             <Head>
