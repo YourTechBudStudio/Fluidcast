@@ -6,6 +6,7 @@
   "author": "YourTechBud",
   "type": "module",
   "scripts": {
+    "backend:dev": "pnpm --filter '@fluidcast/backend^...' build && pnpm --filter @fluidcast/backend dev",
     "build": "pnpm -r --workspace-concurrency=1 --if-present build",
     "build:libs": "pnpm -r --workspace-concurrency=1 --filter '!@fluidcast/web' --if-present build",
     "check": "pnpm lint && pnpm check:pure && pnpm typecheck && pnpm test && pnpm format:check",
@@ -16,7 +17,8 @@
     "lint": "oxlint . --threads=8 --deny-warnings --no-error-on-unmatched-pattern",
     "lint:fix": "oxlint . --threads=8 --fix --no-error-on-unmatched-pattern",
     "test": "pnpm build:libs && pnpm -r --workspace-concurrency=1 --if-present test",
-    "typecheck": "pnpm build:libs && pnpm -r --workspace-concurrency=1 --if-present typecheck"
+    "typecheck": "pnpm build:libs && pnpm -r --workspace-concurrency=1 --if-present typecheck",
+    "web:dev": "pnpm --filter '@fluidcast/web^...' build && pnpm --filter '@fluidcast/web...' --parallel --if-present dev"
   },
   "devDependencies": {
     "@types/node": "catalog:",
