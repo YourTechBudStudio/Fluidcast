@@ -33,8 +33,10 @@ export const sessionLayer = (
     Layer.provide(
       config.generationLog === undefined
         ? languageModelLayer(config.llm)
-        : withGenerationLog(config.generationLog, config.llm.model).pipe(
-            Layer.provide(languageModelLayer(config.llm)),
-          ),
+        : withGenerationLog(
+            config.generationLog,
+            config.llm.model,
+            new Set(config.speakers.map((speaker) => speaker.id)),
+          ).pipe(Layer.provide(languageModelLayer(config.llm))),
     ),
   );

@@ -1,6 +1,8 @@
 import { Effect, Exit, FileSystem, Layer, Option, Stream } from 'effect';
 import { AiError, LanguageModel } from 'effect/unstable/ai';
 
+import { parseActions } from '@yourtechbudstudio/fluidcast-core/generation';
+
 /**
  * One generation as the model saw and answered it. Holds conversation content, so it is written
  * only when `debug.generationLog` is configured.
@@ -22,14 +24,25 @@ interface GenerationRecord {
     readonly outputTokens?: number;
   };
   /**
-   * - `completed`: the provider finished the reply (a `finish` part arrived).
-   * - `cancelled`: the reader stopped first: Core stops at the closing `]` and on an invalid
-   *   element, and an interrupt cancels generation. The server log's `generation failed` warning
-   *   says which failure, if any.
-   * - `failed`: the provider failed; `error` is its reason tag.
+   * Core's verdict on the reply, from its own parser:
+   * - `completed`: Core accepted every action through the closing `]`. `finish` may be absent,
+   *   because Core stops reading there.
+   * - `failed`: the provider failed, or Core rejected the reply; `error` says which and where.
+   * - `cancelled`: generation stopped before the reply was done and before anything was wrong
+   *   with it, as when the listener interrupts.
    */
   readonly ended: 'completed' | 'cancelled' | 'failed';
-  readonly error?: string;
+  readonly error?: GenerationLogError;
+}
+
+/**
+ * Why a generation failed: the provider's reason tag, or Core's error tag with the element
+ * `index` and `reason` it carries.
+ */
+interface GenerationLogError {
+  readonly tag: string;
+  readonly index?: number;
+  readonly reason?: string;
 }
 
 /**
@@ -40,6 +53,7 @@ interface GenerationRecord {
 export const withGenerationLog = (
   path: string,
   model: string,
+  speakerIds: ReadonlySet<string>,
 ): Layer.Layer<
   LanguageModel.LanguageModel,
   never,
@@ -90,16 +104,20 @@ export const withGenerationLog = (
               }),
             ),
             Stream.onExit((exit) =>
-              append({
-                startedAt: new Date(started).toISOString(),
-                durationMs: Date.now() - started,
-                model,
-                prompt: options.prompt,
-                output,
-                ...(reasoning === '' ? {} : { reasoning }),
-                ...(finish === undefined ? {} : { finish }),
-                ...ending(exit, finish !== undefined),
-              }),
+              ending(exit, output, finish !== undefined, speakerIds).pipe(
+                Effect.flatMap((ended) =>
+                  append({
+                    startedAt: new Date(started).toISOString(),
+                    durationMs: Date.now() - started,
+                    model,
+                    prompt: options.prompt,
+                    output,
+                    ...(reasoning === '' ? {} : { reasoning }),
+                    ...(finish === undefined ? {} : { finish }),
+                    ...ended,
+                  }),
+                ),
+              ),
             ),
           );
         });
@@ -111,13 +129,37 @@ export const withGenerationLog = (
   );
 
 /**
- * How a generation ended, from what was observed rather than from how its stream was closed: a
- * failure downstream (Core rejecting an element) also reaches this stream as a failure.
+ * How a generation ended. This stream cannot see Core's outcome: when Core stops reading, at the
+ * closing `]` or on an invalid element, it is interrupted either way. So the observed reply is run
+ * back through Core's own parser, which gives the same verdict Core reached.
  */
-const ending = (exit: Exit.Exit<unknown, unknown>, finished: boolean) => {
-  const error = Exit.findErrorOption(exit);
-  if (Option.isSome(error) && AiError.isAiError(error.value)) {
-    return { ended: 'failed' as const, error: error.value.reason._tag };
-  }
-  return { ended: finished ? ('completed' as const) : ('cancelled' as const) };
-};
+const ending = (
+  exit: Exit.Exit<unknown, unknown>,
+  output: string,
+  finished: boolean,
+  speakerIds: ReadonlySet<string>,
+): Effect.Effect<Pick<GenerationRecord, 'ended' | 'error'>> =>
+  Effect.gen(function* () {
+    const error = Exit.findErrorOption(exit);
+    if (Option.isSome(error) && AiError.isAiError(error.value)) {
+      return { ended: 'failed', error: { tag: error.value.reason._tag } } as const;
+    }
+    const parsed = yield* parseActions(Stream.succeed(output), { speakerIds }).pipe(
+      Stream.runDrain,
+      Effect.result,
+    );
+    if (parsed._tag === 'Success') return { ended: 'completed' } as const;
+    const failure = parsed.failure;
+    switch (failure._tag) {
+      case 'InvalidAction':
+        return {
+          ended: 'failed',
+          error: { tag: failure._tag, index: failure.index, reason: failure.reason },
+        } as const;
+      case 'MalformedOutput':
+        // A reply that stops short is only malformed if the provider finished it that way.
+        return finished
+          ? ({ ended: 'failed', error: { tag: failure._tag, reason: failure.reason } } as const)
+          : ({ ended: 'cancelled' } as const);
+    }
+  });

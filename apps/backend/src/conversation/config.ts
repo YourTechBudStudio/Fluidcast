@@ -31,6 +31,10 @@ export type LlmProvider = typeof LlmProvider.Type;
 export const LlmSection = Schema.Struct({
   model: Schema.NonEmptyString,
   provider: LlmProvider,
+  /** Sampling temperature. Absent uses the server's default, which is often the model's own. */
+  temperature: Schema.optionalKey(
+    Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 2 })),
+  ),
 });
 export type LlmSection = typeof LlmSection.Type;
 

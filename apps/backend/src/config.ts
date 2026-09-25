@@ -165,6 +165,7 @@ const resolve = (
         llm: {
           model: file.llm.model,
           provider: file.llm.provider,
+          ...(file.llm.temperature === undefined ? {} : { temperature: file.llm.temperature }),
           connection: llmConnection,
         },
         instructions: file.instructions ?? '',

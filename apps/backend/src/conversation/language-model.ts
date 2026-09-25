@@ -13,6 +13,7 @@ import type { LlmProvider } from './config.ts';
 export interface LlmConfig {
   readonly model: string;
   readonly provider: LlmProvider;
+  readonly temperature?: number;
   readonly connection: Connection;
 }
 
@@ -28,17 +29,18 @@ export const languageModelLayer = (
     ...(config.connection.baseUrl === undefined ? {} : { apiUrl: config.connection.baseUrl }),
   };
   const effort = config.provider.reasoningEffort;
+  const sampling = config.temperature === undefined ? {} : { temperature: config.temperature };
   switch (config.provider.type) {
     case 'openai':
       return OpenAiLanguageModel.layer({
         model: config.model,
-        ...(effort === undefined ? {} : { config: { reasoning: { effort } } }),
+        config: { ...sampling, ...(effort === undefined ? {} : { reasoning: { effort } }) },
       }).pipe(Layer.provide(OpenAiClient.layer(client)));
     case 'openai-compatible':
       return CompatLanguageModel.layer({
         model: config.model,
         // Chat Completions' own field; the adapter passes unknown fields through to the request.
-        ...(effort === undefined ? {} : { config: { reasoning_effort: effort } }),
+        config: { ...sampling, ...(effort === undefined ? {} : { reasoning_effort: effort }) },
       }).pipe(Layer.provide(CompatClient.layer(client)));
   }
 };

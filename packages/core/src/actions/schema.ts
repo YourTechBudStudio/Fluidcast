@@ -20,7 +20,8 @@ export const ModelSpeak = Schema.Struct({
   type: Schema.Literal('speak'),
   speaker: Schema.String.annotate({ description: 'Speaker id from <speakers>.' }),
   text: Schema.String.annotate({
-    description: 'One or two spoken sentences. No markdown, lists, or anything unpronounceable.',
+    description:
+      'The next stretch of speech, continuing from the previous speak: a few words up to about three sentences. No markdown, lists, or anything unpronounceable.',
   }),
 }).annotate({ identifier: 'Speak' });
 export type ModelSpeak = typeof ModelSpeak.Type;

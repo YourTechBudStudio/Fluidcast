@@ -15,7 +15,7 @@ after(() => directories.forEach((directory) => rmSync(directory, { recursive: tr
 const validYaml = `
 providers:
   openai-compatible: { baseUrl: http://127.0.0.1:9/v1 }
-llm: { model: m, provider: { type: openai-compatible, reasoningEffort: low } }
+llm: { model: m, provider: { type: openai-compatible, reasoningEffort: low }, temperature: 0.7 }
 tts: { model: t, provider: { type: openai } }
 speakers:
   - { id: host, name: Host, personality: warm, voice: { name: alloy } }
@@ -69,6 +69,7 @@ describe('loadConfig', () => {
       type: 'openai-compatible',
       reasoningEffort: 'low',
     });
+    assert.equal(config.conversation.llm.temperature, 0.7);
     assert.equal(config.conversation.llm.connection.baseUrl, 'http://127.0.0.1:9/v1');
     assert.equal(Redacted.value(config.speech.connection.apiKey), 'openai-key');
     assert.equal(config.speech.connection.baseUrl, undefined);
