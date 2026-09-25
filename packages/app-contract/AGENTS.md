@@ -1,21 +1,8 @@
 # App contract (`@fluidcast/app-contract`)
 
-The reference apps' HTTP contract between `apps/backend` and the web app's transport. It is not an SDK surface: the SDKs stay transport-neutral (ADRs 0003, 0007), and their contracts live in the SDK that owns them (`core/actions`, `harness/protocol`).
-
-## Structure
-
-One file, `src/index.ts`:
-
-- `routes` and `speechPath(actionId)`: the route paths.
-- Commands: `CommandBody` (the Harness `Command`), `commandStatus`, `InvalidRequest` and `CommandFailure`.
-- Speech: `speechStatus`, `SpeechError` and `SpeechFailure`.
-- Events: `SubscriptionMessageJson` (the JSON codec of each SSE `data:` line) and `heartbeatIntervalMillis`. The framing rules are in the doc comments.
+The reference apps' HTTP contract (routes, Schemas, SSE framing) between `apps/backend` and the web app's transport, all in `src/index.ts`. It is not an SDK surface: SDK contracts live in the SDK that owns them (`core/actions`, `harness/protocol`).
 
 ## Rules
 
-- **Pure export.** It may import only `effect` stable modules and `@yourtechbudstudio/fluidcast-harness/protocol`. `scripts/check-pure-exports.mjs` enforces this in `pnpm check`. That is why the routes are plain constants and Schemas rather than an `effect/unstable/httpapi` definition.
+- Pure export: only `effect` stable modules and `fluidcast-harness/protocol` (enforced by `scripts/check-pure-exports.mjs`). That is why routes are plain constants and Schemas, not an `effect/unstable/httpapi` definition.
 - Errors carry identifiers only, never conversation text or provider messages.
-
-## Stack
-
-`effect/Schema` only. No tests: it holds no behaviour; the backend probe exercises it end to end.
