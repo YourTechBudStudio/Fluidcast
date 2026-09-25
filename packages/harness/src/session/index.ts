@@ -1,2 +1,2 @@
-export * from './protocol.ts';
-export { layer, Session, type SessionConfig, type SessionSpeaker } from './session.ts';
+export { SessionSpeaker, SessionSpeakers, type SessionConfig } from './config.ts';
+export { layer, Session } from './session.ts';

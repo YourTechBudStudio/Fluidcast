@@ -309,6 +309,9 @@ importers:
 
   packages/app-contract:
     dependencies:
+      '@yourtechbudstudio/fluidcast-core':
+        specifier: workspace:*
+        version: link:../core
       '@yourtechbudstudio/fluidcast-harness':
         specifier: workspace:*
         version: link:../harness
@@ -361,11 +364,10 @@ importers:
         version: 7.0.2
 
   packages/core:
-    dependencies:
+    devDependencies:
       '@effect/ai-openai':
         specifier: 'catalog:'
         version: 4.0.0-rc.117(effect@4.0.0-rc.117)
-    devDependencies:
       '@types/node':
         specifier: 'catalog:'
         version: 26.4.1

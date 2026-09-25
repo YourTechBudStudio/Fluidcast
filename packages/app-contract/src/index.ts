@@ -1,10 +1,14 @@
 /**
  * The reference apps' HTTP contract: route paths, their bodies and error payloads, and the SSE
- * framing. A pure export: it imports only `effect` stable modules and the Harness protocol, so the
- * backend and any client transport can share it. It is not an SDK surface.
+ * framing. A pure export: it imports only `effect` stable modules and the SDKs' pure contracts, so
+ * the backend and any client transport can share it. It is not an SDK surface.
+ *
+ * Every failure body is a tagged error that an SDK already defines, except `InvalidRequest`, which
+ * only this HTTP contract can produce. The `_tag` is the error code clients switch on.
  */
 import { Schema } from 'effect';
 
+import { SpeechError } from '@yourtechbudstudio/fluidcast-core/speech';
 import {
   Command,
   CommandRejected,
@@ -47,17 +51,11 @@ export type CommandFailure = typeof CommandFailure.Type;
 
 // GET /api/speech/:actionId
 
-/** Synthesis failed before any audio was sent: the wire form of Core's `SpeechError`. Identifiers only. */
-export class SpeechError extends Schema.TaggedError<SpeechError>()('SpeechError', {
-  reason: Schema.String,
-  status: Schema.optional(Schema.Number),
-}) {}
-
 /**
  * Responses:
  * - `200`: the audio, streamed, with `Content-Type` equal to the snapshot's `speech.mimeType`;
  * - `404`: `SpeechNotFound` as JSON;
- * - `502`: `SpeechError` (`_tag: "SpeechError"`) as JSON.
+ * - `502`: Core's `SpeechError` as JSON, when synthesis failed before any audio was sent.
  *
  * If synthesis fails after audio has started, the connection is aborted, so a truncated body never
  * looks complete.

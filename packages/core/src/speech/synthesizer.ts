@@ -17,14 +17,21 @@ export class SpeechError extends Schema.TaggedError<SpeechError>()('SpeechError'
   status: Schema.optional(Schema.Number),
 }) {}
 
+/**
+ * How a line is voiced: a per-request parameter, not provider configuration. `name` is the provider's voice ID;
+ * `instructions` is optional delivery guidance for providers that support it.
+ */
+export const Voice = Schema.Struct({
+  name: Schema.NonEmptyString,
+  instructions: Schema.optionalKey(Schema.String),
+});
+export type Voice = typeof Voice.Type;
+
 export interface SynthesizeRequest {
   readonly text: string;
-  /** The provider's voice for the speaker. */
-  readonly voice: string;
+  readonly voice: Voice;
   /** Defaults to `opus`. */
   readonly format?: AudioFormat;
-  /** Optional delivery guidance for providers that support it. */
-  readonly voiceInstructions?: string;
 }
 
 /** Turns text into a stream of encoded audio bytes. Implementations are provider layers. */

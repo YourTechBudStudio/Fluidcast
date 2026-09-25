@@ -39,16 +39,16 @@ export const connectionAtom = Atom.make((get): Connection =>
 const phaseAtom = Atom.make((get) => get(conversationAtom).phase);
 
 /**
- * A command could not reach the backend. Client-local, like playback status: it is recomputed, and so
- * cleared, whenever the phase or the connection changes, and a successful command clears it too.
+ * Why the last command could not reach the backend, if it could not. Client-local, like playback status: it is
+ * recomputed, and so cleared, whenever the phase or the connection changes, and a successful command clears it too.
  */
-export const sendFailedAtom = Atom.writable(
-  (get) => {
+export const sendFailureAtom = Atom.writable(
+  (get): TransportError | null => {
     get(phaseAtom);
     get(connectionAtom);
-    return false;
+    return null;
   },
-  (ctx, failed: boolean) => ctx.setSelf(failed),
+  (ctx, failure: TransportError | null) => ctx.setSelf(failure),
 ).pipe(Atom.keepAlive);
 
 /**
@@ -61,7 +61,7 @@ const accepted = (
   run: (client: Client['Service']) => Effect.Effect<void, CommandRejected | TransportError>,
 ) =>
   Effect.flatMap(Effect.service(Client), run).pipe(
-    Effect.tap(() => Effect.sync(() => get.set(sendFailedAtom, false))),
+    Effect.tap(() => Effect.sync(() => get.set(sendFailureAtom, null))),
     Effect.as(true),
     Effect.catchTags({
       CommandRejected: (error: CommandRejected) =>
@@ -70,7 +70,7 @@ const accepted = (
           Effect.as(false),
         ),
       TransportError: (error: TransportError) =>
-        Effect.sync(() => get.set(sendFailedAtom, true)).pipe(
+        Effect.sync(() => get.set(sendFailureAtom, error)).pipe(
           Effect.andThen(Effect.logWarning('command failed')),
           Effect.annotateLogs({ reason: error.reason, status: error.status }),
           Effect.as(false),
@@ -105,5 +105,5 @@ export function useConversationCommands(): ConversationCommands {
 
 /** Everything the player shows, derived from the conversation, the connection, playback and a failed send. */
 export const presentationAtom = Atom.make((get) =>
-  present(get(conversationAtom), get(connectionAtom), get(playbackAtom), get(sendFailedAtom)),
+  present(get(conversationAtom), get(connectionAtom), get(playbackAtom), get(sendFailureAtom)),
 );

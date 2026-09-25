@@ -1,12 +1,14 @@
 import { Context, Effect, Layer, type Option } from 'effect';
 
-import type {
-  CommandRejected,
-  PlaybackId,
-  SpeechNotFound,
-} from '@yourtechbudstudio/fluidcast-harness/protocol';
+import type { CommandRejected, PlaybackId } from '@yourtechbudstudio/fluidcast-harness/protocol';
 
-import { makeAudio, memoryStore, type AudioStore, type Playable } from './audio/index.ts';
+import {
+  makeAudio,
+  memoryStore,
+  type AudioStore,
+  type AudioUnavailable,
+  type Playable,
+} from './audio/index.ts';
 import {
   makeSession,
   type Connection,
@@ -40,9 +42,7 @@ export class Client extends Context.Service<
       playbackId: PlaybackId,
     ) => Effect.Effect<void, CommandRejected | TransportError>;
     /** Fresh audio for a speak in the view, for retrying a clip that failed to play. */
-    readonly playable: (
-      actionId: string,
-    ) => Effect.Effect<Playable, SpeechNotFound | TransportError>;
+    readonly playable: (actionId: string) => Effect.Effect<Playable, AudioUnavailable>;
   }
 >()('@yourtechbudstudio/fluidcast-client/Client') {}
 

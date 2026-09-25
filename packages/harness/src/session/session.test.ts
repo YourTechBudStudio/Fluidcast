@@ -4,13 +4,14 @@ import { describe, it } from 'node:test';
 import { Cause, Effect, Exit, Fiber, Layer, Queue, Ref, Stream, type Scope } from 'effect';
 import { LanguageModel, type Prompt, type Response } from 'effect/unstable/ai';
 
+import type { Action, Speak } from '@yourtechbudstudio/fluidcast-core/actions';
 import {
   SpeechSynthesizer,
   type SpeechError,
   type SynthesizeRequest,
-} from '@yourtechbudstudio/fluidcast-core';
-import type { Action, Speak } from '@yourtechbudstudio/fluidcast-core/actions';
+} from '@yourtechbudstudio/fluidcast-core/speech';
 
+import type { SessionConfig } from './config.ts';
 import {
   CommandRejected,
   derivePhase,
@@ -21,13 +22,18 @@ import {
   type SessionState,
   type SubscriptionMessage,
 } from './protocol.ts';
-import { make, type SessionConfig } from './session.ts';
+import { make } from './session.ts';
 
 const config: SessionConfig = {
   instructions: 'Be brief.',
   speakers: [
-    { id: 'host', name: 'Host', personality: 'Warm.', voice: 'alloy' },
-    { id: 'guest', name: 'Guest', personality: 'Dry.', voice: 'echo', voiceInstructions: 'Calm.' },
+    { id: 'host', name: 'Host', personality: 'Warm.', voice: { name: 'alloy' } },
+    {
+      id: 'guest',
+      name: 'Guest',
+      personality: 'Dry.',
+      voice: { name: 'echo', instructions: 'Calm.' },
+    },
   ],
   speechFormat: 'opus',
 };
@@ -102,7 +108,7 @@ const fakeSynthesizer = SpeechSynthesizer.of({
   synthesize: (request: SynthesizeRequest) =>
     Stream.make(
       new TextEncoder().encode(
-        `${request.voice}|${request.format}|${request.voiceInstructions ?? ''}|${request.text}`,
+        `${request.voice.name}|${request.format}|${request.voice.instructions ?? ''}|${request.text}`,
       ),
     ),
 });

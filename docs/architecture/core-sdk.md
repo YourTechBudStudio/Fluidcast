@@ -12,7 +12,7 @@ Tool results and queued key-value context accompany subsequent conversation inpu
 
 Speaker profiles contain an ID, name, and personality. Each speak action contains a speaker ID and content; multiple speakers alternate through separate actions. There is no tone field initially. Generation should favor bounded speech segments, no longer than roughly one or two minutes.
 
-Core also provides a speech synthesis service, initially implemented for OpenAI-compatible TTS, with explicit speaker-to-voice configuration. The backend resolves an action ID into text and speaker configuration before requesting synthesis; Core is not an action registry. Playback, audio caching, and lookahead are outside its scope.
+Core also provides a speech synthesis service, initially implemented for OpenAI TTS. Each request carries its text and a voice (a provider voice ID plus optional delivery guidance); provider settings are fixed when its layer is built. The Harness keeps each speaker's personality and voice together, resolves an action ID into text and voice, and requests synthesis; Core is not an action registry. Playback, audio caching, and lookahead are outside its scope.
 
 ## References, not dependencies
 

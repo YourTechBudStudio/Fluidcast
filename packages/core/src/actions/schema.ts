@@ -4,10 +4,10 @@ import { Schema } from 'effect';
 export const ActionId = Schema.String.pipe(Schema.brand('ActionId'));
 export type ActionId = typeof ActionId.Type;
 
-/** A configured voice in the conversation. */
+/** A speaker as the model knows it: who it is and how it talks. How it sounds is not Core's to decide. */
 export const SpeakerProfile = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
+  id: Schema.NonEmptyString,
+  name: Schema.NonEmptyString,
   personality: Schema.String,
 });
 export type SpeakerProfile = typeof SpeakerProfile.Type;

@@ -1,6 +1,7 @@
 import { Effect, FiberMap, Stream } from 'effect';
 
-import type { SpeechNotFound, SessionState } from '@yourtechbudstudio/fluidcast-harness/protocol';
+import type { SpeechError } from '@yourtechbudstudio/fluidcast-core/speech';
+import type { SessionState, SpeechNotFound } from '@yourtechbudstudio/fluidcast-harness/protocol';
 import { currentAction } from '@yourtechbudstudio/fluidcast-harness/protocol';
 
 import type { Transport, TransportError } from '../transport.ts';
@@ -8,6 +9,12 @@ import type { AudioStore } from './store.ts';
 
 /** How many speaks after the cursor are prefetched. */
 export const prefetchWindow = 3;
+
+/**
+ * Audio could not be obtained for a line: the line is gone (`SpeechNotFound`), synthesis failed
+ * (`SpeechError`), or the backend could not be reached (`TransportError`).
+ */
+export type AudioUnavailable = SpeechNotFound | SpeechError | TransportError;
 
 /** Audio the application can play: complete bytes, or a URL to stream from. No DOM types. */
 export type Playable =
@@ -68,7 +75,7 @@ export const makeAudio = (transport: Transport['Service'], store: AudioStore) =>
     const playable = (
       actionId: string,
       mimeType: string,
-    ): Effect.Effect<Playable, SpeechNotFound | TransportError> =>
+    ): Effect.Effect<Playable, AudioUnavailable> =>
       Effect.gen(function* () {
         const cached = yield* store.get(actionId);
         if (cached !== undefined) return { bytes: cached, mimeType };

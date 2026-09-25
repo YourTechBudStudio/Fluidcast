@@ -5,30 +5,44 @@ server:
   host: 127.0.0.1
   port: 4700
 
+# How each provider type is reached, shared by every section that uses it. Optional: an absent
+# entry uses OpenAI's base URL and the default key variable (FLUIDCAST_<TYPE>_API_KEY).
+providers:
+  # OpenAI: the Responses API for the LLM, and text-to-speech.
+  openai:
+    baseUrl: https://api.openai.com/v1
+    apiKeyEnv: FLUIDCAST_OPENAI_API_KEY
+  # Any server that speaks Chat Completions. LLM only.
+  # openai-compatible:
+  #   baseUrl: http://localhost:8000/v1
+  #   apiKeyEnv: FLUIDCAST_OPENAI_COMPATIBLE_API_KEY
+
 llm:
-  provider: openai
-  # Chat Completions works with any OpenAI-compatible server.
-  api: chat-completions
-  baseUrl: https://api.openai.com/v1
   model: gpt-4.1-mini
-  apiKeyEnv: FLUIDCAST_LLM_API_KEY
+  # The provider type, which selects its connection above, plus that type's own options.
+  provider:
+    type: openai
+    # reasoningEffort: low
 
 tts:
-  provider: openai
-  # baseUrl defaults to llm.baseUrl.
   model: gpt-4o-mini-tts
   format: opus
-  # When this variable is unset, the LLM key is used.
-  apiKeyEnv: FLUIDCAST_TTS_API_KEY
+  # Only openai synthesizes speech.
+  provider:
+    type: openai
 
 instructions: |
   Answer the listener's questions clearly and briefly. Ask a follow-up question when it helps.
 
+# Each speaker keeps its personality and its voice together. The first speaker is the lead.
 speakers:
   - id: host
     name: Host
     personality: Warm, curious and concise. Explains things plainly.
-    voice: alloy
+    voice:
+      name: alloy
+      # Optional delivery guidance, for voices that support it.
+      # instructions: Calm and unhurried.
 
 # Development aids, off by default.
 # debug:

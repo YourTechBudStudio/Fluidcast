@@ -2,37 +2,43 @@ import * as CompatClient from '@effect/ai-openai-compat/OpenAiClient';
 import * as CompatLanguageModel from '@effect/ai-openai-compat/OpenAiLanguageModel';
 import * as OpenAiClient from '@effect/ai-openai/OpenAiClient';
 import * as OpenAiLanguageModel from '@effect/ai-openai/OpenAiLanguageModel';
-import { Layer, type Redacted } from 'effect';
+import { Layer } from 'effect';
 import type { LanguageModel } from 'effect/unstable/ai';
 import type { HttpClient } from 'effect/unstable/http';
 
-/** Resolved LLM settings: defaults applied and the key read. */
+import type { Connection } from '../providers.ts';
+import type { LlmProvider } from './config.ts';
+
+/** Resolved LLM settings: the provider's options and its connection, with the key read. */
 export interface LlmConfig {
-  readonly api: 'chat-completions' | 'responses';
-  readonly baseUrl?: string;
   readonly model: string;
-  readonly apiKey: Redacted.Redacted<string>;
+  readonly provider: LlmProvider;
+  readonly connection: Connection;
 }
 
 /**
- * The `LanguageModel` for the configured API: Chat Completions through
- * `@effect/ai-openai-compat`, or OpenAI's Responses API through `@effect/ai-openai`.
+ * The `LanguageModel` for the configured provider: OpenAI's Responses API through
+ * `@effect/ai-openai`, or Chat Completions through `@effect/ai-openai-compat`.
  */
 export const languageModelLayer = (
   config: LlmConfig,
 ): Layer.Layer<LanguageModel.LanguageModel, never, HttpClient.HttpClient> => {
   const client = {
-    apiKey: config.apiKey,
-    ...(config.baseUrl === undefined ? {} : { apiUrl: config.baseUrl }),
+    apiKey: config.connection.apiKey,
+    ...(config.connection.baseUrl === undefined ? {} : { apiUrl: config.connection.baseUrl }),
   };
-  switch (config.api) {
-    case 'chat-completions':
-      return CompatLanguageModel.layer({ model: config.model }).pipe(
-        Layer.provide(CompatClient.layer(client)),
-      );
-    case 'responses':
-      return OpenAiLanguageModel.layer({ model: config.model }).pipe(
-        Layer.provide(OpenAiClient.layer(client)),
-      );
+  const effort = config.provider.reasoningEffort;
+  switch (config.provider.type) {
+    case 'openai':
+      return OpenAiLanguageModel.layer({
+        model: config.model,
+        ...(effort === undefined ? {} : { config: { reasoning: { effort } } }),
+      }).pipe(Layer.provide(OpenAiClient.layer(client)));
+    case 'openai-compatible':
+      return CompatLanguageModel.layer({
+        model: config.model,
+        // Chat Completions' own field; the adapter passes unknown fields through to the request.
+        ...(effort === undefined ? {} : { config: { reasoning_effort: effort } }),
+      }).pipe(Layer.provide(CompatClient.layer(client)));
   }
 };

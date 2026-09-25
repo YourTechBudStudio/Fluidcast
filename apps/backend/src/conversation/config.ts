@@ -1,40 +1,42 @@
 import { Schema } from 'effect';
 
-/** The chat model. Keyed on `provider`; only `openai` (and OpenAI-compatible servers) exists now. */
-export const LlmSection = Schema.Union([
+import { SessionSpeakers } from '@yourtechbudstudio/fluidcast-harness';
+
+/** How much the model reasons before replying, for models that support it. */
+export const ReasoningEffort = Schema.Literals([
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+]);
+
+/** `llm.provider`: the provider type, which selects its connection, plus that type's options. */
+export const LlmProvider = Schema.Union([
+  /** OpenAI's Responses API. */
   Schema.Struct({
-    provider: Schema.Literal('openai'),
-    /** `chat-completions` for any OpenAI-compatible server; `responses` for OpenAI's Responses API. */
-    api: Schema.Literals(['chat-completions', 'responses']),
-    /** Base URL of the API, e.g. `https://api.openai.com/v1`. Defaults to OpenAI's. */
-    baseUrl: Schema.optionalKey(Schema.NonEmptyString),
-    model: Schema.NonEmptyString,
-    /** The environment variable holding the key. Defaults to `FLUIDCAST_LLM_API_KEY`. */
-    apiKeyEnv: Schema.optionalKey(Schema.NonEmptyString),
+    type: Schema.Literal('openai'),
+    reasoningEffort: Schema.optionalKey(ReasoningEffort),
   }),
-]).annotate({ expected: 'a section with provider: openai (the only provider so far)' });
+  /** Chat Completions on any compatible server. */
+  Schema.Struct({
+    type: Schema.Literal('openai-compatible'),
+    reasoningEffort: Schema.optionalKey(ReasoningEffort),
+  }),
+]);
+export type LlmProvider = typeof LlmProvider.Type;
+
+/** The chat model. */
+export const LlmSection = Schema.Struct({
+  model: Schema.NonEmptyString,
+  provider: LlmProvider,
+});
 export type LlmSection = typeof LlmSection.Type;
 
-export const SpeakerSection = Schema.Struct({
-  id: Schema.NonEmptyString,
-  name: Schema.NonEmptyString,
-  personality: Schema.String,
-  /** The TTS provider's voice. */
-  voice: Schema.NonEmptyString,
-  /** Optional delivery guidance for TTS providers that support it. */
-  voiceInstructions: Schema.optionalKey(Schema.String),
-});
-
-/** The conversation slice's config sections. The first speaker is the lead. */
+/** The conversation slice's config sections. Speakers are the Harness's own schema; the first is the lead. */
 export const ConversationSections = {
   llm: LlmSection,
   instructions: Schema.optionalKey(Schema.String),
-  speakers: Schema.NonEmptyArray(SpeakerSection).check(
-    Schema.makeFilter(
-      (speakers) => new Set(speakers.map(({ id }) => id)).size === speakers.length,
-      { expected: 'speakers with unique ids' },
-    ),
-  ),
+  speakers: SessionSpeakers,
 };
-
-export const defaultLlmApiKeyEnv = 'FLUIDCAST_LLM_API_KEY';

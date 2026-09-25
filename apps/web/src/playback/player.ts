@@ -2,11 +2,12 @@ import { Effect, FiberHandle, Option, Ref, Result, Stream, SubscriptionRef } fro
 
 import {
   Client,
+  type AudioUnavailable,
   type PlaybackInstruction,
   type Playable,
 } from '@yourtechbudstudio/fluidcast-client';
 
-import type { PlaybackStatus } from './model';
+import type { MediaError, PlaybackStatus } from './model';
 
 /** The page's audio output, owned by the player for the lifetime of its scope. */
 export interface Player {
@@ -24,7 +25,7 @@ const IDLE: PlaybackStatus = { kind: 'idle' };
 /** How long to wait for a suspended `AudioContext` to resume before treating playback as held. */
 const RESUME_GRACE = '250 millis';
 
-type Outcome = 'finished' | 'held' | 'failed';
+type Outcome = 'finished' | 'held' | MediaError;
 
 /**
  * Plays the Harness's instructions on one reused `<audio>` element routed through an analyser
@@ -114,35 +115,40 @@ export const makePlayer = Effect.gen(function* () {
   });
 
   /** Waits for the element to end or fail. Listeners live exactly as long as the wait. */
-  const settled = Effect.callback<Outcome>((resume) => {
-    const onEnded = () => resume(Effect.succeed('finished'));
-    const onError = () => resume(Effect.succeed('failed'));
-    element.addEventListener('ended', onEnded);
-    element.addEventListener('error', onError);
-    return Effect.sync(() => {
-      element.removeEventListener('ended', onEnded);
-      element.removeEventListener('error', onError);
+  const settled = (mediaError: MediaError) =>
+    Effect.callback<Outcome>((resume) => {
+      const onEnded = () => resume(Effect.succeed('finished'));
+      const onError = () => resume(Effect.succeed<Outcome>(mediaError));
+      element.addEventListener('ended', onEnded);
+      element.addEventListener('error', onError);
+      return Effect.sync(() => {
+        element.removeEventListener('ended', onEnded);
+        element.removeEventListener('error', onError);
+      });
     });
-  });
 
   /** Plays one instruction from the start with the given audio, then reports how it ended. */
   const play = (instruction: PlaybackInstruction, audio: Playable) =>
     Effect.gen(function* () {
       const actionId = instruction.action.id;
+      const mediaError: MediaError = { _tag: 'MediaError', streamed: 'url' in audio };
       yield* load(audio);
       if (!(yield* audible)) return 'held' as const;
       const outcome = yield* Effect.raceFirst(
-        settled,
+        settled(mediaError),
         Effect.tryPromise(() => element.play()).pipe(
           Effect.matchEffect({
             onFailure: ({ cause }) =>
               Effect.succeed<Outcome>(
                 cause instanceof DOMException && cause.name === 'NotAllowedError'
                   ? 'held'
-                  : 'failed',
+                  : mediaError,
               ),
             onSuccess: () =>
-              Effect.andThen(SubscriptionRef.set(status, { kind: 'playing', actionId }), settled),
+              Effect.andThen(
+                SubscriptionRef.set(status, { kind: 'playing', actionId }),
+                settled(mediaError),
+              ),
           }),
         ),
       );
@@ -162,17 +168,24 @@ export const makePlayer = Effect.gen(function* () {
       Effect.flatMap((outcome) => {
         const actionId = instruction.action.id;
         if (outcome === 'held') return SubscriptionRef.set(status, { kind: 'held', actionId });
-        if (outcome === 'failed') return SubscriptionRef.set(status, { kind: 'failed', actionId });
-        return Effect.void;
+        if (outcome === 'finished') return Effect.void;
+        return SubscriptionRef.set(status, { kind: 'failed', actionId, error: outcome });
       }),
     );
 
   /** Starts an attempt for the current instruction, replacing any running one. */
-  const start = (instruction: PlaybackInstruction, audio: Result.Result<Playable, unknown>) =>
+  const start = (
+    instruction: PlaybackInstruction,
+    audio: Result.Result<Playable, AudioUnavailable>,
+  ) =>
     Effect.gen(function* () {
       yield* FiberHandle.clear(attempt);
       if (Result.isFailure(audio)) {
-        yield* SubscriptionRef.set(status, { kind: 'failed', actionId: instruction.action.id });
+        yield* SubscriptionRef.set(status, {
+          kind: 'failed',
+          actionId: instruction.action.id,
+          error: audio.failure,
+        });
         return;
       }
       yield* SubscriptionRef.set(status, IDLE);

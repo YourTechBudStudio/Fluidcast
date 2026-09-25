@@ -3,7 +3,9 @@ import { useState } from 'react';
 import { copyFor } from './copy';
 import type { StatusMoment } from './presentation';
 
-const DOT: Record<StatusMoment, { color: string; pulse: boolean }> = {
+const RED = { color: 'var(--color-red)', pulse: false, error: true } as const;
+
+const DOT: Record<StatusMoment, { color: string; pulse: boolean; error?: true }> = {
   fresh: { color: 'var(--color-cyan)', pulse: false },
   complete: { color: 'var(--color-cyan)', pulse: false },
   interrupted: { color: 'var(--color-cyan)', pulse: false },
@@ -11,9 +13,15 @@ const DOT: Record<StatusMoment, { color: string; pulse: boolean }> = {
   waiting: { color: 'var(--color-violet)', pulse: true },
   speaking: { color: 'var(--color-blue)', pulse: false },
   held: { color: 'var(--color-fg-subtle)', pulse: false },
-  generationFailed: { color: 'var(--color-red)', pulse: false },
-  audioFailed: { color: 'var(--color-red)', pulse: false },
-  sendFailed: { color: 'var(--color-red)', pulse: false },
+  generationFailed: RED,
+  audioMissing: RED,
+  voiceFailed: RED,
+  audioUnreachable: RED,
+  audioUnplayable: RED,
+  audioStreamFailed: RED,
+  sendUnreachable: RED,
+  serverFailed: RED,
+  outOfSync: RED,
   connecting: { color: 'var(--color-fg-subtle)', pulse: true },
   reconnecting: { color: 'var(--color-fg-subtle)', pulse: true },
   superseded: { color: 'var(--color-fg-subtle)', pulse: false },
@@ -36,8 +44,7 @@ export function StatusLine({ moment }: { readonly moment: StatusMoment }) {
   const text = copyFor(rotation.moment, rotation.index);
 
   const dot = DOT[moment];
-  const error =
-    moment === 'generationFailed' || moment === 'audioFailed' || moment === 'sendFailed';
+  const error = dot.error === true;
   return (
     <div
       role="status"

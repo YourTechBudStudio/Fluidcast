@@ -1,5 +1,5 @@
-import type { GenerationError } from '@yourtechbudstudio/fluidcast-core';
 import type { GenerationFailed } from '@yourtechbudstudio/fluidcast-core/actions';
+import type { GenerationError } from '@yourtechbudstudio/fluidcast-core/generation';
 
 /** A defect during generation: a bug, not a provider or output failure. */
 export const unexpectedFailure = { _tag: 'UnexpectedError' } as const;

@@ -116,7 +116,7 @@ const fakeTransport = (options: { readonly url: boolean }) =>
           Effect.forEach(messages, (message) => Queue.offer(connection, message), {
             discard: true,
           }),
-        fail: Queue.fail(connection, new TransportError({ reason: 'Network' })),
+        fail: Queue.fail(connection, new TransportError({ reason: 'Unreachable' })),
         end: Queue.end(connection),
       };
     });

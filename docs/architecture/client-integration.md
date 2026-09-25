@@ -4,7 +4,7 @@
 
 The backend is authoritative; client state is limited to what communication, caching, and playback require. The application owns the server and transport; the Client SDK talks only to that backend. Provider credentials never belong in the browser. The integration surface is transport-neutral, with no required server framework or wire protocol. The Client SDK is also environment-neutral: the reference application runs it in a browser, but browser-specific concerns such as IndexedDB storage and autoplay belong to adapters or applications.
 
-The harness must be notified of connection loss so it can freeze cursor advancement. Delivery acknowledgment confirms receipt only; playback completion advances the current instruction and is distinct from the user's Next control. Playback instructions have their own identity so stale acknowledgments cannot advance a later playback.
+The harness must be notified of connection loss so it can freeze cursor advancement. The subscription stream itself confirms delivery, so there is no separate delivery acknowledgment; playback completion advances the current instruction and is distinct from the user's Next control. Playback instructions have their own identity so stale acknowledgments cannot advance a later playback.
 
 On reconnection, the client can request a cursor reset and resume playback rather than reconstructing the exact amount of audio heard. Applications always supply actual playback and own error presentation.
 

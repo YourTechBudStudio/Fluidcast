@@ -2,8 +2,8 @@ import * as NodeHttpServerRequest from '@effect/platform-node/NodeHttpServerRequ
 import { Cause, Effect, Exit, Pull, Schema, Stream } from 'effect';
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/unstable/http';
 
-import { routes, SpeechError, SpeechFailure, speechStatus } from '@fluidcast/app-contract';
-import { audioMimeType, type AudioFormat } from '@yourtechbudstudio/fluidcast-core';
+import { routes, SpeechFailure, speechStatus } from '@fluidcast/app-contract';
+import { audioMimeType, type AudioFormat } from '@yourtechbudstudio/fluidcast-core/speech';
 import { Session } from '@yourtechbudstudio/fluidcast-harness';
 
 const failureJson = HttpServerResponse.schemaJson(SpeechFailure);
@@ -61,15 +61,7 @@ export const speechRoutes = (format: AudioFormat) =>
         SpeechError: (error) =>
           Effect.logWarning('speech: synthesis failed').pipe(
             Effect.annotateLogs({ reason: error.reason, status: error.status }),
-            Effect.andThen(
-              failureJson(
-                new SpeechError({
-                  reason: error.reason,
-                  ...(error.status === undefined ? {} : { status: error.status }),
-                }),
-                { status: speechStatus.unavailable },
-              ),
-            ),
+            Effect.andThen(failureJson(error, { status: speechStatus.unavailable })),
           ),
       }),
       Effect.orDie,

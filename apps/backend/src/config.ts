@@ -3,14 +3,16 @@ import { parseEnv } from 'node:util';
 import { Effect, FileSystem, Path, Redacted, Schema } from 'effect';
 import { Yaml } from 'effect/unstable/encoding';
 
+import { ConversationSections, type ConversationConfig } from './conversation/index.ts';
 import {
-  ConversationSections,
-  defaultLlmApiKeyEnv,
-  type ConversationConfig,
-} from './conversation/index.ts';
-import { defaultTtsApiKeyEnv, SpeechSections, type SpeechConfig } from './speech/index.ts';
+  defaultApiKeyEnv,
+  ProvidersSection,
+  type Connection,
+  type ProviderType,
+} from './providers.ts';
+import { SpeechSections, type SpeechConfig } from './speech/index.ts';
 
-/** The YAML file's shape: the server section plus each slice's sections. */
+/** The YAML file's shape: the server and provider sections plus each slice's sections. */
 export const ConfigFile = Schema.Struct({
   server: Schema.optionalKey(
     Schema.Struct({
@@ -18,6 +20,8 @@ export const ConfigFile = Schema.Struct({
       port: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 }))),
     }),
   ),
+  /** Connections, shared by every section that uses the same provider type. Optional: absent means defaults. */
+  providers: Schema.optionalKey(ProvidersSection),
   ...ConversationSections,
   ...SpeechSections,
   /** Development aids. Everything here is off unless set. */
@@ -125,6 +129,26 @@ const definedOnly = (environment: Environment): Record<string, string> =>
 const nonEmpty = (value: string | undefined): string | undefined =>
   value === undefined || value === '' ? undefined : value;
 
+/** Resolves the connection for a provider type: its base URL, and its key read from the environment. */
+const connection = (
+  file: ConfigFile,
+  environment: Environment,
+  type: ProviderType,
+): Effect.Effect<Connection, string> => {
+  const section = file.providers?.[type];
+  const keyEnv = section?.apiKeyEnv ?? defaultApiKeyEnv[type];
+  const key = nonEmpty(environment[keyEnv]);
+  if (key === undefined) {
+    return Effect.fail(
+      `The ${type} API key is missing: set ${keyEnv} in the environment or in a .env file next to the config (providers.${type}.apiKeyEnv).`,
+    );
+  }
+  return Effect.succeed({
+    apiKey: Redacted.make(key),
+    ...(section?.baseUrl === undefined ? {} : { baseUrl: section.baseUrl }),
+  });
+};
+
 /** Applies defaults and resolves secrets. Fails with a message naming what is missing. */
 const resolve = (
   file: ConfigFile,
@@ -132,26 +156,16 @@ const resolve = (
   relativeToConfig: (path: string) => string,
 ): Effect.Effect<Config, string> =>
   Effect.gen(function* () {
-    const llmKeyEnv = file.llm.apiKeyEnv ?? defaultLlmApiKeyEnv;
-    const llmKey = nonEmpty(environment[llmKeyEnv]);
-    if (llmKey === undefined) {
-      return yield* Effect.fail(
-        `The LLM API key is missing: set ${llmKeyEnv} in the environment or in a .env file next to the config (llm.apiKeyEnv).`,
-      );
-    }
-    // The single agreed fallback: an unset TTS key means the LLM key.
-    const ttsKey = nonEmpty(environment[file.tts.apiKeyEnv ?? defaultTtsApiKeyEnv]) ?? llmKey;
-    const llmBaseUrl = file.llm.baseUrl;
-    const ttsBaseUrl = file.tts.baseUrl ?? llmBaseUrl;
+    const llmConnection = yield* connection(file, environment, file.llm.provider.type);
+    const ttsConnection = yield* connection(file, environment, file.tts.provider.type);
 
     return {
       server: { host: file.server?.host ?? '127.0.0.1', port: file.server?.port ?? 4700 },
       conversation: {
         llm: {
-          api: file.llm.api,
           model: file.llm.model,
-          apiKey: Redacted.make(llmKey),
-          ...(llmBaseUrl === undefined ? {} : { baseUrl: llmBaseUrl }),
+          provider: file.llm.provider,
+          connection: llmConnection,
         },
         instructions: file.instructions ?? '',
         speakers: file.speakers,
@@ -162,8 +176,7 @@ const resolve = (
       speech: {
         model: file.tts.model,
         format: file.tts.format ?? 'opus',
-        apiKey: Redacted.make(ttsKey),
-        ...(ttsBaseUrl === undefined ? {} : { baseUrl: ttsBaseUrl }),
+        connection: ttsConnection,
       },
     };
   });

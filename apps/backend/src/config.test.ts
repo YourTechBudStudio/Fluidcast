@@ -13,11 +13,18 @@ const directories: Array<string> = [];
 after(() => directories.forEach((directory) => rmSync(directory, { recursive: true })));
 
 const validYaml = `
-llm: { provider: openai, api: chat-completions, baseUrl: http://127.0.0.1:9/v1, model: m }
-tts: { provider: openai, model: t }
+providers:
+  openai-compatible: { baseUrl: http://127.0.0.1:9/v1 }
+llm: { model: m, provider: { type: openai-compatible, reasoningEffort: low } }
+tts: { model: t, provider: { type: openai } }
 speakers:
-  - { id: host, name: Host, personality: warm, voice: alloy }
+  - { id: host, name: Host, personality: warm, voice: { name: alloy } }
 `;
+
+const keys = {
+  FLUIDCAST_OPENAI_API_KEY: 'openai-key',
+  FLUIDCAST_OPENAI_COMPATIBLE_API_KEY: 'compatible-key',
+};
 
 /** Writes the config (and optionally a `.env`) into a fresh directory and loads it. */
 const load = (yaml: string, environment: Environment, envFile?: string) => {
@@ -49,27 +56,53 @@ describe('loadConfig', () => {
   it('reads .env next to the config, with the real environment winning', async () => {
     const config = await loaded(
       validYaml,
-      { FLUIDCAST_LLM_API_KEY: 'from-environment' },
-      'FLUIDCAST_LLM_API_KEY=from-file\nFLUIDCAST_TTS_API_KEY=tts-from-file\n',
+      { FLUIDCAST_OPENAI_COMPATIBLE_API_KEY: 'from-environment' },
+      'FLUIDCAST_OPENAI_COMPATIBLE_API_KEY=from-file\nFLUIDCAST_OPENAI_API_KEY=openai-from-file\n',
     );
-    assert.equal(Redacted.value(config.conversation.llm.apiKey), 'from-environment');
-    assert.equal(Redacted.value(config.speech.apiKey), 'tts-from-file');
+    assert.equal(Redacted.value(config.conversation.llm.connection.apiKey), 'from-environment');
+    assert.equal(Redacted.value(config.speech.connection.apiKey), 'openai-from-file');
   });
 
-  it('falls back to the LLM key and base URL for TTS, and applies defaults', async () => {
-    const config = await loaded(validYaml, { FLUIDCAST_LLM_API_KEY: 'llm-key' });
-    assert.equal(Redacted.value(config.speech.apiKey), 'llm-key');
-    assert.equal(config.speech.baseUrl, 'http://127.0.0.1:9/v1');
+  it('resolves each section against its provider type, and applies defaults', async () => {
+    const config = await loaded(validYaml, keys);
+    assert.deepEqual(config.conversation.llm.provider, {
+      type: 'openai-compatible',
+      reasoningEffort: 'low',
+    });
+    assert.equal(config.conversation.llm.connection.baseUrl, 'http://127.0.0.1:9/v1');
+    assert.equal(Redacted.value(config.speech.connection.apiKey), 'openai-key');
+    assert.equal(config.speech.connection.baseUrl, undefined);
     assert.equal(config.speech.format, 'opus');
     assert.deepEqual(config.server, { host: '127.0.0.1', port: 4700 });
   });
 
-  it('keeps the generation log off by default, and resolves its path next to the config', async () => {
-    const off = await loaded(validYaml, { FLUIDCAST_LLM_API_KEY: 'k' });
-    assert.equal(off.conversation.generationLog, undefined);
-    const on = await loaded(`${validYaml}debug: { generationLog: ./logs/generations.jsonl }\n`, {
-      FLUIDCAST_LLM_API_KEY: 'k',
+  it('shares one connection between sections that use the same provider type', async () => {
+    const config = await loaded(
+      `
+providers:
+  openai: { baseUrl: http://127.0.0.1:9/v1, apiKeyEnv: SHARED_KEY }
+llm: { model: m, provider: { type: openai } }
+tts: { model: t, provider: { type: openai } }
+speakers:
+  - { id: host, name: Host, personality: warm, voice: { name: alloy, instructions: calm } }
+`,
+      { SHARED_KEY: 'shared' },
+    );
+    assert.deepEqual(config.conversation.llm.connection, config.speech.connection);
+    assert.equal(Redacted.value(config.speech.connection.apiKey), 'shared');
+    assert.deepEqual(config.conversation.speakers[0].voice, {
+      name: 'alloy',
+      instructions: 'calm',
     });
+  });
+
+  it('keeps the generation log off by default, and resolves its path next to the config', async () => {
+    const off = await loaded(validYaml, keys);
+    assert.equal(off.conversation.generationLog, undefined);
+    const on = await loaded(
+      `${validYaml}debug: { generationLog: ./logs/generations.jsonl }\n`,
+      keys,
+    );
     assert.match(
       on.conversation.generationLog ?? '',
       /fluidcast-config-[^/]+\/logs\/generations\.jsonl$/,
@@ -77,21 +110,41 @@ describe('loadConfig', () => {
   });
 
   it('names the missing key variable without leaking other values', async () => {
-    const message = await failure(validYaml, { OTHER: 'secret-value' });
-    assert.match(message, /FLUIDCAST_LLM_API_KEY/);
+    const message = await failure(validYaml, {
+      FLUIDCAST_OPENAI_COMPATIBLE_API_KEY: 'k',
+      OTHER: 'secret-value',
+    });
+    assert.match(message, /FLUIDCAST_OPENAI_API_KEY/);
+    assert.match(message, /providers\.openai\.apiKeyEnv/);
     assert.doesNotMatch(message, /secret-value/);
   });
 
   it('lists every invalid section', async () => {
     const message = await failure(
       `
-llm: { provider: anthropic, api: chat-completions, model: m }
-tts: { provider: openai, model: t, format: flac }
-speakers: []
+llm: { model: m, provider: { type: anthropic } }
+tts: { model: t, format: flac, provider: { type: openai-compatible } }
+speakers:
+  - { id: host, name: Host, personality: warm, voice: alloy }
+  - { id: host, name: Again, personality: dry, voice: { name: echo } }
 `,
-      { FLUIDCAST_LLM_API_KEY: 'llm-key' },
+      keys,
     );
     assert.match(message, /is invalid/);
-    for (const path of ['llm', 'format', 'speakers']) assert.match(message, new RegExp(path));
+    for (const path of ['llm', 'format', 'tts', 'voice']) assert.match(message, new RegExp(path));
+  });
+
+  it('rejects speakers with duplicate ids', async () => {
+    const message = await failure(
+      `
+llm: { model: m, provider: { type: openai } }
+tts: { model: t, provider: { type: openai } }
+speakers:
+  - { id: host, name: Host, personality: warm, voice: { name: alloy } }
+  - { id: host, name: Again, personality: dry, voice: { name: echo } }
+`,
+      keys,
+    );
+    assert.match(message, /unique ids/);
   });
 });

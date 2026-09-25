@@ -1,21 +1,16 @@
 import { Cause, Context, Effect, FiberHandle, Layer, Queue, Ref, Semaphore, Stream } from 'effect';
 import { LanguageModel } from 'effect/unstable/ai';
 
+import { makeActionId, uuidv7, type Action } from '@yourtechbudstudio/fluidcast-core/actions';
+import { generate } from '@yourtechbudstudio/fluidcast-core/generation';
 import {
   audioMimeType,
-  generate,
   SpeechSynthesizer,
   synthesize,
-  type AudioFormat,
   type SpeechError,
-} from '@yourtechbudstudio/fluidcast-core';
-import {
-  makeActionId,
-  uuidv7,
-  type Action,
-  type SpeakerProfile,
-} from '@yourtechbudstudio/fluidcast-core/actions';
+} from '@yourtechbudstudio/fluidcast-core/speech';
 
+import type { SessionConfig } from './config.ts';
 import { describeFailure, failureAnnotations, unexpectedFailure } from './failure.ts';
 import {
   CommandRejected,
@@ -30,23 +25,6 @@ import {
   type SessionState,
   type SubscriptionMessage,
 } from './protocol.ts';
-
-/** A configured speaker: its prompt profile plus how its lines are voiced. */
-export interface SessionSpeaker extends SpeakerProfile {
-  /** The TTS provider's voice. */
-  readonly voice: string;
-  /** Optional delivery guidance for providers that support it. */
-  readonly voiceInstructions?: string;
-}
-
-export interface SessionConfig {
-  /** Integrator instructions placed in the system prompt. */
-  readonly instructions: string;
-  /** The configured speakers. The first is the lead speaker. At least one is required. */
-  readonly speakers: ReadonlyArray<SessionSpeaker>;
-  /** The audio format `speech` produces. */
-  readonly speechFormat: AudioFormat;
-}
 
 /**
  * The single-session conversation authority (ADRs 0003, 0006): the action log, the cursor,
@@ -267,9 +245,6 @@ export const make = (config: SessionConfig) =>
               text: action.text,
               voice: speaker.voice,
               format: config.speechFormat,
-              ...(speaker.voiceInstructions === undefined
-                ? {}
-                : { voiceInstructions: speaker.voiceInstructions }),
             }).pipe(Stream.provideService(SpeechSynthesizer, synthesizer));
           }),
         ),

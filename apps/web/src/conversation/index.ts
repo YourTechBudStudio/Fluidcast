@@ -7,7 +7,14 @@ export type {
   Phase,
   Speaker,
 } from './model';
-export type { ComposerMode, Moment, Presentation, StatusMoment, TimelineRow } from './presentation';
+export type {
+  ComposerMode,
+  FailureStatus,
+  Moment,
+  Presentation,
+  StatusMoment,
+  TimelineRow,
+} from './presentation';
 export {
   connectionAtom,
   conversationAtom,

@@ -25,10 +25,22 @@ export const COPY: Record<StatusMoment, readonly string[]> = {
     'That answer broke off. Retry to continue?',
     'I dropped the thread there. Retry?',
   ],
-  audioFailed: [
-    'My voice cut out there. Retry that bit?',
-    'Couldn’t play that line. Retry it?',
-    'That line didn’t come through. Retry?',
+  audioMissing: [
+    'That line isn’t in the conversation anymore. Interrupt to move on?',
+    'I lost that line entirely. Interrupt and ask again?',
+  ],
+  voiceFailed: [
+    'The voice service couldn’t read that line. Retry it?',
+    'My voice service hiccuped there. Retry that bit?',
+  ],
+  audioUnreachable: [
+    'Couldn’t reach the server for that line. Retry?',
+    'That line got lost on the way. Retry?',
+  ],
+  audioStreamFailed: ['That line didn’t come through. Retry?', 'That line broke off. Retry it?'],
+  audioUnplayable: [
+    'Your browser couldn’t play that line. Retry it?',
+    'That clip wouldn’t play here. Retry?',
   ],
   connecting: ['Connecting…', 'Tuning in…'],
   reconnecting: [
@@ -37,10 +49,15 @@ export const COPY: Record<StatusMoment, readonly string[]> = {
     'Hold on, getting you back…',
   ],
   held: ['Tap to pick up where we left off'],
-  sendFailed: [
-    'Couldn’t send that. Try again?',
+  sendUnreachable: [
+    'Couldn’t reach the server. Try again?',
     'That didn’t reach me. Try again?',
     'Couldn’t get that through. One more try?',
+  ],
+  serverFailed: ['The server hit a snag. Try again?', 'Something broke on my end. One more try?'],
+  outOfSync: [
+    'The player and server are out of sync. Try reloading.',
+    'We’re speaking different versions. Reload to catch up.',
   ],
   superseded: [
     'Looks like you picked me up in another tab.',

@@ -1,10 +1,13 @@
 import { type FileSystem, Layer } from 'effect';
 import type { HttpClient } from 'effect/unstable/http';
 
-import type { AudioFormat, SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core';
-import { layer as harnessLayer, type Session } from '@yourtechbudstudio/fluidcast-harness';
+import type { AudioFormat, SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';
+import {
+  layer as harnessLayer,
+  type Session,
+  type SessionSpeakers,
+} from '@yourtechbudstudio/fluidcast-harness';
 
-import type { SpeakerSection } from './config.ts';
 import { withGenerationLog } from './generation-log.ts';
 import { languageModelLayer, type LlmConfig } from './language-model.ts';
 
@@ -12,7 +15,7 @@ import { languageModelLayer, type LlmConfig } from './language-model.ts';
 export interface ConversationConfig {
   readonly llm: LlmConfig;
   readonly instructions: string;
-  readonly speakers: readonly [typeof SpeakerSection.Type, ...Array<typeof SpeakerSection.Type>];
+  readonly speakers: SessionSpeakers;
   /** An absolute path to append each generation to (`debug.generationLog`). Off when absent. */
   readonly generationLog?: string;
 }

@@ -1,4 +1,6 @@
-import type { PlaybackStatus, SubtitleLine } from '../playback';
+import type { TransportError } from '@yourtechbudstudio/fluidcast-client';
+
+import type { PlaybackFailure, PlaybackStatus, SubtitleLine } from '../playback';
 import type { VisualState } from '../visuals';
 import type { Action, Connection, ConversationView, Speaker } from './model';
 
@@ -21,10 +23,33 @@ export type Moment =
   | 'interrupted';
 
 /**
- * What the status line speaks to: the moment, or a command that could not reach the backend. A failed send
- * changes nothing else, because the conversation did not change; connection moments still take priority.
+ * A failure the status line explains by its cause, so the listener learns what went wrong rather than only that
+ * something did:
+ * - `audioMissing`: the line is no longer in the conversation (`SpeechNotFound`);
+ * - `voiceFailed`: the speech provider could not voice the line (`SpeechError`);
+ * - `audioUnreachable` / `sendUnreachable`: the backend could not be reached;
+ * - `audioUnplayable`: the browser could not play a clip it had fully received;
+ * - `audioStreamFailed`: a streamed clip failed, and the browser does not say whether the network, the backend or
+ *   the clip was at fault;
+ * - `serverFailed`: the backend failed while handling the request;
+ * - `outOfSync`: the backend could not accept the request, or replied outside the protocol.
  */
-export type StatusMoment = Moment | 'sendFailed';
+export type FailureStatus =
+  | 'audioMissing'
+  | 'voiceFailed'
+  | 'audioUnreachable'
+  | 'audioUnplayable'
+  | 'audioStreamFailed'
+  | 'sendUnreachable'
+  | 'serverFailed'
+  | 'outOfSync';
+
+/**
+ * What the status line speaks to: the moment, with an audio failure refined to its cause, or a command that could
+ * not reach the backend. A failed send changes nothing else, because the conversation did not change; connection
+ * moments still take priority.
+ */
+export type StatusMoment = Exclude<Moment, 'audioFailed'> | FailureStatus;
 
 /** Which controls the composer offers. */
 export type ComposerMode = 'compose' | 'busy' | 'retry' | 'retryClip' | 'offline';
@@ -250,16 +275,55 @@ function timelineOf(
   return rows;
 }
 
+function transportStatus(error: TransportError, unreachable: FailureStatus): FailureStatus {
+  switch (error.reason) {
+    case 'Unreachable':
+    case 'Closed':
+      return unreachable;
+    case 'ServerError':
+      return 'serverFailed';
+    case 'BadRequest':
+    case 'Malformed':
+      return 'outOfSync';
+  }
+}
+
+function audioStatus(error: PlaybackFailure): FailureStatus {
+  switch (error._tag) {
+    case 'SpeechNotFound':
+      return 'audioMissing';
+    case 'SpeechError':
+      return 'voiceFailed';
+    case 'MediaError':
+      return error.streamed ? 'audioStreamFailed' : 'audioUnplayable';
+    case 'TransportError':
+      return transportStatus(error, 'audioUnreachable');
+  }
+}
+
+function statusOf(
+  moment: Moment,
+  connection: Connection,
+  playback: PlaybackStatus,
+  sendFailure: TransportError | null,
+): StatusMoment {
+  if (sendFailure && connection === 'connected')
+    return transportStatus(sendFailure, 'sendUnreachable');
+  if (moment !== 'audioFailed') return moment;
+  // `audioFailed` is only ever derived from a failed playback status.
+  return playback.kind === 'failed' ? audioStatus(playback.error) : 'audioUnplayable';
+}
+
 export function present(
   view: ConversationView,
   connection: Connection,
   playback: PlaybackStatus,
-  sendFailed: boolean,
+  sendFailure: TransportError | null,
 ): Presentation {
   const moment = momentOf(view, connection, playback);
   return {
     moment,
-    status: sendFailed && connection === 'connected' ? 'sendFailed' : moment,
+    status: statusOf(moment, connection, playback, sendFailure),
     composer: COMPOSER[moment],
     visual: VISUAL[moment],
     held: moment === 'held',

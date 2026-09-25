@@ -8,13 +8,21 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    },
     "./actions": {
       "types": "./dist/actions/index.d.ts",
       "default": "./dist/actions/index.js"
+    },
+    "./generation": {
+      "types": "./dist/generation/index.d.ts",
+      "default": "./dist/generation/index.js"
+    },
+    "./speech": {
+      "types": "./dist/speech/index.d.ts",
+      "default": "./dist/speech/index.js"
+    },
+    "./speech/openai": {
+      "types": "./dist/speech/openai.d.ts",
+      "default": "./dist/speech/openai.js"
     }
   },
   "scripts": {
@@ -27,10 +35,8 @@
     "test": "node --test \"src/**/*.test.ts\"",
     "typecheck": "tsc --project tsconfig.json"
   },
-  "dependencies": {
-    "@effect/ai-openai": "catalog:"
-  },
   "devDependencies": {
+    "@effect/ai-openai": "catalog:",
     "@types/node": "catalog:",
     "@yourtechbudstudio/fluidcast-typescript-config": "workspace:*",
     "effect": "catalog:",
@@ -39,6 +45,12 @@
     "typescript": "catalog:"
   },
   "peerDependencies": {
+    "@effect/ai-openai": "catalog:",
     "effect": "catalog:"
+  },
+  "peerDependenciesMeta": {
+    "@effect/ai-openai": {
+      "optional": true
+    }
   }
 }

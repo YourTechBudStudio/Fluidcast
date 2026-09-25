@@ -15,8 +15,7 @@ import {
   type SubscriptionMessage,
 } from '@yourtechbudstudio/fluidcast-harness/protocol';
 
-import type { Playable } from '../audio/index.ts';
-import type { makeAudio } from '../audio/index.ts';
+import type { AudioUnavailable, makeAudio, Playable } from '../audio/index.ts';
 import { TransportError, type Transport } from '../transport.ts';
 import { reconnectSchedule } from './reconnect.ts';
 
@@ -28,9 +27,6 @@ export interface ConversationView {
 }
 
 export type Connection = 'connecting' | 'connected' | 'reconnecting' | 'superseded';
-
-/** Audio could not be obtained for a line. */
-export type AudioUnavailable = SpeechNotFound | TransportError;
 
 /**
  * Play `action` now, then call `finished(playbackId)`. `audio` is a failure when the line's audio
@@ -126,7 +122,7 @@ export const makeSession = (transport: Transport['Service'], audio: Audio) =>
           default: {
             const current = yield* Ref.get(projection);
             if (current === undefined || (yield* SubscriptionRef.get(connection)) !== 'connected') {
-              return yield* new TransportError({ reason: 'EventBeforeSnapshot' });
+              return yield* new TransportError({ reason: 'Malformed' });
             }
             const next = reduce(current, message);
             if (message._tag === 'CursorMoved') yield* stopPlayback;

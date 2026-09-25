@@ -35,11 +35,11 @@ export const layerOpenAi = (
               payload: {
                 model: options.model,
                 input: request.text,
-                voice: request.voice,
+                voice: request.voice.name,
                 response_format: request.format,
-                ...(request.voiceInstructions === undefined
+                ...(request.voice.instructions === undefined
                   ? {}
-                  : { instructions: request.voiceInstructions }),
+                  : { instructions: request.voice.instructions }),
               },
             })
             .pipe(Stream.mapError(toSpeechError)),
