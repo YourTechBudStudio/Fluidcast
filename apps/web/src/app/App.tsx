@@ -1,15 +1,20 @@
 import { useAtom, useAtomValue } from '@effect/atom-react';
 import { useEffect, useMemo } from 'react';
 
-import { commandsAtom, Composer, presentationAtom, StatusLine, Transcript } from '../conversation';
-import { MockDriver } from '../mock';
-import { playbackControlsAtom, Subtitle, TapToResume } from '../playback';
+import {
+  Composer,
+  presentationAtom,
+  StatusLine,
+  Transcript,
+  useConversationCommands,
+} from '../conversation';
+import { Subtitle, TapToResume, usePlaybackAnalyser, usePlaybackControls } from '../playback';
 import { useReducedMotion } from '../ui';
-import { createAnalysis, Visual } from '../visuals';
+import { analyserSource, createAnalysis, Visual } from '../visuals';
 import { transcriptOpenAtom, visualAtom } from './state';
 import { TopBar } from './TopBar';
 
-/** One analysis handle for the page. The data source connects its audio; visuals read it per frame. */
+/** One analysis handle for the page. The player's analyser feeds it; visuals read it per frame. */
 const analysis = createAnalysis();
 
 const typingTarget = (target: EventTarget | null) =>
@@ -18,12 +23,18 @@ const typingTarget = (target: EventTarget | null) =>
 
 export function App() {
   const presentation = useAtomValue(presentationAtom);
-  const commands = useAtomValue(commandsAtom);
-  const playback = useAtomValue(playbackControlsAtom);
+  const commands = useConversationCommands();
+  const playback = usePlaybackControls();
+  const analyser = usePlaybackAnalyser();
   const visual = useAtomValue(visualAtom);
   const [transcriptOpen, setTranscriptOpen] = useAtom(transcriptOpenAtom);
   const reducedMotion = useReducedMotion();
   const { moment, composer } = presentation;
+
+  useEffect(() => {
+    analysis.connect(analyserSource(analyser));
+    return () => analysis.connect(null);
+  }, [analyser]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -78,7 +89,7 @@ export function App() {
       </main>
       <footer className="relative z-20 px-4 pb-5">
         <div className="mb-3.5">
-          <StatusLine moment={moment} />
+          <StatusLine moment={presentation.status} />
         </div>
         <Composer
           mode={composer}
@@ -88,7 +99,6 @@ export function App() {
           onRetryClip={playback.retryClip}
         />
       </footer>
-      <MockDriver analysis={analysis} />
     </div>
   );
 }

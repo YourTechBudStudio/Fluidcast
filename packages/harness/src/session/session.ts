@@ -16,7 +16,7 @@ import {
   type SpeakerProfile,
 } from '@yourtechbudstudio/fluidcast-core/actions';
 
-import { describeFailure, unexpectedFailure } from './failure.ts';
+import { describeFailure, failureAnnotations, unexpectedFailure } from './failure.ts';
 import {
   CommandRejected,
   currentAction,
@@ -152,6 +152,9 @@ export const make = (config: SessionConfig) =>
           onFailure: (error) =>
             locked(
               Effect.gen(function* () {
+                yield* Effect.logWarning('generation failed').pipe(
+                  Effect.annotateLogs(failureAnnotations(error)),
+                );
                 yield* append({
                   type: 'generation_failed',
                   id: makeActionId(),

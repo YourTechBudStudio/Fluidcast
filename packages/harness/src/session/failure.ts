@@ -37,3 +37,27 @@ export const describeFailure = (
       };
   }
 };
+
+/**
+ * The failure's identifiers for a log line: its tag and the fields that locate it (reason, line
+ * index, HTTP status, provider code). Never provider text or conversation content.
+ */
+export const failureAnnotations = (
+  error: GenerationError | typeof unexpectedFailure,
+): Record<string, string | number> => {
+  switch (error._tag) {
+    case 'UnexpectedError':
+      return { error: error._tag };
+    case 'ProviderError':
+      return {
+        error: error._tag,
+        reason: error.reason,
+        ...(error.status === undefined ? {} : { status: error.status }),
+        ...(error.code === undefined ? {} : { code: error.code }),
+      };
+    case 'MalformedOutput':
+      return { error: error._tag, reason: error.reason };
+    case 'InvalidAction':
+      return { error: error._tag, reason: error.reason, line: error.index + 1 };
+  }
+};

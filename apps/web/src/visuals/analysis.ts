@@ -90,3 +90,71 @@ export function createAnalysis(): AnalysisHandle {
   };
   return handle;
 }
+
+/**
+ * Level mapping for real audio, calibrated so speech lands in the range the approved mocks' synthetic voice used
+ * (`scratch/probes/phase-05/calibrate.mjs`: median and 90th-percentile level and bins while voiced).
+ */
+const DB_FLOOR = -82; // dBFS per FFT bin that reads as silence
+const DB_CEILING = -8; // dBFS per FFT bin that reads as full
+const LEVEL_GAIN = 2.9; // time-domain RMS to the raw 0..1 level
+
+/**
+ * An `AnalysisSource` over a Web Audio `AnalyserNode`: its float spectrum mapped into the 48
+ * log-spaced bins (80 Hz to 8 kHz), and the time-domain RMS as the raw level. Bins narrower than an FFT
+ * bin interpolate between FFT bins; wider ones average the FFT bins inside their band. The analyser can
+ * appear later (audio unlocks on a gesture), so it is read through `node` each frame.
+ */
+export function analyserSource(node: () => AnalyserNode | null): AnalysisSource {
+  let fft: Float32Array<ArrayBuffer> | null = null;
+  let time: Float32Array<ArrayBuffer> | null = null;
+  let bands: { lo: number; hi: number; at: number }[] = [];
+  let shape = '';
+  const halfStep = (FREQ_MAX / FREQ_MIN) ** (0.5 / (BIN_COUNT - 1));
+
+  const norm = (db: number) => Math.min(1, Math.max(0, (db - DB_FLOOR) / (DB_CEILING - DB_FLOOR)));
+
+  return {
+    sample(_now, out) {
+      const analyser = node();
+      if (!analyser) {
+        out.fill(0);
+        return 0;
+      }
+      const key = `${analyser.fftSize}:${analyser.context.sampleRate}`;
+      if (key !== shape) {
+        shape = key;
+        fft = new Float32Array(analyser.frequencyBinCount);
+        time = new Float32Array(analyser.fftSize);
+        const hz = analyser.context.sampleRate / analyser.fftSize;
+        bands = BIN_FREQUENCIES.map((f) => ({
+          lo: Math.max(1, Math.ceil(f / halfStep / hz)),
+          hi: Math.min(analyser.frequencyBinCount - 1, Math.floor((f * halfStep) / hz)),
+          at: f / hz,
+        }));
+      }
+      analyser.getFloatFrequencyData(fft!);
+      analyser.getFloatTimeDomainData(time!);
+
+      for (let k = 0; k < BIN_COUNT; k++) {
+        const { lo, hi, at } = bands[k]!;
+        let db: number;
+        if (hi < lo) {
+          const i = Math.floor(at);
+          const t = at - i;
+          db = fft![i]! * (1 - t) + fft![i + 1]! * t;
+        } else {
+          // Average power across the band, then back to dB.
+          let power = 0;
+          for (let i = lo; i <= hi; i++) power += 10 ** (fft![i]! / 10);
+          db = 10 * Math.log10(power / (hi - lo + 1));
+        }
+        out[k] = Number.isFinite(db) ? norm(db) : 0;
+      }
+
+      let sum = 0;
+      for (const v of time!) sum += v * v;
+      return Math.min(1, Math.sqrt(sum / time!.length) * LEVEL_GAIN);
+    },
+  };
+}

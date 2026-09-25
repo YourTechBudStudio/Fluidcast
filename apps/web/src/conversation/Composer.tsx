@@ -6,7 +6,8 @@ import type { ComposerMode } from './presentation';
 
 export interface ComposerProps {
   readonly mode: ComposerMode;
-  readonly onSend: (text: string) => void;
+  /** Resolves `true` once the message was accepted; only then is the draft cleared. */
+  readonly onSend: (text: string) => Promise<boolean>;
   readonly onInterrupt: () => void;
   readonly onRetry: () => void;
   readonly onRetryClip: () => void;
@@ -30,8 +31,11 @@ export function Composer({ mode, onSend, onInterrupt, onRetry, onRetryClip }: Co
 
   const send = () => {
     if (!editable || !typed) return;
-    onSend(text.trim());
-    setText('');
+    const sent = text;
+    void onSend(sent.trim()).then((accepted) => {
+      // Keep anything typed while the command was in flight.
+      if (accepted) setText((current) => (current === sent ? '' : current));
+    });
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {

@@ -64,6 +64,18 @@ describe('loadConfig', () => {
     assert.deepEqual(config.server, { host: '127.0.0.1', port: 4700 });
   });
 
+  it('keeps the generation log off by default, and resolves its path next to the config', async () => {
+    const off = await loaded(validYaml, { FLUIDCAST_LLM_API_KEY: 'k' });
+    assert.equal(off.conversation.generationLog, undefined);
+    const on = await loaded(`${validYaml}debug: { generationLog: ./logs/generations.jsonl }\n`, {
+      FLUIDCAST_LLM_API_KEY: 'k',
+    });
+    assert.match(
+      on.conversation.generationLog ?? '',
+      /fluidcast-config-[^/]+\/logs\/generations\.jsonl$/,
+    );
+  });
+
   it('names the missing key variable without leaking other values', async () => {
     const message = await failure(validYaml, { OTHER: 'secret-value' });
     assert.match(message, /FLUIDCAST_LLM_API_KEY/);

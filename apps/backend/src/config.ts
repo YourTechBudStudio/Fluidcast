@@ -20,6 +20,16 @@ export const ConfigFile = Schema.Struct({
   ),
   ...ConversationSections,
   ...SpeechSections,
+  /** Development aids. Everything here is off unless set. */
+  debug: Schema.optionalKey(
+    Schema.Struct({
+      /**
+       * Appends every generation (prompt, raw reply, finish reason, token usage) to this file as JSON
+       * lines, relative to the config file. It records conversation text: keep it local.
+       */
+      generationLog: Schema.optionalKey(Schema.NonEmptyString),
+    }),
+  ),
 });
 export type ConfigFile = typeof ConfigFile.Type;
 
@@ -83,7 +93,10 @@ export const loadConfig = (
       options.environment ?? process.env,
     ).pipe(Effect.catch((message) => fail(message)));
 
-    return yield* resolve(parsed, environment).pipe(Effect.catch((message) => fail(message)));
+    const relativeToConfig = (target: string) => paths.resolve(paths.dirname(file), target);
+    return yield* resolve(parsed, environment, relativeToConfig).pipe(
+      Effect.catch((message) => fail(message)),
+    );
   });
 
 /** The real environment over the `.env` file's variables, if the file exists. */
@@ -113,7 +126,11 @@ const nonEmpty = (value: string | undefined): string | undefined =>
   value === undefined || value === '' ? undefined : value;
 
 /** Applies defaults and resolves secrets. Fails with a message naming what is missing. */
-const resolve = (file: ConfigFile, environment: Environment): Effect.Effect<Config, string> =>
+const resolve = (
+  file: ConfigFile,
+  environment: Environment,
+  relativeToConfig: (path: string) => string,
+): Effect.Effect<Config, string> =>
   Effect.gen(function* () {
     const llmKeyEnv = file.llm.apiKeyEnv ?? defaultLlmApiKeyEnv;
     const llmKey = nonEmpty(environment[llmKeyEnv]);
@@ -138,6 +155,9 @@ const resolve = (file: ConfigFile, environment: Environment): Effect.Effect<Conf
         },
         instructions: file.instructions ?? '',
         speakers: file.speakers,
+        ...(file.debug?.generationLog === undefined
+          ? {}
+          : { generationLog: relativeToConfig(file.debug.generationLog) }),
       },
       speech: {
         model: file.tts.model,

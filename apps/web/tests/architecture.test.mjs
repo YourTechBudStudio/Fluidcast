@@ -11,16 +11,15 @@ const files = readdirSync(root, { recursive: true }).filter((file) => /\.tsx?$/.
 
 /**
  * Which modules each module may import, always through the target's `index.ts`.
- * `ui` and `visuals` stay product-agnostic; `mock` is temporary fixture code that only the root composition installs,
- * so phase 5 can delete it by removing one import from `app`.
+ * `client` owns the page's Client SDK instance and transport; `ui` and `visuals` stay product-agnostic.
  */
 const ALLOWED = {
-  app: ['conversation', 'playback', 'visuals', 'ui', 'mock'],
-  conversation: ['playback', 'visuals', 'ui'],
-  playback: ['ui'],
+  app: ['client', 'conversation', 'playback', 'visuals', 'ui'],
+  client: [],
+  conversation: ['client', 'playback', 'visuals', 'ui'],
+  playback: ['client', 'ui'],
   visuals: ['ui'],
   ui: [],
-  mock: ['conversation', 'playback', 'visuals'],
 };
 
 const modules = Object.keys(ALLOWED);

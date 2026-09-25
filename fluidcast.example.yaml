@@ -29,3 +29,9 @@ speakers:
     name: Host
     personality: Warm, curious and concise. Explains things plainly.
     voice: alloy
+
+# Development aids, off by default.
+# debug:
+#   # Appends each generation (prompt, raw reply, finish reason, token usage) as a JSON line,
+#   # relative to this file. It contains conversation text, so keep it local.
+#   generationLog: ./fluidcast-generations.jsonl

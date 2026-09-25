@@ -17,5 +17,6 @@ coverage/
 !.env.example
 
 fluidcast.yaml
+fluidcast-generations*.jsonl
 
 scratch

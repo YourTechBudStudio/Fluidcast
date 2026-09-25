@@ -230,6 +230,9 @@ importers:
       '@effect/atom-react':
         specifier: 4.0.0-rc.117
         version: 4.0.0-rc.117(effect@4.0.0-rc.117)(react@19.3.0)(scheduler@0.27.0)
+      '@fluidcast/app-contract':
+        specifier: workspace:*
+        version: link:../../packages/app-contract
       '@fontsource-variable/fira-code':
         specifier: ^5.3.0
         version: 5.3.0
@@ -242,6 +245,12 @@ importers:
       '@yourtechbudstudio/fluidcast-client':
         specifier: workspace:*
         version: link:../../packages/client
+      '@yourtechbudstudio/fluidcast-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@yourtechbudstudio/fluidcast-harness':
+        specifier: workspace:*
+        version: link:../../packages/harness
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.117

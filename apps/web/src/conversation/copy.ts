@@ -1,10 +1,10 @@
-import type { Moment } from './presentation';
+import type { StatusMoment } from './presentation';
 
 /**
  * Status copy: playful and warm, separate from the speaker persona, and always explicit about what failed.
  * The status line shows the next line from a moment's pool each time the player enters it.
  */
-export const COPY: Record<Moment, readonly string[]> = {
+export const COPY: Record<StatusMoment, readonly string[]> = {
   fresh: ['What’s on your mind?', 'Ask me anything.', 'Where should we start?'],
   thinking: [
     'Mulling that over…',
@@ -37,6 +37,11 @@ export const COPY: Record<Moment, readonly string[]> = {
     'Hold on, getting you back…',
   ],
   held: ['Tap to pick up where we left off'],
+  sendFailed: [
+    'Couldn’t send that. Try again?',
+    'That didn’t reach me. Try again?',
+    'Couldn’t get that through. One more try?',
+  ],
   superseded: [
     'Looks like you picked me up in another tab.',
     'You’re talking to me in another tab now.',
@@ -44,7 +49,7 @@ export const COPY: Record<Moment, readonly string[]> = {
 };
 
 /** The line at `index` in a moment's pool, wrapping around; empty when the moment has no status copy. */
-export function copyFor(moment: Moment, index: number): string {
+export function copyFor(moment: StatusMoment, index: number): string {
   const pool = COPY[moment];
   return pool.length === 0 ? '' : pool[index % pool.length]!;
 }

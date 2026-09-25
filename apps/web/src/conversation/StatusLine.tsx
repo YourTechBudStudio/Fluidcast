@@ -1,9 +1,9 @@
 import { useState } from 'react';
 
 import { copyFor } from './copy';
-import type { Moment } from './presentation';
+import type { StatusMoment } from './presentation';
 
-const DOT: Record<Moment, { color: string; pulse: boolean }> = {
+const DOT: Record<StatusMoment, { color: string; pulse: boolean }> = {
   fresh: { color: 'var(--color-cyan)', pulse: false },
   complete: { color: 'var(--color-cyan)', pulse: false },
   interrupted: { color: 'var(--color-cyan)', pulse: false },
@@ -13,20 +13,21 @@ const DOT: Record<Moment, { color: string; pulse: boolean }> = {
   held: { color: 'var(--color-fg-subtle)', pulse: false },
   generationFailed: { color: 'var(--color-red)', pulse: false },
   audioFailed: { color: 'var(--color-red)', pulse: false },
+  sendFailed: { color: 'var(--color-red)', pulse: false },
   connecting: { color: 'var(--color-fg-subtle)', pulse: true },
   reconnecting: { color: 'var(--color-fg-subtle)', pulse: true },
   superseded: { color: 'var(--color-fg-subtle)', pulse: false },
 };
 
 /** One quiet line above the composer, on both layers. It rotates its copy each time the player enters a moment. */
-export function StatusLine({ moment }: { readonly moment: Moment }) {
+export function StatusLine({ moment }: { readonly moment: StatusMoment }) {
   // Widget-local rotation: how many times each moment has been entered. Adjusted during render when the moment changes (React's
   // "adjusting state when a prop changes" pattern), so the line never lags the moment by a commit. Computed only from state, so it is
   // idempotent under development mode's double render.
   const [rotation, setRotation] = useState(() => ({
     moment,
     index: 0,
-    entries: { [moment]: 0 } as Partial<Record<Moment, number>>,
+    entries: { [moment]: 0 } as Partial<Record<StatusMoment, number>>,
   }));
   if (rotation.moment !== moment) {
     const index = (rotation.entries[moment] ?? -1) + 1;
@@ -35,7 +36,8 @@ export function StatusLine({ moment }: { readonly moment: Moment }) {
   const text = copyFor(rotation.moment, rotation.index);
 
   const dot = DOT[moment];
-  const error = moment === 'generationFailed' || moment === 'audioFailed';
+  const error =
+    moment === 'generationFailed' || moment === 'audioFailed' || moment === 'sendFailed';
   return (
     <div
       role="status"

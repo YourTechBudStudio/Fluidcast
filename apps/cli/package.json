@@ -11,7 +11,7 @@
   ],
   "type": "module",
   "scripts": {
-    "bundle": "pnpm --filter @fluidcast/cli^... build && pnpm --filter @fluidcast/web build && node scripts/bundle.ts",
+    "bundle": "pnpm --filter @fluidcast/cli^... --filter @fluidcast/web^... build && pnpm --filter @fluidcast/web build && node scripts/bundle.ts",
     "check": "pnpm lint && pnpm typecheck && pnpm format:check",
     "fix": "oxlint . --fix && oxfmt --write .",
     "format:check": "oxfmt --check .",

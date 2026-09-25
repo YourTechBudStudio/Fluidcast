@@ -20,6 +20,12 @@ export type Moment =
   | 'complete'
   | 'interrupted';
 
+/**
+ * What the status line speaks to: the moment, or a command that could not reach the backend. A failed send
+ * changes nothing else, because the conversation did not change; connection moments still take priority.
+ */
+export type StatusMoment = Moment | 'sendFailed';
+
 /** Which controls the composer offers. */
 export type ComposerMode = 'compose' | 'busy' | 'retry' | 'retryClip' | 'offline';
 
@@ -44,6 +50,7 @@ export type TimelineRow =
 
 export interface Presentation {
   readonly moment: Moment;
+  readonly status: StatusMoment;
   readonly composer: ComposerMode;
   readonly visual: VisualState;
   /** Playback waits for a gesture; the visual dims. */
@@ -247,10 +254,12 @@ export function present(
   view: ConversationView,
   connection: Connection,
   playback: PlaybackStatus,
+  sendFailed: boolean,
 ): Presentation {
   const moment = momentOf(view, connection, playback);
   return {
     moment,
+    status: sendFailed && connection === 'connected' ? 'sendFailed' : moment,
     composer: COMPOSER[moment],
     visual: VISUAL[moment],
     held: moment === 'held',
