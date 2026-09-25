@@ -37,6 +37,9 @@ export const layerOpenAi = (
                 input: request.text,
                 voice: request.voice.name,
                 response_format: request.format,
+                // Raw audio bytes as they are synthesized. Some compatible servers otherwise
+                // return the whole clip only once synthesis finishes.
+                stream_format: 'audio',
                 ...(request.voice.instructions === undefined
                   ? {}
                   : { instructions: request.voice.instructions }),
