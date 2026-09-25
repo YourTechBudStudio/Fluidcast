@@ -40,7 +40,11 @@ export const serverLayer = (config: Config, options: ServeOptions = {}) =>
     Layer.provide(sessionLayer(config.conversation, config.speech.format)),
     Layer.provide(synthesizerLayer(config.speech)),
     Layer.provide(FetchHttpClient.layer),
-    Layer.provide(NodeHttpServer.layer(createServer, config.server)),
+    // Shut down at once: waiting for open connections to drain would hold Ctrl+C on the
+    // long-lived event stream, so in-flight requests are interrupted instead.
+    Layer.provide(
+      NodeHttpServer.layer(createServer, { ...config.server, disablePreemptiveShutdown: true }),
+    ),
   );
 
 /** Serves until interrupted. */
