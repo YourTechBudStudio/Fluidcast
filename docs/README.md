@@ -13,7 +13,7 @@ These documents capture product intent, architectural scope, and consequential d
 - [Core SDK](architecture/core-sdk.md): Stateless action generation and speech synthesis.
 - [Harness lifecycle](architecture/harness-lifecycle.md): Execution, continuation, interruption, and recovery.
 - [Tools and agents](architecture/tools-and-agents.md): Tool policies and agent pools.
-- [Browser integration](architecture/browser-integration.md): Connection, playback, and audio boundaries.
+- [Client integration](architecture/client-integration.md): Connection, playback, and audio boundaries.
 
 ## ADRs: durable rationale
 

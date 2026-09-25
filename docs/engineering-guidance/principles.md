@@ -8,7 +8,7 @@ Does the design make the next likely change easier without building for hypothet
 
 ## Localize change within the owning package
 
-Can a coherent change stay within the package that owns the responsibility? Core, Harness, Browser, and the applications each own distinct facts and decisions. Keep code that changes together close without pulling state, policy, or credentials across those boundaries merely to colocate it.
+Can a coherent change stay within the package that owns the responsibility? Core, Harness, Client, and the applications each own distinct facts and decisions. Keep code that changes together close without pulling state, policy, or credentials across those boundaries merely to colocate it.
 
 ## Prefer deep modules with legible surfaces
 

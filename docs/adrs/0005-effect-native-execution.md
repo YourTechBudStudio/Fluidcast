@@ -12,7 +12,7 @@ Applications also present that streamed, backend-owned state in reactive UIs. Se
 
 ## Decision
 
-The project uses Effect v4 throughout: Core, Harness, Browser SDK, and applications, including their UI layers. SDK contracts are Effect-native, including asynchronous operations and streams, rather than treating Effect as a hidden implementation detail behind Promise-first APIs.
+The project uses Effect v4 throughout: Core, Harness, Client SDK, and applications, including their UI layers. SDK contracts are Effect-native, including asynchronous operations and streams, rather than treating Effect as a hidden implementation detail behind Promise-first APIs.
 
 Use Effect's structured concurrency, resource management, and typed failure handling to express lifecycle ownership consistently. Adapt external provider, transport, and playback APIs at integration boundaries; add convenience facades only when needed.
 
@@ -29,4 +29,4 @@ Effect also owns reactive application state. Applications use Effect's reactivit
 - Canceling local work does not guarantee that an external agent or provider stopped. Existing tool cancellation and late-result rules remain application semantics.
 - This decision changes how SDKs and applications express execution and state, not SDK ownership boundaries or the choice of server framework and transport.
 
-See the [architecture overview](../architecture/overview.md), [Browser integration](../architecture/browser-integration.md), and [Harness lifecycle](../architecture/harness-lifecycle.md).
+See the [architecture overview](../architecture/overview.md), [Client integration](../architecture/client-integration.md), and [Harness lifecycle](../architecture/harness-lifecycle.md).

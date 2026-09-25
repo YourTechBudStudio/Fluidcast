@@ -15,7 +15,7 @@ Relevant lenses have equal standing. Each defines its own Blocker, Concern, and 
 
 ## Fluidcast context
 
-Fluidcast is a set of SDKs for a voice-and-visual interface to existing agents, with reference backend and web applications that exercise them. Core, Harness, and Browser SDKs have distinct ownership; the [ADR index](../adrs/README.md) records those boundaries and is the source of architectural commitments. Lens questions do not override ADRs.
+Fluidcast is a set of SDKs for a voice-and-visual interface to existing agents, with reference backend and web applications that exercise them. Core, Harness, and Client SDKs have distinct ownership; the [ADR index](../adrs/README.md) records those boundaries and is the source of architectural commitments. Lens questions do not override ADRs.
 
 Fluidcast has two kinds of users: people listening to and steering the conversation, and developers integrating the SDKs into their own server, transport, UI, and audio playback. Both are first-class.
 

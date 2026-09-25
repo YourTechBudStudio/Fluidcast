@@ -4,7 +4,7 @@ Use this lens for package ownership, public SDK surfaces, integration contracts,
 
 ## Questions
 
-- Does the change respect the ownership recorded in the ADRs? Core stays stateless, the Harness owns conversation state and the cursor, and the Browser SDK coordinates communication and audio without an independent conversation state machine. Do browser caches and buffers remain distinguishable from backend authority?
+- Does the change respect the ownership recorded in the ADRs? Core stays stateless, the Harness owns conversation state and the cursor, and the Client SDK coordinates communication and audio without an independent conversation state machine. Do browser caches and buffers remain distinguishable from backend authority?
 - Does each public surface expose a small, meaningful interface that hides complexity, or does it force integrators to coordinate internals, ordering, or bookkeeping the SDK should own?
 - Is it explicit what an application must supply (server, transport, UI, playback, storage) and what the SDK guarantees in return? Does integration stay transport-neutral, without assuming a server framework, wire protocol, or player?
 - Are public surfaces consistently Effect-native, with typed errors, streams, and requirements visible in their types? Are internal representations or incidental Promise-based paths leaking into public or serialized contracts?
@@ -12,7 +12,7 @@ Use this lens for package ownership, public SDK surfaces, integration contracts,
 - Would sharing a function, type, or module prevent meaningful drift between packages or between SDKs and reference apps? Would the proposed sharing instead couple packages that should evolve independently or pull backend concerns into the browser?
 - Can an internal or pre-launch interface be replaced and its callers, including reference apps, migrated cleanly rather than retaining shims, obsolete paths, or dual systems? Where a real external boundary exists, what compatibility obligation actually applies?
 - Is model output treated as untrusted input, including parsed actions and presented HTML? Do provider credentials and provider access stay server-side? Does the voice model choose only targets and messages, never infrastructure configuration?
-- Does a new dependency justify its weight in every consumer's install, and in the browser bundle for the Browser SDK? Does it introduce unnecessary privilege, coupling, or public-surface exposure? Does it duplicate a responsibility Effect already owns, such as state, data fetching, retry, scheduling, or streaming, creating a second model for failures and cancellation?
+- Does a new dependency justify its weight in every consumer's install, and in browser bundles that include the Client SDK? Does it introduce unnecessary privilege, coupling, or public-surface exposure? Does it duplicate a responsibility Effect already owns, such as state, data fetching, retry, scheduling, or streaming, creating a second model for failures and cancellation?
 
 Deep modules do not mean giant files. Shared code should have a coherent responsibility, not become a miscellaneous destination for anything used twice. Reference apps demonstrate integration; they should not become where SDK responsibilities quietly live.
 
