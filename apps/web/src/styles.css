@@ -129,3 +129,17 @@ body::after {
   scrollbar-color: color-mix(in srgb, var(--color-line) 36%, transparent) transparent;
   scrollbar-width: thin;
 }
+
+/* Composer buttons settle in when the available actions change. */
+@keyframes act-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+@keyframes status-in {
+  from {
+    opacity: 0;
+  }
+}
