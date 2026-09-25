@@ -1,0 +1,31 @@
+# Fluidcast reference config. Copy to fluidcast.yaml (gitignored) and adjust.
+# Keys never go here: they come from the environment, or from a .env file next to this file.
+
+server:
+  host: 127.0.0.1
+  port: 4700
+
+llm:
+  provider: openai
+  # Chat Completions works with any OpenAI-compatible server.
+  api: chat-completions
+  baseUrl: https://api.openai.com/v1
+  model: gpt-4.1-mini
+  apiKeyEnv: FLUIDCAST_LLM_API_KEY
+
+tts:
+  provider: openai
+  # baseUrl defaults to llm.baseUrl.
+  model: gpt-4o-mini-tts
+  format: opus
+  # When this variable is unset, the LLM key is used.
+  apiKeyEnv: FLUIDCAST_TTS_API_KEY
+
+instructions: |
+  Answer the listener's questions clearly and briefly. Ask a follow-up question when it helps.
+
+speakers:
+  - id: host
+    name: Host
+    personality: Warm, curious and concise. Explains things plainly.
+    voice: alloy

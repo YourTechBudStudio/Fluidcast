@@ -16,4 +16,6 @@ coverage/
 .env.*
 !.env.example
 
+fluidcast.yaml
+
 scratch

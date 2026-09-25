@@ -19,6 +19,7 @@ const pureEntries = {
   '@yourtechbudstudio/fluidcast-core/actions': 'packages/core/src/actions/index.ts',
   '@yourtechbudstudio/fluidcast-harness/protocol': 'packages/harness/src/session/protocol.ts',
   '@yourtechbudstudio/fluidcast-client': 'packages/client/src/index.ts',
+  '@fluidcast/app-contract': 'packages/app-contract/src/index.ts',
 };
 
 /**
