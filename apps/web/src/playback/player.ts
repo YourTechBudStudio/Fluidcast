@@ -52,8 +52,9 @@ export const makePlayer = Effect.gen(function* () {
     if (graph) return graph;
     const context = new AudioContext();
     const analyser = context.createAnalyser();
-    analyser.fftSize = 4096;
-    analyser.smoothingTimeConstant = 0.5;
+    // ~43 ms windows at 48 kHz with light smoothing: the visuals' own followers shape the motion, so the analyser stays close to the audio.
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.2;
     context.createMediaElementSource(element).connect(analyser);
     analyser.connect(context.destination);
     graph = { context, analyser };

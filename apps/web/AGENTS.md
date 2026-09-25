@@ -30,8 +30,6 @@ src/
 
 ## Rules
 
-- Keep the ported GLSL in `*/shaders.ts` verbatim; tune through the state tables in each `renderer.ts`.
-- Every `localStorage` access goes through `app/persisted.ts`.
 - Motion uses one curve (`--ease-expo`) and the 110, 190, 320 and 600 ms durations. No springs or overshoot. Honour reduced motion.
 - Interactive controls have an accessible name, work from the keyboard and keep a hit area of at least 44 px.
 - Status copy lives in `conversation/copy.ts`. Error lines always say what failed.

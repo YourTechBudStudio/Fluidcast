@@ -1,6 +1,6 @@
-// Simulation and uniforms ported from the electric-spectrum mock. Only the mirrored frequency layout is kept.
+// Simulation and uniforms ported from the electric-spectrum mock, retuned to follow the voice. Only the mirrored frequency layout is kept.
 import { rgb, type PaletteName, type Rgb } from '../../ui';
-import { follow } from '../analysis';
+import { follow, spring, type Spring } from '../analysis';
 import {
   clamp,
   createProgram,
@@ -18,9 +18,14 @@ import { fragmentShader, vertexShader } from './shaders';
 /** Canvas height / band height; the canvas overhangs the band so the bloom has room. Keep in sync with the CSS. */
 export const BAND_OVER = 1.4;
 const BAND_FRAC = 0.42; // band half-length as a fraction of the canvas width
-const SIGMA = 0.28; // Gaussian window, fraction of the band half-length
+const SIGMA = 0.26; // Gaussian window, fraction of the band half-length: the band peaks in the centre and falls away quickly
 const FIELD_W = 64;
 const FIELD_H = 16;
+// While speaking, wave speed follows the voice's pace over a 0.4 floor: a sustained loud phrase runs the waves ~1.8x their base speed.
+const VOICE_MODE_SURGE = 1.7;
+const VOICE_JIT_SURGE = 1.1; // the in-place shape morph follows the voice more gently
+// While speaking, the voice's brightness sets wave density: ±TONE_DENSITY around the state's kScale, darker vowels fewer crests, sibilants more.
+const TONE_DENSITY = 0.18;
 
 const c = rgb;
 const strandCols = (list: readonly (PaletteName | Rgb)[]) =>
@@ -46,6 +51,8 @@ type Tuning = {
   baseAmp: number;
   gain: number;
   modeRate: number;
+  /** 0..1: how much the voice, rather than the clock, moves the waves. Speaking only; the other states keep their own pace. */
+  voiceDrive: number;
 };
 
 // Each state is a target set of uniforms.
@@ -77,6 +84,7 @@ const STATES: Record<VisualState, Tuning> = {
     baseAmp: 0.08,
     gain: 0.6,
     modeRate: 0.3,
+    voiceDrive: 0,
   },
   thinking: {
     cols: strandCols([
@@ -105,6 +113,7 @@ const STATES: Record<VisualState, Tuning> = {
     baseAmp: 0.28,
     gain: 0.0,
     modeRate: 0.55,
+    voiceDrive: 0,
   },
   speaking: {
     cols: strandCols([
@@ -133,6 +142,7 @@ const STATES: Record<VisualState, Tuning> = {
     baseAmp: 0.1,
     gain: 1.0,
     modeRate: 0.9,
+    voiceDrive: 1,
   },
   error: {
     cols: strandCols(['red', mix3(c('red'), c('violet'), 0.3), 'red', 'red', 'red', 'red']),
@@ -154,6 +164,7 @@ const STATES: Record<VisualState, Tuning> = {
     baseAmp: 0.05,
     gain: 0.0,
     modeRate: 0.45,
+    voiceDrive: 0,
   },
   offline: {
     cols: strandCols(['fg-subtle', 'line', 'fg-subtle', 'fg-subtle', 'fg-subtle', 'fg-subtle']),
@@ -175,6 +186,7 @@ const STATES: Record<VisualState, Tuning> = {
     baseAmp: 0.01,
     gain: 0.0,
     modeRate: 0.08,
+    voiceDrive: 0,
   },
 };
 
@@ -189,6 +201,7 @@ function targetFor({ state, reducedMotion, held }: RendererInputs): Tuning {
     t.undRate *= 0.4;
     t.jitRate *= 0.4;
     t.gain = 0;
+    t.voiceDrive = 0;
   }
   if (reducedMotion) {
     t.crackle = 0;
@@ -245,8 +258,8 @@ function makeTex(
   return tex;
 }
 
-// Each strand mixes two standing modes whose time phases advance at per-strand base speeds, scaled by the state's rate and the voice level,
-// and nudged by smooth noise so the motion never repeats. cos() of each phase goes to the shader; nothing travels sideways.
+// Each strand mixes two standing modes whose time phases advance at per-strand base speeds, scaled by the state's rate and, while speaking,
+// by the voice itself, and nudged by smooth noise so the motion never repeats. cos() of each phase goes to the shader; nothing travels sideways.
 const MODE_W = Array.from(
   { length: 6 },
   (_, i) => [TAU * (0.42 + 0.11 * i), TAU * (0.83 + 0.17 * i)] as const,
@@ -350,8 +363,12 @@ export const createSpectrumRenderer: RendererFactory = (canvas, initial) => {
   const modeTheta = Array.from({ length: 12 }, () => rand(0, TAU));
   const modeArr = new Float32Array(18);
   let modeClock = rand(0, 100);
-  function updateModes(dt: number, level: number) {
-    const rate = cur.modeRate * (inputs.reducedMotion ? 0.35 : 1) * (1 + 0.8 * level);
+  /** While speaking, the waves surge with each syllable and nearly settle in the gaps, instead of keeping their own clock. */
+  const voicePace = (pace: number, surge: number) =>
+    1 - 0.6 * cur.voiceDrive + cur.voiceDrive * surge * pace;
+  function updateModes(dt: number, pace: number) {
+    const rate =
+      cur.modeRate * (inputs.reducedMotion ? 0.35 : 1) * voicePace(pace, VOICE_MODE_SURGE);
     modeClock += dt;
     for (let i = 0; i < 6; i++) {
       for (let m = 0; m < 2; m++) {
@@ -369,8 +386,12 @@ export const createSpectrumRenderer: RendererFactory = (canvas, initial) => {
   }
 
   let last = -1;
-  let energy = 0;
-  let level = 0;
+  /** Wave height: a spring on the overall loudness, so the waves rise with each syllable and settle without a kink. */
+  const swell: Spring = { value: 0, velocity: 0 };
+  /** Wave speed: follows the swell over a phrase, so the waves accelerate and glide rather than lurch. */
+  let pace = 0;
+  /** 0..1 spectral centroid of the voice, eased: where the energy sits between 80 Hz and 8 kHz. */
+  let tone = 0.5;
   let breathPhase = 0;
   let crackT = 0;
   let undT = rand(0, 50);
@@ -387,19 +408,34 @@ export const createSpectrumRenderer: RendererFactory = (canvas, initial) => {
       cur = tuning.at(now);
       // As in the mock, gain scales the raw level before the followers, so the band fades out smoothly when the audio stops.
       const raw = analysis.raw * cur.gain;
-      // Attack ~90 ms, release ~360 ms: follows syllables through a smooth curve.
-      energy = follow(energy, raw, dt, 0.09, 0.36);
-      // Slow level for displacement and wave speed: swells over phrases rather than pumping on every syllable.
-      level = follow(level, energy, dt, 0.28, 0.65);
-      for (let k = 0; k < BIN_COUNT; k++)
-        specBytes[k] = Math.round(clamp(analysis.spectrum[k]!, 0, 1) * 255);
+      // ~85 ms to swell, ~240 ms to settle, eased at both ends: on real speech it trails the level by ~65 ms, inside what reads as in sync.
+      spring(swell, raw, dt, 25, 9);
+      const height = Math.max(0, swell.value);
+      pace = follow(pace, height, dt, 0.1, 0.35);
+      let sum = 0;
+      let moment = 0;
+      for (let k = 0; k < BIN_COUNT; k++) {
+        const v = clamp(analysis.spectrum[k]!, 0, 1);
+        specBytes[k] = Math.round(v * 255);
+        sum += v;
+        moment += v * k;
+      }
+      // Speech centroids sit around 0.25..0.55 of the bin range; stretch that to 0..1. Held at the last tone in silence.
+      if (sum > 1)
+        tone = follow(
+          tone,
+          clamp((moment / sum / (BIN_COUNT - 1) - 0.25) / 0.3, 0, 1),
+          dt,
+          0.25,
+          0.25,
+        );
 
       undT += dt * cur.undRate;
-      jitT += dt * cur.jitRate * (1 + (inputs.reducedMotion ? 0 : 0.5 * energy));
+      jitT += dt * cur.jitRate * voicePace(inputs.reducedMotion ? 0 : pace, VOICE_JIT_SURGE);
       const sharedPhase = 0.6 * gnoise(3.3, undT * 0.22) + 0.35 * gnoise(7.1, jitT * 0.3);
       updateSwells(now);
       writeField(undT, jitT, now);
-      updateModes(dt, level);
+      updateModes(dt, pace);
       breathPhase += (dt * TAU) / cur.breathPeriod;
       const breath = Math.sin(breathPhase) * cur.breathAmp;
       crackT = (crackT + dt * cur.crackRate) % 1000;
@@ -443,12 +479,16 @@ export const createSpectrumRenderer: RendererFactory = (canvas, initial) => {
       gl.uniform3fv(u.col, cur.cols);
       gl.uniform1f(u.count, cur.count);
       gl.uniform1f(u.spread, cur.spread);
-      gl.uniform1f(u.bright, cur.bright * (1 + 0.08 * energy));
+      gl.uniform1f(u.bright, cur.bright * (1 + 0.08 * height));
       gl.uniform1f(u.crackle, cur.crackle);
       gl.uniform1f(u.crackT, crackT);
       gl.uniform1f(u.spark, cur.spark);
       gl.uniform1f(u.und, cur.und);
-      gl.uniform1f(u.kScale, cur.kScale);
+      gl.uniform1f(
+        u.kScale,
+        cur.kScale *
+          (1 + cur.voiceDrive * TONE_DENSITY * (2 * tone - 1) * (inputs.reducedMotion ? 0 : 1)),
+      );
       gl.uniform1f(u.ripple, cur.ripple);
       gl.uniform1f(u.breath, breath);
       gl.uniform1f(u.flicker, cur.flicker);
@@ -457,7 +497,7 @@ export const createSpectrumRenderer: RendererFactory = (canvas, initial) => {
       gl.uniform1f(u.phase, sharedPhase);
       gl.uniform1f(u.crkFreq, cur.crkFreq);
       gl.uniform3fv(u.mode, modeArr);
-      gl.uniform1f(u.energy, level);
+      gl.uniform1f(u.energy, height);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     },
   };

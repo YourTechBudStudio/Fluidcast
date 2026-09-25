@@ -9,9 +9,9 @@ export const BIN_COUNT = 48;
  * Each visual runs its own followers on `raw × its state's gain`, as its mock did, so the shape of a fade belongs to the visual.
  */
 export interface Analysis {
-  /** Instantaneous 0..1 level from the source, before any smoothing. */
+  /** Instantaneous 0..1 level from the source, before any smoothing: 0 in the gaps between words, near 1 on stressed syllables. */
   readonly raw: number;
-  /** Smoothed 0..1 spectrum: neighbour blur, then a critically damped spring per bin (6 rad/s up, 2.8 rad/s down). */
+  /** Smoothed 0..1 spectrum: neighbour blur, then a critically damped spring per bin (12 rad/s up, 5 rad/s down). */
   readonly spectrum: Float32Array;
   /** Advances the spectrum to `now` (a `requestAnimationFrame` timestamp). Idempotent within a frame. */
   update(now: number): void;
