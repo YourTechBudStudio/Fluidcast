@@ -4,9 +4,9 @@
 
 Core accepts caller-owned conversation history, system instructions, tool definitions, and speaker profiles. It generates through Effect's provider-neutral `LanguageModel` service and asks the model for a JSON array of **speak** and **tool-call** actions rather than native tool calls, allowing speech and multiple tool requests in one response. The provider and API (for example, OpenAI Chat Completions or Responses) are integration configuration supplied as a layer, not something Core targets.
 
-Core parses that output incrementally into an Effect-native action stream and assigns action IDs itself. It stores neither those IDs nor conversation history. Generation and parsing failures surface to the harness, which owns recovery.
+Core parses that output incrementally into an Effect-native action stream and assigns action IDs itself. It stores neither those IDs nor conversation history. Generation and parsing failures surface to the harness, which owns recovery. Output that is not valid JSON fails the generation; a tool call that does not match its tool's schema becomes a tool error the model can correct.
 
-Tool results and queued key-value context accompany subsequent conversation input. XML-style envelopes and TypeScript-style schema descriptions are the intended prompting direction; exact formats remain open. There is no model-generated end action, and runtime error actions belong to the harness.
+Each tool appears to the model as its own action type, described through TypeScript-style schema descriptions. Tool guidelines are collected into one fixed rules section of the system prompt, while cross-tool and pacing rules belong to Core; application instructions add to these sections and never replace them. Tool results, tool-supplied per-iteration context, and queued key-value context accompany subsequent input in XML-style envelopes, keeping the system prompt stable for caching. There is no model-generated end action, and runtime error actions belong to the harness.
 
 ## Speech and TTS
 

@@ -8,6 +8,12 @@ The harness must be notified of connection loss so it can freeze cursor advancem
 
 On reconnection, the client can request a cursor reset and resume playback rather than reconstructing the exact amount of audio heard. Applications always supply actual playback and own error presentation.
 
+## Tools and signals
+
+Tools that need the user, such as Show and Ask, run on the backend and wait for the client. Each execution has its own identity, and the client's typed commands to a running tool carry it, so stale replies from an earlier execution are rejected. Clients import tool schemas from the tool packages; the Client SDK only carries commands.
+
+The Harness exports two derived signals as pure functions over session state, which the Client SDK makes subscribable. **Presentation** (thinking, speaking, or idle) drives the player. **Attention** (working, needs you, idle, or error) tells applications whether the user is needed, independently of Away; see the [interaction model](../product/interaction-model.md). Stepping away and resuming are commands.
+
 ## Audio
 
 The client can observe queued actions for prefetch, but only a harness play instruction authorizes playback. This visibility never authorizes early tool execution.
@@ -16,4 +22,4 @@ The harness resolves action IDs to content for Core TTS; Core does not maintain 
 
 If requested audio is not fully cached, only that action's in-flight prefetch is canceled and a fresh live-streaming request is used. Other downloads continue. Partial-download reuse and built-in playback are out of scope initially. Applications handle browser-specific concerns such as autoplay authorization.
 
-See [harness lifecycle](harness-lifecycle.md) for pause, interruption, and recovery semantics. Exact routes, transport messages, and cache retention policies remain later design work.
+See [harness lifecycle](harness-lifecycle.md) for Away, interruption, and recovery semantics. Exact routes, transport messages, and cache retention policies remain later design work.

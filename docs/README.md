@@ -5,14 +5,15 @@ These documents capture product intent, architectural scope, and consequential d
 ## Product: purpose and experience
 
 - [Overview](product/overview.md): Use cases, goals, and scope.
-- [Interaction model](product/interaction-model.md): Player controls and recovery expectations.
+- [Interaction model](product/interaction-model.md): Player controls, questions, attention, and recovery expectations.
+- [Writing instructions](product/writing-instructions.md): Shaping an experience through application instructions.
 
 ## Architecture: ownership and decisions
 
 - [Overview](architecture/overview.md): SDK responsibilities and integration boundaries.
 - [Core SDK](architecture/core-sdk.md): Stateless action generation and speech synthesis.
 - [Harness lifecycle](architecture/harness-lifecycle.md): Execution, continuation, interruption, and recovery.
-- [Tools and agents](architecture/tools-and-agents.md): Tool policies and agent pools.
+- [Tools and agents](architecture/tools-and-agents.md): The tool contract, initial tools, and agent pools.
 - [Client integration](architecture/client-integration.md): Connection, playback, and audio boundaries.
 
 ## ADRs: durable rationale

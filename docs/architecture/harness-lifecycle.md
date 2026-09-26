@@ -8,27 +8,33 @@ An **iteration** is one generation call. An **agentic turn** begins with user in
 
 ## Normal continuation
 
-After generation and playback finish, with the player neither paused nor disconnected:
+After generation and playback finish, with the user present and connected:
 
-| Outstanding work                                        | Harness behavior                                                                                                        |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| A blocking tool is unfinished                           | Wait for its final completion, even if other results are ready.                                                         |
-| Eligible results or enabled progress updates are queued | Batch briefly, then submit them with queued context in another iteration. Other nonblocking tools may still be running. |
-| Tools are running, but no eligible responses are queued | Wait; an empty playback queue does not mean the turn is complete.                                                       |
-| No tools or eligible responses remain                   | Finish the agentic turn and await user input.                                                                           |
+| Outstanding work                                        | Harness behavior                                                                                                   |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| A blocking tool is unfinished                           | Wait for its final completion. Hold other results to submit with it, and drop progress updates.                    |
+| Eligible results are queued                             | Batch briefly, then submit them with queued context in another iteration. Other nonblocking tools may still run.   |
+| Tools are running, but no eligible responses are queued | Wait; an empty playback queue does not mean the turn is complete. A progress update, if one arrives, is submitted. |
+| No tools or eligible responses remain                   | Finish the agentic turn and await user input.                                                                      |
 
-A successful response-free tool can finish the turn without another iteration. The harness assembles input from user messages, tool responses, and queued key-value context. Context alone does not trigger continuation.
+Progress updates exist to fill silence. Each stands alone, so one arriving while anything is playing or generating is dropped rather than queued. While a tool call is pending, the user must interrupt before sending a message.
+
+A successful response-free tool can finish the turn without another iteration. The harness assembles input from user messages, tool responses, and queued key-value context. Context alone does not trigger continuation. A session can begin from starting input: an optional message and labeled context supplied by the application.
 
 ## Playback and history
 
-Pause or disconnection freezes cursor advancement, not running tools; their results queue. Back moves to the previous speak action without reverse execution or automatic visual restoration. Forward replay executes only replay-enabled tools. Next advances the cursor by one position, with intervening tools handled normally.
+Disconnection freezes cursor advancement, not running tools; their results queue. Back moves to the previous speak action without reverse execution or automatic visual restoration. Forward replay executes only replay-enabled tools. Next advances the cursor by one position, with intervening tools handled normally.
 
-Interruption stops current presentation and generation, trims history after the cursor, and requests cancellation of unfinished tools without waiting for cleanup. The current speak action remains in history even if partially heard. Already-received eligible results are retained; unfinished calls are reported as canceled, and their late results are ignored.
+Interruption stops current presentation and generation and trims history after the cursor, but running tools continue and their results remain eligible ([ADR 0008](../adrs/0008-presentation-controls-never-cancel-background-work.md)). The current speak action remains in history even if partially heard. Interrupts are ignored while a blocking tool is open.
 
-Rewinding and interrupting may intentionally erase evidence of earlier tool execution, including its cancellation notice. No rollback or evidence-preservation mechanism is required initially.
+Rewinding and interrupting may intentionally erase generated actions that never took effect. No rollback or evidence-preservation mechanism is required initially.
+
+## Away
+
+**Away** holds presentation while work continues. The cursor passes instant actions but stops at the next speak without playing it, and progress updates are dropped. Once every outstanding tool has returned, the harness generates the next response so resuming is immediate. The user can step away at any moment, including while a question is open. A session created Away waits for the user to start it by resuming.
 
 ## Failures and retry
 
 Generation or parsing failures become harness-generated **error** actions after valid buffered actions. These are runtime events, not model-generated conversation content. The application owns their presentation. Explicit retry continues from retained history and queued inputs rather than replaying executed work; it does not cancel running tools.
 
-Tool failures complete their invocations and follow the declared response policy. TTS or playback failure leaves the cursor in place for application-directed retry, skip, or interruption.
+Tool errors complete their invocations and follow the declared response policy. Tool faults halt the conversation without further generation until the user acts; no automatic recovery is attempted. TTS or playback failure leaves the cursor in place for application-directed retry, skip, or interruption.
