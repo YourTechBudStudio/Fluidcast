@@ -11,6 +11,6 @@ The single-session conversation authority: the action log, the cursor, playback 
 
 - Action status and phase are derived from the log, the cursor and generation state, never stored on actions.
 - One lock serialises commands, generation appends and subscription changes. Every event is applied with `reduce` and delivered inside that lock, so the session and every client fold agree by construction.
-- The log changes only by append, or by trimming after the cursor on interrupt.
+- The log changes only by append, or by trimming actions that have not taken effect (on interrupt or halt). Tool outcomes enter it only when submitted to the model; until then they are session state (`executions`, `pendingResults`).
 - Stale acknowledgements are rejected by `playbackId`, and `PlaybackFinished` is ignored while nobody is subscribed.
 - Errors carry identifiers only, never conversation content.
