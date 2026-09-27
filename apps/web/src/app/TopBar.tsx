@@ -1,5 +1,5 @@
 import { useAtom } from '@effect/atom-react';
-import { TextAlignStart } from 'lucide-react';
+import { PanelRight, TextAlignStart, Undo2 } from 'lucide-react';
 
 import { Button, Kbd, RadioMenu } from '../ui';
 import { VISUAL_IDS, VISUAL_NAMES, VisualSwatch } from '../visuals';
@@ -11,7 +11,20 @@ const VISUAL_OPTIONS = VISUAL_IDS.map((id) => ({
   icon: <VisualSwatch id={id} />,
 }));
 
-export function TopBar() {
+const icon = { size: 16, strokeWidth: 1.8, 'aria-hidden': true } as const;
+
+export interface TopBarProps {
+  /** Back presents the previous line again; unavailable when there is none. */
+  readonly back: { readonly available: boolean; readonly onBack: () => void };
+  /** The Show panel: pressed while open; unavailable until there has been a Show. */
+  readonly show: {
+    readonly open: boolean;
+    readonly available: boolean;
+    readonly onToggle: () => void;
+  };
+}
+
+export function TopBar({ back, show }: TopBarProps) {
   const [visual, setVisual] = useAtom(visualAtom);
   const [transcriptOpen, setTranscriptOpen] = useAtom(transcriptOpenAtom);
   return (
@@ -24,6 +37,20 @@ export function TopBar() {
         Fluidcast
       </div>
       <div className="ml-auto flex items-center gap-1.5">
+        <Button
+          tone="ghost"
+          aria-label="Back"
+          aria-keyshortcuts="B"
+          unavailable={!back.available}
+          className="text-sm"
+          icon={<Undo2 {...icon} />}
+          onClick={back.onBack}
+        >
+          <span className="max-sm:hidden">Back</span>
+          <span className="max-sm:hidden">
+            <Kbd>B</Kbd>
+          </span>
+        </Button>
         <RadioMenu
           label="Visual"
           value={visual}
@@ -38,11 +65,26 @@ export function TopBar() {
         />
         <Button
           tone="ghost"
+          aria-label="Show"
+          aria-pressed={show.open}
+          aria-keyshortcuts="S"
+          unavailable={!show.available}
+          className="text-sm"
+          icon={<PanelRight {...icon} />}
+          onClick={show.onToggle}
+        >
+          <span className="max-sm:hidden">Show</span>
+          <span className="max-sm:hidden">
+            <Kbd>S</Kbd>
+          </span>
+        </Button>
+        <Button
+          tone="ghost"
           aria-label="Transcript"
           aria-pressed={transcriptOpen}
           aria-keyshortcuts="E"
           className="text-sm"
-          icon={<TextAlignStart size={16} strokeWidth={1.8} aria-hidden />}
+          icon={<TextAlignStart {...icon} />}
           onClick={() => setTranscriptOpen(!transcriptOpen)}
         >
           <span className="max-sm:hidden">Transcript</span>

@@ -11,35 +11,45 @@ const files = readdirSync(root, { recursive: true }).filter((file) => /\.tsx?$/.
 
 /**
  * Which modules each module may import, always through the target's `index.ts`.
- * `client` owns the page's Client SDK instance and transport; `ui` and `visuals` stay product-agnostic.
+ * `client` owns the page's Client SDK instance and transport; `tools` renders and presents tools without knowing the
+ * conversation; `ui` and `visuals` stay product-agnostic.
  */
 const ALLOWED = {
-  app: ['client', 'conversation', 'playback', 'visuals', 'ui'],
+  app: ['client', 'conversation', 'playback', 'visuals', 'tools', 'ui'],
   client: [],
-  conversation: ['client', 'playback', 'visuals', 'ui'],
+  conversation: ['client', 'playback', 'visuals', 'tools', 'ui'],
   playback: ['client', 'ui'],
+  tools: ['ui'],
   visuals: ['ui'],
   ui: [],
 };
 
 const modules = Object.keys(ALLOWED);
 
-function importsOf(file) {
+/** A file's import specifiers: static imports and re-exports, and dynamic `import()`s. */
+function specifiersOf(file) {
   const text = readFileSync(path.join(root, file), 'utf8');
   const { errors, module } = parseSync(file, text);
   assert.deepEqual(errors, [], `${file}: failed to parse`);
-  return [
-    ...module.staticImports.map((entry) => entry.moduleRequest.value),
-    ...module.staticExports.flatMap((entry) =>
-      entry.entries.flatMap((exported) => exported.moduleRequest?.value ?? []),
-    ),
-    ...module.dynamicImports.map(({ moduleRequest }) =>
+  return {
+    static: [
+      ...module.staticImports.map((entry) => entry.moduleRequest.value),
+      ...module.staticExports.flatMap((entry) =>
+        entry.entries.flatMap((exported) => exported.moduleRequest?.value ?? []),
+      ),
+    ],
+    dynamic: module.dynamicImports.map(({ moduleRequest }) =>
       text
         .slice(moduleRequest.start, moduleRequest.end)
         .trim()
         .replace(/^['"`]|['"`]$/g, ''),
     ),
-  ];
+  };
+}
+
+function importsOf(file) {
+  const { static: statics, dynamic } = specifiersOf(file);
+  return [...statics, ...dynamic];
 }
 
 function resolve(file, specifier) {
@@ -85,6 +95,35 @@ test('modules import each other only through index.ts, and only along allowed ed
         path.join(to, 'index.ts'),
         `${file}: private import ${specifier}; ${to} publishes only ${to}/index.ts`,
       );
+    }
+  }
+});
+
+test('the tool packages are imported only through their pure ./schema entry', () => {
+  // A tool package's root is its backend factory; only `./schema` is safe for the browser.
+  const toolPackage = /^@yourtechbudstudio\/fluidcast-tool-[^/]+/;
+  for (const file of files) {
+    for (const specifier of importsOf(file)) {
+      if (!toolPackage.test(specifier)) continue;
+      assert.match(
+        specifier,
+        /^@yourtechbudstudio\/fluidcast-tool-[^/]+\/schema$/,
+        `${file}: imports ${specifier}; web code may import a tool package only through /schema`,
+      );
+    }
+  }
+});
+
+test('mermaid loads lazily: only through a dynamic import inside tools', () => {
+  const mermaid = (specifier) => specifier === 'mermaid' || specifier.startsWith('mermaid/');
+  for (const file of files) {
+    const { static: statics, dynamic } = specifiersOf(file);
+    assert.ok(
+      !statics.some(mermaid),
+      `${file}: imports mermaid statically; load it with import() so it stays out of the main bundle`,
+    );
+    if (dynamic.some(mermaid)) {
+      assert.equal(file.split(path.sep)[0], 'tools', `${file}: only tools may load mermaid`);
     }
   }
 });

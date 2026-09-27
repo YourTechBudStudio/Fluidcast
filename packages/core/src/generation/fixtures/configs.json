@@ -1,0 +1,42 @@
+{
+  "one-speaker-no-instructions": {
+    "instructions": "",
+    "speakers": [
+      {
+        "id": "host",
+        "name": "Ada",
+        "personality": "Warm and precise."
+      }
+    ]
+  },
+  "one-speaker-instructions": {
+    "instructions": "  Teach the listener about tides.\nKeep it short.  ",
+    "speakers": [
+      {
+        "id": "host",
+        "name": "Ada",
+        "personality": "Warm and precise."
+      }
+    ]
+  },
+  "several-speakers": {
+    "instructions": "Discuss compilers.",
+    "speakers": [
+      {
+        "id": "host",
+        "name": "Ada",
+        "personality": "Warm and precise."
+      },
+      {
+        "id": "guest",
+        "name": "Grace",
+        "personality": "Dry humour."
+      },
+      {
+        "id": "critic",
+        "name": "Linus",
+        "personality": "Blunt."
+      }
+    ]
+  }
+}

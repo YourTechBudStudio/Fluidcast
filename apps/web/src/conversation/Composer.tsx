@@ -15,7 +15,10 @@ export interface ComposerProps {
 
 type Action = { readonly id: string; readonly el: ReactNode; readonly label: string };
 
-/** The text box and the one or two buttons that fit the moment: Send, Interrupt, Retry, or Retry clip. */
+/**
+ * The text box and the one or two buttons that fit the moment: Send, Interrupt, Retry, or Retry clip. Contents only:
+ * the dock around it owns the surface.
+ */
 export function Composer({ mode, onSend, onInterrupt, onRetry, onRetryClip }: ComposerProps) {
   const [text, setText] = useState('');
   const box = useRef<HTMLTextAreaElement>(null);
@@ -122,10 +125,7 @@ export function Composer({ mode, onSend, onInterrupt, onRetry, onRetryClip }: Co
     : 'Controls unavailable while disconnected';
 
   return (
-    <form
-      onSubmit={(event) => event.preventDefault()}
-      className="mx-auto max-w-170 rounded-lg border border-line/42 bg-elevated/42 shadow-soft backdrop-blur-xl backdrop-saturate-130 transition-colors duration-(--duration-surface) ease-expo focus-within:border-blue/45"
-    >
+    <form onSubmit={(event) => event.preventDefault()}>
       <div className="flex flex-wrap items-end gap-2 py-2 pr-2 pl-4.5 max-sm:pl-3.5">
         <textarea
           ref={box}

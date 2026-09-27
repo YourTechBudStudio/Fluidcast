@@ -2,12 +2,12 @@ import { Effect, FiberMap, Stream } from 'effect';
 
 import type { SpeechError } from '@yourtechbudstudio/fluidcast-core/speech';
 import type { SessionState, SpeechNotFound } from '@yourtechbudstudio/fluidcast-harness/protocol';
-import { currentAction } from '@yourtechbudstudio/fluidcast-harness/protocol';
+import { currentAction, presentedPosition } from '@yourtechbudstudio/fluidcast-harness/protocol';
 
 import type { Transport, TransportError } from '../transport.ts';
 import type { AudioStore } from './store.ts';
 
-/** How many speaks after the cursor are prefetched. */
+/** How many speaks after the presented one are prefetched. */
 export const prefetchWindow = 3;
 
 /**
@@ -33,14 +33,14 @@ export const makeAudio = (transport: Transport['Service'], store: AudioStore) =>
       Stream.runCollect(transport.speech(actionId)).pipe(Effect.map(concat));
 
     /**
-     * Fits cache and downloads to the state: prefetches the next speaks after the cursor as soon as
-     * they are known, keeps the speak at the cursor, and cancels or evicts everything else (played,
-     * trimmed, or no longer in the log).
+     * Fits cache and downloads to the state: prefetches the next speaks after the presented position
+     * (the cursor, or a replayed line) as soon as they are known, keeps the presented speak, and
+     * cancels or evicts everything else (played, trimmed, or no longer in the log).
      */
     const reconcile = (state: SessionState) =>
       Effect.gen(function* () {
         const ahead = state.actions
-          .slice(state.cursor + 1)
+          .slice(presentedPosition(state) + 1)
           .filter((action) => action.type === 'speak')
           .slice(0, prefetchWindow)
           .map((action) => action.id as string);

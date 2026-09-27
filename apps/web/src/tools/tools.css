@@ -1,0 +1,170 @@
+/* Show and Ask styles that Tailwind utilities cannot express: rendered Markdown and Mermaid output, the rendering
+   skeleton, and the Ask options' entrance. Ported from the mocks. */
+
+/* ---------- Markdown Shows: a calm reading column in the player's type system ---------- */
+.show-prose {
+  max-width: 68ch;
+  font-size: 16.5px;
+  line-height: 1.65;
+  color: var(--color-fg-muted);
+}
+.show-prose > * + * {
+  margin-top: 1em;
+}
+.show-prose h1,
+.show-prose h2,
+.show-prose h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: var(--color-fg);
+  line-height: 1.25;
+}
+.show-prose h1 {
+  font-size: 1.7em;
+}
+.show-prose h2 {
+  font-size: 1.35em;
+}
+.show-prose h3 {
+  font-size: 1.1em;
+}
+.show-prose * + h2,
+.show-prose * + h3 {
+  margin-top: 1.6em;
+}
+.show-prose strong {
+  font-weight: 600;
+  color: var(--color-fg);
+}
+.show-prose a {
+  color: var(--color-blue);
+  text-decoration: underline;
+  text-decoration-color: rgb(138 173 244 / 40%);
+  text-underline-offset: 3px;
+}
+.show-prose ol,
+.show-prose ul {
+  padding-left: 1.3em;
+}
+.show-prose ol {
+  list-style: decimal;
+}
+.show-prose ul {
+  list-style: disc;
+}
+.show-prose li + li {
+  margin-top: 0.4em;
+}
+.show-prose li::marker {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--color-fg-subtle);
+}
+.show-prose :not(pre) > code {
+  padding: 0.12em 0.4em;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.84em;
+  color: var(--color-cyan);
+  background: rgb(145 215 227 / 9%);
+}
+.show-prose pre {
+  overflow-x: auto;
+  padding: 14px 18px;
+  border: 1px solid rgb(91 96 120 / 35%);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-fg);
+  background: rgb(20 22 34 / 55%);
+}
+.show-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.93em;
+}
+.show-prose th {
+  padding: 0 12px 8px 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+  color: var(--color-fg-subtle);
+}
+.show-prose td {
+  padding: 9px 12px 9px 0;
+  border-top: 1px solid rgb(91 96 120 / 28%);
+}
+.show-prose blockquote {
+  padding: 4px 0 4px 18px;
+  border-left: 2px solid var(--color-violet);
+  font-family: var(--font-display);
+  font-size: 1.05em;
+  font-weight: 300;
+  color: var(--color-fg);
+}
+.show-prose img {
+  max-width: 100%;
+  border-radius: var(--radius-md);
+}
+
+/* ---------- Mermaid Shows: the diagram scales to fit the body ---------- */
+.show-diagram {
+  height: 100%;
+  min-height: 260px;
+}
+/* On phones the diagram shrinks to whatever room the sheet has. */
+.show-fit .show-diagram {
+  min-height: 0;
+}
+.show-diagram svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0 auto;
+}
+
+/* ---------- Rendering skeleton ---------- */
+@keyframes shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -20% 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(
+    100deg,
+    rgb(91 96 120 / 18%) 30%,
+    rgb(145 215 227 / 16%) 50%,
+    rgb(91 96 120 / 18%) 70%
+  );
+  background-size: 300% 100%;
+  animation: shimmer 1.8s var(--ease-expo) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
+/* ---------- Ask options: a short stagger when a question lands ---------- */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.rise-in {
+  animation: rise-in var(--duration-surface) var(--ease-expo) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rise-in {
+    animation: none;
+  }
+}

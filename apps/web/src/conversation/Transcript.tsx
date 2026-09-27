@@ -1,8 +1,29 @@
-import { CircleAlert, Ellipsis, Square, User } from 'lucide-react';
+import { useAtomValue, useAtomSet } from '@effect/atom-react';
+import {
+  CircleAlert,
+  CircleHelp,
+  Ellipsis,
+  OctagonX,
+  Square,
+  TriangleAlert,
+  User,
+} from 'lucide-react';
 import { type CSSProperties, type ReactNode, useEffect, useRef } from 'react';
 
+import type { ShowFormat, ShowInput } from '@yourtechbudstudio/fluidcast-tool-show/schema';
+
+import {
+  AskCard,
+  AskCardTitle,
+  FORMAT_NODE,
+  FormatIcon,
+  ShowBodyView,
+  ShowCard,
+  ShowCardTitle,
+} from '../tools';
 import { Chip, useReducedMotion } from '../ui';
 import { SPEAKER_TONES, type TimelineRow } from './presentation';
+import { bodyOf, showPanelAtom, showRenderAtom } from './shows';
 
 /** Every action up to the cursor as one timeline row. The raw action type sits on the right of each row. */
 export function Transcript({
@@ -44,6 +65,7 @@ export function Transcript({
               row={row}
               first={i === 0}
               last={i === rows.length - 1}
+              visible={visible}
             />
           ))
         )}
@@ -56,10 +78,13 @@ function TimelineItem({
   row,
   first,
   last,
+  visible,
 }: {
   readonly row: TimelineRow;
   readonly first: boolean;
   readonly last: boolean;
+  /** The transcript layer is showing: miniatures may mount. */
+  readonly visible: boolean;
 }) {
   switch (row.kind) {
     case 'user':
@@ -147,6 +172,72 @@ function TimelineItem({
           </p>
         </Row>
       );
+    case 'show':
+      return (
+        <Row
+          node={<Node kind="show" format={row.input.format} failed={row.failure !== null} />}
+          first={first}
+          last={last}
+        >
+          <Head type={`tool_call · ${row.handle}`}>
+            <ShowCardTitle input={row.input} failure={row.failure} corrects={row.corrects} />
+          </Head>
+          <ShowRowCard
+            handle={row.handle}
+            input={row.input}
+            failure={row.failure}
+            visible={visible}
+          />
+        </Row>
+      );
+    case 'ask':
+      return (
+        <Row
+          node={<Node kind="ask" current={row.state === 'live'} />}
+          first={first}
+          last={last}
+          current={row.state === 'live'}
+        >
+          <Head type={`tool_call · ${row.handle}`}>
+            <AskCardTitle input={row.input} state={row.state} />
+          </Head>
+          <AskCard input={row.input} answer={row.answer} />
+        </Row>
+      );
+    case 'invalidCall':
+      return (
+        <Row node={<Node kind="invalid" />} first={first} last={last}>
+          <Head type={`tool_call · ${row.handle}`}>
+            <span className="font-semibold text-amber">Invalid tool call</span>
+            <code className="rounded-[6px] bg-scrim/40 px-1.5 py-px font-mono text-xs text-fg-muted">
+              {row.tool}
+            </code>
+          </Head>
+          {row.error !== null && (
+            <p className="text-[14.5px] text-fg-muted">
+              {row.error}{' '}
+              {row.correction !== null && (
+                <span className="text-fg-subtle">
+                  {row.correction === 'sent'
+                    ? 'Sent back to the model to correct.'
+                    : 'Going back to the model to correct.'}
+                </span>
+              )}
+            </p>
+          )}
+        </Row>
+      );
+    case 'faulted':
+      return (
+        <Row node={<Node kind="faulted" />} first={first} last={last} turn>
+          <Head type="tool_faulted">
+            <span className="font-semibold text-red">Stopped: a tool failed</span>
+          </Head>
+          <p className="rounded-md border border-red/25 bg-red/6 px-3.5 py-2.5 text-[14.5px] text-fg-muted">
+            {row.message} Nothing more will be said. Restart the backend to begin again.
+          </p>
+        </Row>
+      );
     case 'pending':
       return (
         <Row node={<Node kind="pending" />} first={first} last={last} pending>
@@ -156,6 +247,36 @@ function TimelineItem({
         </Row>
       );
   }
+}
+
+/** A Show's card. Clicking its miniature reopens this exact Show in the panel; nothing runs or reports again. */
+function ShowRowCard({
+  handle,
+  input,
+  failure,
+  visible,
+}: {
+  readonly handle: string;
+  readonly input: ShowInput;
+  readonly failure: string | null;
+  readonly visible: boolean;
+}) {
+  const setPanel = useAtomSet(showPanelAtom);
+  return (
+    <ShowCard
+      input={input}
+      failure={failure}
+      active={visible}
+      miniature={<Miniature handle={handle} input={input} />}
+      onOpen={() => setPanel({ open: true, handle })}
+    />
+  );
+}
+
+/** Reads the Show's one shared render; mounted only once the miniature is near the viewport. */
+function Miniature({ handle, input }: { readonly handle: string; readonly input: ShowInput }) {
+  const body = bodyOf(useAtomValue(showRenderAtom(handle)));
+  return <ShowBodyView input={input} body={body} />;
 }
 
 function Row({
@@ -206,16 +327,30 @@ function Type({ children }: { readonly children: string }) {
   return <span className="ml-auto pt-0 font-mono text-[11px] text-fg-subtle/75">{children}</span>;
 }
 
-type NodeKind = 'you' | 'speaker' | 'continued' | 'interrupted' | 'failed' | 'pending';
+type NodeKind =
+  | 'you'
+  | 'speaker'
+  | 'continued'
+  | 'interrupted'
+  | 'failed'
+  | 'pending'
+  | 'show'
+  | 'ask'
+  | 'invalid'
+  | 'faulted';
 
 function Node({
   kind,
   initial,
   current = false,
+  format = 'markdown',
+  failed = false,
 }: {
   readonly kind: NodeKind;
   readonly initial?: string;
   readonly current?: boolean;
+  readonly format?: ShowFormat;
+  readonly failed?: boolean;
 }) {
   const base =
     'relative z-10 grid size-[30px] place-items-center rounded-full font-display text-xs font-semibold';
@@ -274,6 +409,42 @@ function Node({
           className={`${base} bg-violet/12 text-violet shadow-[0_0_0_1px_rgb(198_160_246/0.4)] motion-safe:animate-breathe`}
         >
           <Ellipsis size={14} strokeWidth={1.8} />
+        </span>
+      );
+    case 'show':
+      return (
+        <span
+          aria-hidden
+          className={`${base} ${failed ? 'bg-red/10 text-red/80 shadow-[0_0_0_1px_rgb(237_135_150/0.35)]' : FORMAT_NODE[format]}`}
+        >
+          <FormatIcon format={format} size={13} />
+        </span>
+      );
+    case 'ask':
+      return (
+        <span
+          aria-hidden
+          className={`${base} bg-cyan/12 text-cyan ${current ? 'shadow-[0_0_0_1px_var(--color-cyan),0_0_14px_rgb(145_215_227/0.5)]' : 'shadow-[0_0_0_1px_rgb(145_215_227/0.4)]'}`}
+        >
+          <CircleHelp size={14} strokeWidth={1.8} />
+        </span>
+      );
+    case 'invalid':
+      return (
+        <span
+          aria-hidden
+          className={`${base} bg-amber/10 text-amber shadow-[0_0_0_1px_rgb(245_169_127/0.35)]`}
+        >
+          <TriangleAlert size={13} strokeWidth={1.8} />
+        </span>
+      );
+    case 'faulted':
+      return (
+        <span
+          aria-hidden
+          className={`${base} bg-red/16 text-red shadow-[0_0_0_1px_rgb(237_135_150/0.55)]`}
+        >
+          <OctagonX size={14} strokeWidth={1.8} />
         </span>
       );
   }

@@ -4,10 +4,10 @@ import { describe, it } from 'node:test';
 import { Cause, Effect, Exit, Layer, Stream } from 'effect';
 import { LanguageModel } from 'effect/unstable/ai';
 
-import type { Speak } from '../actions/index.ts';
 import { InvalidAction, MalformedOutput } from './errors.ts';
 import { generate } from './generate.ts';
 import { parseActions } from './parser.ts';
+import type { ToolCallDraft } from './tools.ts';
 
 const speakerIds = new Set(['host', 'guest']);
 
@@ -19,9 +19,11 @@ const output = JSON.stringify([
   line('host', 'Unicode é and a newline\nin between.'),
 ]);
 
+const tool = (name: string, input: Record<string, unknown>) => ({ type: name, ...input });
+
 /** Parses `chunks` and returns the emitted actions (without IDs) and the failure, if any. */
 const run = async (chunks: ReadonlyArray<string>) => {
-  const emitted: Array<Omit<Speak, 'id'>> = [];
+  const emitted: Array<object> = [];
   const exit = await Effect.runPromiseExit(
     parseActions(Stream.fromIterable(chunks), { speakerIds }).pipe(
       Stream.runForEach((action) =>
@@ -95,15 +97,62 @@ describe('parseActions', () => {
   });
 
   it('fails a schema-mismatched element with its index after earlier actions were emitted', async () => {
-    const { emitted, error } = await run([
-      JSON.stringify([
-        line('host', 'First.'),
-        line('host', 'Second.'),
-        { type: 'shout', text: 'x' },
-      ]),
+    const invalid = [{ type: 'speak', speaker: 'host' }, 42, [], null, { type: 7 }, { text: 'x' }];
+    for (const element of invalid) {
+      const { emitted, error } = await run([
+        JSON.stringify([line('host', 'First.'), line('host', 'Second.'), element]),
+      ]);
+      assert.deepEqual(emitted, [line('host', 'First.'), line('host', 'Second.')]);
+      assert.deepEqual(error, new InvalidAction({ index: 2, reason: 'schema' }));
+    }
+  });
+
+  it('emits any other type as a tool-call draft without its `type` and `call`', async () => {
+    const actions = await Effect.runPromise(
+      parseActions(
+        Stream.make(
+          JSON.stringify([{ type: 'shout', call: 'call_9', text: 'x', nested: { a: [1] } }]),
+        ),
+        { speakerIds },
+      ).pipe(Stream.runCollect),
+    );
+    assert.equal(actions.length, 1);
+    const [draft] = actions;
+    assert.ok(draft?.type === 'tool_call');
+    assert.deepEqual({ ...draft, id: undefined }, {
+      type: 'tool_call',
+      id: undefined,
+      tool: 'shout',
+      input: { text: 'x', nested: { a: [1] } },
+    } satisfies Omit<ToolCallDraft, 'id'> & { id: undefined });
+    assert.equal('handle' in draft, false);
+  });
+
+  it('emits identical mixed speak and tool actions however the output is chunked', async () => {
+    const mixed = JSON.stringify([
+      line('host', 'Look at this {"type": "speak"} ].'),
+      tool('show', { format: 'markdown', content: '# A\n[x](y) "q" ]}' }),
+      line('guest', 'Now answer.'),
+      tool('ask', { kind: 'choice', question: 'Which?', options: [{ label: 'A' }] }),
     ]);
-    assert.deepEqual(emitted, [line('host', 'First.'), line('host', 'Second.')]);
-    assert.deepEqual(error, new InvalidAction({ index: 2, reason: 'schema' }));
+    const expected = [
+      line('host', 'Look at this {"type": "speak"} ].'),
+      {
+        type: 'tool_call',
+        tool: 'show',
+        input: { format: 'markdown', content: '# A\n[x](y) "q" ]}' },
+      },
+      line('guest', 'Now answer.'),
+      {
+        type: 'tool_call',
+        tool: 'ask',
+        input: { kind: 'choice', question: 'Which?', options: [{ label: 'A' }] },
+      },
+    ];
+    for (let cut = 0; cut <= mixed.length; cut++) {
+      assert.deepEqual(await run(splitAt(mixed, [cut])), { emitted: expected, error: undefined });
+    }
+    assert.deepEqual(await run([...mixed]), { emitted: expected, error: undefined });
   });
 
   it('fails a missing or misplaced separator at the index where an element was expected', async () => {
@@ -164,6 +213,7 @@ describe('generate', () => {
           { id: 'guest', name: 'Guest', personality: 'Dry.' },
         ],
         history: [],
+        tools: [],
       }).pipe(Stream.runCollect, Effect.provide(model)),
     );
     assert.deepEqual(

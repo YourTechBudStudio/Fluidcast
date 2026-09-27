@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { Cause, Effect, Exit, Fiber, Layer, Queue, Ref, Stream, type Scope } from 'effect';
+import { Cause, Effect, Exit, Fiber, Layer, Queue, Ref, Schema, Scope, Stream } from 'effect';
 import { LanguageModel, type Prompt, type Response } from 'effect/unstable/ai';
 
 import type { Action, Speak } from '@yourtechbudstudio/fluidcast-core/actions';
@@ -11,13 +11,18 @@ import {
   type SynthesizeRequest,
 } from '@yourtechbudstudio/fluidcast-core/speech';
 
+import { ToolError, ToolFault, type Tool, type ToolPolicy } from '../tool.ts';
 import type { SessionConfig } from './config.ts';
 import {
   CommandRejected,
+  currentAction,
   derivePhase,
+  effectiveActions,
+  ExecutionId,
   PlaybackId,
   reduce,
   SpeechNotFound,
+  ToolCommandRejected,
   type Command,
   type SessionState,
   type SubscriptionMessage,
@@ -36,6 +41,7 @@ const config: SessionConfig = {
     },
   ],
   speechFormat: 'opus',
+  tools: [],
 };
 
 const line = (speaker: string, text: string) => JSON.stringify({ type: 'speak', speaker, text });
@@ -114,31 +120,37 @@ const fakeSynthesizer = SpeechSynthesizer.of({
 });
 
 /** Polls `effect` until `done` holds, failing after a second. */
-const eventually = <A>(effect: Effect.Effect<A>, done: (value: A) => boolean) =>
-  Effect.gen(function* () {
+const eventually = <A>(effect: Effect.Effect<A>, done: (value: A) => boolean) => {
+  const origin = new Error('condition not reached within a second');
+  return Effect.gen(function* () {
     for (let attempt = 0; attempt < 1000; attempt++) {
       const value = yield* effect;
       if (done(value)) return value;
       yield* Effect.sleep('1 millis');
     }
-    return yield* Effect.die('condition not reached within a second');
+    return yield* Effect.die(origin);
+  });
+};
+
+/** Builds a session with a scripted model and the given tools, plus helpers. */
+const setupWith = (tools: SessionConfig['tools']) =>
+  Effect.gen(function* () {
+    const { model, turn } = yield* scriptedModel;
+    const { service, state } = yield* make({ ...config, tools }).pipe(
+      Effect.provide(
+        Layer.merge(
+          Layer.succeed(LanguageModel.LanguageModel, model),
+          Layer.succeed(SpeechSynthesizer, fakeSynthesizer),
+        ),
+      ),
+    );
+    const command = (next: Command) => service.command(next);
+    const waitFor = (done: (state: SessionState) => boolean) => eventually(state, done);
+    return { session: service, state, command, waitFor, turn };
   });
 
-/** Builds a session with a scripted model, plus helpers. */
-const setup = Effect.gen(function* () {
-  const { model, turn } = yield* scriptedModel;
-  const { service, state } = yield* make(config).pipe(
-    Effect.provide(
-      Layer.merge(
-        Layer.succeed(LanguageModel.LanguageModel, model),
-        Layer.succeed(SpeechSynthesizer, fakeSynthesizer),
-      ),
-    ),
-  );
-  const command = (next: Command) => service.command(next);
-  const waitFor = (done: (state: SessionState) => boolean) => eventually(state, done);
-  return { session: service, state, command, waitFor, turn };
-});
+/** Builds a speech-only session with a scripted model, plus helpers. */
+const setup = setupWith([]);
 
 /** A running subscription that records every message it receives. */
 const subscribe = (session: { subscribe: () => Stream.Stream<SubscriptionMessage> }) =>
@@ -670,3 +682,1008 @@ const playThrough = (
       yield* command({ _tag: 'PlaybackFinished', playbackId: request.playbackId });
     }
   });
+
+// Tools
+
+/** Drives a fake execution: reply, fail with a `ToolError`, fault, or die. */
+const Reply = Schema.Union([
+  Schema.Struct({ reply: Schema.String }),
+  Schema.Struct({ fail: Schema.String }),
+  Schema.Struct({ fault: Schema.String }),
+  Schema.Struct({ die: Schema.Boolean }),
+]);
+type Reply = typeof Reply.Type;
+
+const Labelled = Schema.Struct({ label: Schema.String });
+const Replied = Schema.Struct({ label: Schema.String, reply: Schema.String });
+
+/** A fake tool that runs until a client command tells it how to end. */
+const fakeTool = (
+  name: string,
+  policy: ToolPolicy,
+  overrides: Partial<Tool<{ readonly label: string }, typeof Replied.Type, Reply>> = {},
+): Tool<{ readonly label: string }, typeof Replied.Type, Reply> => ({
+  name,
+  input: Labelled,
+  guidelines: [`Use \`${name}\`.`],
+  result: Replied,
+  renderResult: ({ label, reply }) => `${label}: ${reply}`,
+  policy,
+  command: () => Reply,
+  run: (input, context) =>
+    Effect.flatMap(context.awaitCommand, (command) => {
+      if ('reply' in command) return Effect.succeed({ label: input.label, reply: command.reply });
+      if ('fail' in command) return Effect.fail(new ToolError({ message: command.fail }));
+      if ('fault' in command) return Effect.fail(new ToolFault({ reason: command.fault }));
+      return Effect.die('tool bug');
+    }),
+  ...overrides,
+});
+
+/** Like Show: non-blocking, only errors reach the model, replayed. */
+const view = fakeTool('view', { blocking: false, response: 'error', replay: true });
+/** Like Ask: blocking, every outcome reaches the model, not replayed. */
+const pick = fakeTool('pick', { blocking: true, response: 'all', replay: false });
+/** Non-blocking, every outcome reaches the model. */
+const fetch = fakeTool('fetch', { blocking: false, response: 'all', replay: false });
+/** Non-blocking, the model reads nothing. */
+const quiet = fakeTool('quiet', { blocking: false, response: 'none', replay: false });
+/** Accepts only a reply equal to its input's label: the command schema depends on the input. */
+const echo = fakeTool(
+  'echo',
+  { blocking: false, response: 'all', replay: false },
+  { command: (input) => Schema.Struct({ reply: Schema.Literal(input.label) }) },
+);
+const brokenCommand = fakeTool(
+  'broken_command',
+  { blocking: false, response: 'all', replay: false },
+  {
+    command: () => {
+      throw new Error('bug in command');
+    },
+  },
+);
+const brokenRun = fakeTool(
+  'broken_run',
+  { blocking: false, response: 'all', replay: false },
+  {
+    run: () => {
+      throw new Error('bug in run');
+    },
+  },
+);
+const brokenRender = fakeTool(
+  'broken_render',
+  { blocking: false, response: 'all', replay: false },
+  {
+    run: (input) => Effect.succeed({ label: input.label, reply: 'x' }),
+    renderResult: () => {
+      throw new Error('bug in renderResult');
+    },
+  },
+);
+
+const allTools = [view, pick, fetch, quiet, echo, brokenCommand, brokenRun, brokenRender];
+
+const call = (tool: string, label: string, extra: object = {}) =>
+  JSON.stringify({ type: tool, label, ...extra });
+
+const toolSetup = setupWith(allTools);
+
+type Setup = Effect.Success<typeof toolSetup>;
+
+/** The open execution of `handle`, once it is open. */
+const executionOf = (ctx: Setup, handle: string) =>
+  ctx
+    .waitFor((current) => current.executions.some((execution) => execution.handle === handle))
+    .pipe(
+      Effect.map((current) => {
+        const execution = current.executions.find((entry) => entry.handle === handle);
+        assert.ok(execution);
+        return execution;
+      }),
+    );
+
+/** Sends `payload` to the open execution of `handle`. */
+const reply = (ctx: Setup, handle: string, payload: Reply) =>
+  Effect.gen(function* () {
+    const { executionId } = yield* executionOf(ctx, handle);
+    yield* ctx.command({ _tag: 'ToolCommand', handle, executionId, payload });
+    return executionId;
+  });
+
+/** Acknowledges the outstanding playback. */
+const finishLine = (ctx: Setup) =>
+  Effect.gen(function* () {
+    const current = yield* ctx.waitFor((state) => state.playback !== null);
+    assert.ok(current.playback);
+    yield* ctx.command({ _tag: 'PlaybackFinished', playbackId: current.playback.playbackId });
+  });
+
+/** Once generation settles, acknowledges playback until nothing is presented, including replayed lines. */
+const playAll = (ctx: Setup) =>
+  Effect.gen(function* () {
+    yield* ctx.waitFor((current) => current.generation !== 'running');
+    for (;;) {
+      const current = yield* ctx.state;
+      if (currentAction(current)?.type !== 'speak') return;
+      yield* finishLine(ctx);
+    }
+  });
+
+/** Sends a message and scripts the complete reply. */
+const exchange = (ctx: Setup, text: string, elements: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const model = yield* ctx.turn;
+    yield* ctx.command({ _tag: 'SendMessage', text });
+    yield* model.say(`[${elements.join(',')}]`);
+    yield* model.end;
+    yield* ctx.waitFor((current) => current.generation !== 'running');
+    return model;
+  });
+
+/** Scripts the next model call's complete reply, without sending anything. */
+const scriptNext = (ctx: Setup, elements: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const model = yield* ctx.turn;
+    yield* Effect.forkChild(
+      Effect.andThen(model.prompt, Effect.andThen(model.say(`[${elements.join(',')}]`), model.end)),
+    );
+    return model;
+  });
+
+/** The last user message of a prompt. */
+const lastUser = (prompt: ReadonlyArray<{ role: string; text: string }>) =>
+  prompt.findLast((message) => message.role === 'user')?.text;
+
+const eventTags = (messages: ReadonlyArray<SubscriptionMessage>) =>
+  messages.map((message) => message._tag);
+
+/** Asserts that every prefix of the subscription's events from `from` up to `until` (exclusive) derives a phase other than `idle`. */
+const assertNeverIdle = (
+  messages: ReadonlyArray<SubscriptionMessage>,
+  from: number,
+  until: number,
+) => {
+  for (let end = from; end < until; end++) {
+    const phase = derivePhase(fold(messages.slice(0, end + 1)));
+    assert.notEqual(
+      phase,
+      'idle',
+      `a false idle after ${eventTags(messages.slice(from, end + 1)).join(', ')}`,
+    );
+  }
+};
+
+describe('Session tools', () => {
+  it('starts a call only after the cursor reaches it, and only once its call is effective', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [
+          line('host', 'Look.'),
+          call('view', 'a'),
+          line('host', 'See?'),
+        ]);
+        assert.deepEqual((yield* ctx.state).executions, []);
+
+        yield* finishLine(ctx);
+        yield* subscription.waitFor(
+          (message): message is Extract<SubscriptionMessage, { _tag: 'ToolStarted' }> =>
+            message._tag === 'ToolStarted',
+        );
+        yield* subscription.waitFor(isPlaybackRequest);
+        const messages = yield* subscription.messages;
+        const started = messages.findIndex((message) => message._tag === 'ToolStarted');
+        // The cursor moved onto the call, the call started, then the cursor moved on to the speak.
+        assert.deepEqual(eventTags(messages.slice(started - 1, started + 3)), [
+          'CursorMoved',
+          'ToolStarted',
+          'CursorMoved',
+          'PlaybackRequested',
+        ]);
+        const before = fold(messages.slice(0, started));
+        assert.equal(currentAction(before)?.type, 'tool_call');
+        assert.ok(effectiveActions(before).some((action) => action.type === 'tool_call'));
+
+        // A call appended at the cursor is reached by its append, with no extra move.
+        yield* playAll(ctx);
+        yield* reply(ctx, 'call_1', { reply: 'ok' });
+        yield* ctx.waitFor((current) => derivePhase(current) === 'idle');
+        yield* exchange(ctx, 'More', [call('view', 'b')]);
+        yield* executionOf(ctx, 'call_2');
+        yield* assertAgreement(subscription, ctx.state);
+        const later = yield* subscription.messages;
+        const appended = later.findLastIndex((message) => message._tag === 'ActionAppended');
+        assert.deepEqual(eventTags(later.slice(appended, appended + 3)), [
+          'ActionAppended',
+          'ToolStarted',
+          'CursorMoved',
+        ]);
+        yield* assertAgreement(subscription, ctx.state);
+
+        // A late subscriber's snapshot carries the open execution.
+        const second = yield* subscribe(ctx.session);
+        const [snapshot] = yield* second.messages;
+        assert.ok(snapshot?._tag === 'Snapshot');
+        assert.deepEqual(snapshot.state.executions, (yield* ctx.state).executions);
+        assert.equal(snapshot.state.executions[0]?.handle, 'call_2');
+      }),
+    ));
+
+  it('delivers commands, and rejects stale and invalid ones', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [call('echo', 'yes')]);
+        yield* scriptNext(ctx, [line('host', 'Done.')]);
+        const execution = yield* executionOf(ctx, 'call_1');
+        const send = (handle: string, executionId: string, payload: Schema.Json) =>
+          rejection(
+            ctx.command({
+              _tag: 'ToolCommand',
+              handle,
+              executionId: ExecutionId.make(executionId),
+              payload,
+            }),
+          );
+
+        assert.deepEqual(
+          yield* send('call_1', 'unknown', { reply: 'yes' }),
+          new ToolCommandRejected({ executionId: 'unknown', reason: 'stale' }),
+        );
+        assert.deepEqual(
+          yield* send('call_9', execution.executionId, { reply: 'yes' }),
+          new ToolCommandRejected({ executionId: execution.executionId, reason: 'stale' }),
+        );
+        // The schema depends on the input: only this call's label is accepted.
+        assert.deepEqual(
+          yield* send('call_1', execution.executionId, { reply: 'no' }),
+          new ToolCommandRejected({ executionId: execution.executionId, reason: 'invalid' }),
+        );
+        assert.equal((yield* ctx.state).executions.length, 1);
+
+        yield* reply(ctx, 'call_1', { reply: 'yes' });
+        const done = yield* ctx.waitFor((current) => current.executions.length === 0);
+        assert.deepEqual(
+          done.pendingResults.map((result) => result.type),
+          ['tool_result'],
+        );
+        assert.deepEqual(
+          yield* send('call_1', execution.executionId, { reply: 'yes' }),
+          new ToolCommandRejected({ executionId: execution.executionId, reason: 'stale' }),
+        );
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('rejects every command to a tool without a command schema as invalid', () =>
+    run(
+      Effect.gen(function* () {
+        const { command: _command, ...rest } = view;
+        const ctx = yield* setupWith([rest]);
+        yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [call('view', 'a')]);
+        const execution = yield* executionOf(ctx, 'call_1');
+        assert.deepEqual(
+          yield* rejection(
+            ctx.command({
+              _tag: 'ToolCommand',
+              handle: 'call_1',
+              executionId: execution.executionId,
+              payload: { reply: 'x' },
+            }),
+          ),
+          new ToolCommandRejected({ executionId: execution.executionId, reason: 'invalid' }),
+        );
+      }),
+    ));
+
+  it('honours each response policy', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [
+          call('view', 'shown'),
+          call('view', 'broken'),
+          call('fetch', 'got'),
+          call('fetch', 'lost'),
+          call('quiet', 'q1'),
+          call('quiet', 'q2'),
+        ]);
+        const next = yield* scriptNext(ctx, []);
+        yield* reply(ctx, 'call_1', { reply: 'rendered' });
+        yield* reply(ctx, 'call_2', { fail: 'bad diagram' });
+        yield* reply(ctx, 'call_3', { reply: 'data' });
+        yield* reply(ctx, 'call_4', { fail: 'offline' });
+        yield* reply(ctx, 'call_5', { reply: 'unheard' });
+        yield* reply(ctx, 'call_6', { fail: 'unheard' });
+        // Every outcome goes in one submission, in completion order.
+        assert.equal(
+          lastUser(yield* next.prompt),
+          [
+            '<tool_error call="call_2" tool="view">bad diagram</tool_error>',
+            '<tool_result call="call_3" tool="fetch">got: data</tool_result>',
+            '<tool_error call="call_4" tool="fetch">offline</tool_error>',
+          ].join('\n'),
+        );
+        const done = yield* ctx.waitFor((current) => derivePhase(current) === 'idle');
+        assert.deepEqual(actionTypes(done).slice(-3), [
+          'tool_errored',
+          'tool_result',
+          'tool_errored',
+        ]);
+      }),
+    ));
+
+  it('submits an invalid call as a tool error the model reads', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [
+          line('host', 'Watch.'),
+          JSON.stringify({ type: 'shwo', call: 'call_7', label: 'x' }),
+          JSON.stringify({ type: 'view', label: 3 }),
+        ]);
+        const next = yield* scriptNext(ctx, [line('host', 'Fixed.')]);
+        yield* finishLine(ctx);
+        const prompt = yield* next.prompt;
+        // The model's own `call` is replaced by the handle the Harness assigned.
+        assert.equal(
+          prompt.at(-2)?.text,
+          JSON.stringify([
+            { type: 'speak', speaker: 'host', text: 'Watch.' },
+            { type: 'shwo', call: 'call_1', label: 'x' },
+            { type: 'view', call: 'call_2', label: 3 },
+          ]),
+        );
+        const errors = lastUser(prompt)?.split('\n') ?? [];
+        assert.equal(
+          errors[0],
+          '<tool_error call="call_1" tool="shwo">Unknown action type "shwo". Available types: speak, view, pick, fetch, quiet, echo, broken_command, broken_run, broken_render.</tool_error>',
+        );
+        assert.match(errors[1] ?? '', /^<tool_error call="call_2" tool="view">Invalid `view`: /);
+        yield* playAll(ctx);
+        yield* ctx.waitFor((current) => derivePhase(current) === 'idle');
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('turns an unknown action type into a tool error in a speech-only session', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* setupWith([]);
+        yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [JSON.stringify({ type: 'shout', text: 'x' })]);
+        const next = yield* scriptNext(ctx, [line('host', 'Sorry.')]);
+        assert.equal(
+          lastUser(yield* next.prompt),
+          '<tool_error call="call_1" tool="shout">Unknown action type "shout". Available types: speak.</tool_error>',
+        );
+        yield* playAll(ctx);
+        const done = yield* ctx.waitFor((current) => derivePhase(current) === 'idle');
+        assert.deepEqual(actionTypes(done), ['user_message', 'tool_call', 'tool_errored', 'speak']);
+      }),
+    ));
+
+  it('continues only once playback finishes, and never folds to a false idle', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [call('fetch', 'a'), line('host', 'While that runs.')]);
+        const next = yield* scriptNext(ctx, [line('host', 'Thanks.')]);
+        yield* reply(ctx, 'call_1', { reply: 'ready' });
+        yield* ctx.waitFor((current) => current.pendingResults.length === 1);
+        // Still speaking: nothing is submitted mid-line.
+        yield* Effect.sleep('300 millis');
+        assert.equal((yield* ctx.state).pendingResults.length, 1);
+        yield* finishLine(ctx);
+        assert.equal(
+          lastUser(yield* next.prompt),
+          '<tool_result call="call_1" tool="fetch">a: ready</tool_result>',
+        );
+        yield* playAll(ctx);
+        yield* ctx.waitFor((current) => derivePhase(current) === 'idle');
+        yield* assertAgreement(subscription, ctx.state);
+        const messages = yield* subscription.messages;
+        assertNeverIdle(messages, 1, messages.length - 1);
+        assert.equal(derivePhase(fold(messages)), 'idle');
+      }),
+    ));
+
+  it('never folds to a false idle for a reply ending in a tool call or an invalid call', () =>
+    run(
+      Effect.gen(function* () {
+        for (const final of [call('view', 'end'), JSON.stringify({ type: 'nope' })]) {
+          const ctx = yield* toolSetup;
+          const subscription = yield* subscribe(ctx.session);
+          yield* exchange(ctx, 'Hi', [line('host', 'Here.'), final]);
+          yield* scriptNext(ctx, []);
+          yield* finishLine(ctx);
+          if (final.includes('view')) yield* reply(ctx, 'call_1', { reply: 'ok' });
+          yield* ctx.waitFor(
+            (current) => derivePhase(current) === 'idle' && current.executions.length === 0,
+          );
+          const messages = yield* subscription.messages;
+          assertNeverIdle(messages, 1, messages.length - 1);
+        }
+      }),
+    ));
+
+  it('holds every outcome while a blocking tool is open, and ignores Interrupt meanwhile', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [call('pick', 'q'), call('fetch', 'f')]);
+        const next = yield* scriptNext(ctx, []);
+        yield* reply(ctx, 'call_2', { reply: 'fast' });
+        yield* ctx.waitFor((current) => current.pendingResults.length === 1);
+        yield* Effect.sleep('300 millis');
+        const holding = yield* ctx.state;
+        assert.equal(holding.generation, 'idle');
+        assert.equal(derivePhase(holding), 'waiting');
+
+        yield* ctx.command({ _tag: 'Interrupt' });
+        assert.deepEqual(yield* ctx.state, holding);
+
+        yield* reply(ctx, 'call_1', { reply: 'answer' });
+        assert.equal(
+          lastUser(yield* next.prompt),
+          [
+            '<tool_result call="call_2" tool="fetch">f: fast</tool_result>',
+            '<tool_result call="call_1" tool="pick">q: answer</tool_result>',
+          ].join('\n'),
+        );
+        yield* ctx.waitFor((current) => derivePhase(current) === 'idle');
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('submits an answer given during narration after the last line', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [
+          line('host', 'Question.'),
+          call('pick', 'q'),
+          line('host', 'Take your time.'),
+        ]);
+        const next = yield* scriptNext(ctx, []);
+        yield* finishLine(ctx);
+        yield* reply(ctx, 'call_1', { reply: 'early' });
+        const answered = yield* ctx.waitFor((current) => current.executions.length === 0);
+        assert.equal(derivePhase(answered), 'speaking');
+        yield* Effect.sleep('300 millis');
+        assert.equal((yield* ctx.state).generation, 'idle');
+        assert.equal((yield* ctx.state).pendingResults.length, 1);
+        yield* finishLine(ctx);
+        assert.equal(
+          lastUser(yield* next.prompt),
+          '<tool_result call="call_1" tool="pick">q: early</tool_result>',
+        );
+      }),
+    ));
+
+  it('accepts Interrupt while waiting on a non-blocking tool, then holds its outcome for the next message', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [call('view', 'v')]);
+        assert.equal(derivePhase(yield* ctx.state), 'waiting');
+        yield* ctx.command({ _tag: 'Interrupt' });
+        assert.equal(derivePhase(yield* ctx.state), 'idle');
+
+        // The execution continues (ADR 0008); its late outcome waits for the user.
+        yield* reply(ctx, 'call_1', { fail: 'late' });
+        yield* ctx.waitFor((current) => current.pendingResults.length === 1);
+        yield* Effect.sleep('300 millis');
+        const waiting = yield* ctx.state;
+        assert.equal(waiting.generation, 'idle');
+        assert.equal(derivePhase(waiting), 'idle');
+
+        const model = yield* exchange(ctx, 'Next', []);
+        assert.equal(
+          lastUser(yield* model.prompt),
+          [
+            '<notice>You were interrupted during your last line.</notice>',
+            '<tool_error call="call_1" tool="view">late</tool_error>',
+            '<user_message>Next</user_message>',
+          ].join('\n'),
+        );
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('submits nothing without a subscriber until one subscribes', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const first = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [call('fetch', 'f')]);
+        yield* Fiber.interrupt(first.fiber);
+        const model = yield* ctx.turn;
+        yield* reply(ctx, 'call_1', { reply: 'meanwhile' });
+        yield* ctx.waitFor((current) => current.pendingResults.length === 1);
+        yield* Effect.sleep('300 millis');
+        assert.equal((yield* ctx.state).generation, 'idle');
+
+        yield* subscribe(ctx.session);
+        assert.equal(
+          lastUser(yield* model.prompt),
+          '<tool_result call="call_1" tool="fetch">f: meanwhile</tool_result>',
+        );
+      }),
+    ));
+
+  it('submits pending outcomes with a retry', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        yield* subscribe(ctx.session);
+        const model = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'SendMessage', text: 'Hi' });
+        yield* model.say(`[${call('fetch', 'f')},`);
+        yield* reply(ctx, 'call_1', { reply: 'kept' });
+        yield* model.fail;
+        const failed = yield* ctx.waitFor((current) => current.generation === 'failed');
+        assert.equal(derivePhase(failed), 'generationFailed');
+        assert.equal(failed.pendingResults.length, 1);
+
+        const retry = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'RetryGeneration' });
+        assert.equal(
+          lastUser(yield* retry.prompt),
+          [
+            '<notice>Your previous response was cut off after the last line. Continue from there.</notice>',
+            '<tool_result call="call_1" tool="fetch">f: kept</tool_result>',
+          ].join('\n'),
+        );
+      }),
+    ));
+
+  it('never reuses a trimmed handle', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [line('host', 'One.'), call('view', 'trimmed')]);
+        yield* ctx.command({ _tag: 'Interrupt' });
+        assert.deepEqual(actionTypes(yield* ctx.state), ['user_message', 'speak', 'interrupted']);
+        yield* exchange(ctx, 'Again', [call('view', 'kept')]);
+        const current = yield* ctx.state;
+        const calls = current.actions.filter((action) => action.type === 'tool_call');
+        assert.deepEqual(
+          calls.map((action) => action.handle),
+          ['call_2'],
+        );
+      }),
+    ));
+});
+
+describe('Session halt', () => {
+  /** Asserts the session halted with `error`, trimmed, and now rejects everything. */
+  const assertHalted = (ctx: Setup, error: { tag: string; message: string }) =>
+    Effect.gen(function* () {
+      const halted = yield* ctx.waitFor((current) => derivePhase(current) === 'halted');
+      assert.deepEqual(halted.actions.at(-1)?.type === 'tool_faulted' && halted.actions.at(-1), {
+        ...(halted.actions.at(-1) as object),
+        error,
+      });
+      assert.equal(halted.cursor, halted.actions.length);
+      assert.equal(halted.generation, 'idle');
+      assert.ok(!actionTypes(halted).includes('generation_failed'));
+      for (const command of [
+        { _tag: 'SendMessage', text: 'Hi' },
+        { _tag: 'Interrupt' },
+        { _tag: 'RetryGeneration' },
+        { _tag: 'Back' },
+      ] as const) {
+        assert.deepEqual(
+          yield* rejection(ctx.command(command)),
+          new CommandRejected({ command: command._tag, phase: 'halted' }),
+        );
+      }
+      assert.deepEqual(
+        yield* rejection(
+          ctx.command({
+            _tag: 'ToolCommand',
+            handle: 'call_1',
+            executionId: ExecutionId.make('x'),
+            payload: {},
+          }),
+        ),
+        new CommandRejected({ command: 'ToolCommand', phase: 'halted' }),
+      );
+      yield* ctx.command({ _tag: 'PlaybackFinished', playbackId: PlaybackId.make('x') });
+      yield* Effect.sleep('300 millis');
+      assert.deepEqual(yield* ctx.state, halted);
+      return halted;
+    });
+
+  it('halts on a ToolFault: trims, stops generation, and drops later outcomes', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        const model = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'SendMessage', text: 'Hi' });
+        yield* model.say(
+          `[${call('view', 'v')},${call('fetch', 'f')},${line('host', 'One.')},${line('host', 'Two.')}`,
+        );
+        yield* ctx.waitFor((current) => current.actions.length === 5);
+        yield* reply(ctx, 'call_1', { fault: 'disk' });
+        const halted = yield* assertHalted(ctx, {
+          tag: 'ToolFault',
+          message: 'The view tool failed (disk).',
+        });
+        assert.deepEqual(actionTypes(halted), [
+          'user_message',
+          'tool_call',
+          'tool_call',
+          'speak',
+          'tool_faulted',
+        ]);
+        const exit = yield* model.exit;
+        assert.ok(exit !== undefined && Exit.hasInterrupts(exit));
+        // The other execution keeps running, but commands to it are rejected and nothing it
+        // produces is recorded.
+        assert.equal(halted.executions.length, 1);
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('halts on a defect in run', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [call('view', 'v')]);
+        yield* reply(ctx, 'call_1', { die: true });
+        yield* assertHalted(ctx, {
+          tag: 'UnexpectedError',
+          message: 'The view tool failed unexpectedly.',
+        });
+      }),
+    ));
+
+  for (const tool of ['broken_command', 'broken_run'] as const) {
+    it(`halts on a throw from ${tool === 'broken_command' ? 'command(input)' : 'constructing run'}, reached during generation`, () =>
+      run(
+        Effect.gen(function* () {
+          const ctx = yield* toolSetup;
+          yield* subscribe(ctx.session);
+          const model = yield* ctx.turn;
+          yield* ctx.command({ _tag: 'SendMessage', text: 'Hi' });
+          yield* model.say(`[${call(tool, 'x')}`);
+          yield* assertHalted(ctx, {
+            tag: 'UnexpectedError',
+            message: `The ${tool} tool failed unexpectedly.`,
+          });
+        }),
+      ));
+
+    it(`halts on a throw from ${tool === 'broken_command' ? 'command(input)' : 'constructing run'}, reached on PlaybackFinished`, () =>
+      run(
+        Effect.gen(function* () {
+          const ctx = yield* toolSetup;
+          yield* subscribe(ctx.session);
+          yield* exchange(ctx, 'Hi', [line('host', 'First.'), call(tool, 'x')]);
+          yield* finishLine(ctx);
+          yield* assertHalted(ctx, {
+            tag: 'UnexpectedError',
+            message: `The ${tool} tool failed unexpectedly.`,
+          });
+        }),
+      ));
+  }
+
+  it('halts on a blocking tool that interrupts itself while the session is open', () =>
+    run(
+      Effect.gen(function* () {
+        const quitter = fakeTool(
+          'quitter',
+          { blocking: true, response: 'all', replay: false },
+          { run: () => Effect.interrupt },
+        );
+        const ctx = yield* setupWith([quitter]);
+        yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [call('quitter', 'x')]);
+        const halted = yield* assertHalted(ctx, {
+          tag: 'UnexpectedError',
+          message: 'The quitter tool failed unexpectedly.',
+        });
+        assert.deepEqual(halted.executions, []);
+      }),
+    ));
+
+  it('halts on a defect even when the cause also holds a ToolError', () =>
+    run(
+      Effect.gen(function* () {
+        for (const response of ['none', 'error', 'all'] as const) {
+          const mixed = fakeTool(
+            'mixed',
+            { blocking: false, response, replay: false },
+            {
+              run: () =>
+                Effect.failCause(
+                  Cause.combine(
+                    Cause.fail(new ToolError({ message: 'expected' })),
+                    Cause.die('bug'),
+                  ),
+                ),
+            },
+          );
+          const ctx = yield* setupWith([mixed]);
+          yield* subscribe(ctx.session);
+          yield* exchange(ctx, 'Hi', [call('mixed', 'x')]);
+          const halted = yield* assertHalted(ctx, {
+            tag: 'UnexpectedError',
+            message: 'The mixed tool failed unexpectedly.',
+          });
+          assert.deepEqual(halted.pendingResults, [], response);
+        }
+      }),
+    ));
+
+  it('halts on a ToolFault even when the cause also holds a ToolError', () =>
+    run(
+      Effect.gen(function* () {
+        const mixed = fakeTool(
+          'mixed',
+          { blocking: false, response: 'error', replay: false },
+          {
+            run: () =>
+              Effect.failCause(
+                Cause.combine(
+                  Cause.fail(new ToolError({ message: 'expected' })),
+                  Cause.fail(new ToolFault({ reason: 'disk' })),
+                ),
+              ),
+          },
+        );
+        const ctx = yield* setupWith([mixed]);
+        yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [call('mixed', 'x')]);
+        yield* assertHalted(ctx, { tag: 'ToolFault', message: 'The mixed tool failed (disk).' });
+      }),
+    ));
+
+  it('records nothing for executions interrupted by the session scope closing', () =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const scope = yield* Scope.make();
+        const ctx = yield* Scope.provide(scope)(toolSetup);
+        yield* Scope.provide(scope)(subscribe(ctx.session));
+        yield* exchange(ctx, 'Hi', [call('pick', 'open')]);
+        yield* executionOf(ctx, 'call_1');
+        const before = yield* ctx.state;
+        yield* Scope.close(scope, Exit.void);
+        yield* Effect.sleep('50 millis');
+        const after = yield* ctx.state;
+        assert.deepEqual(after, before);
+        assert.equal(derivePhase(after), 'waiting');
+      }),
+    ));
+
+  it('halts when renderResult throws, at completion', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [call('broken_render', 'x')]);
+        const halted = yield* assertHalted(ctx, {
+          tag: 'UnexpectedError',
+          message: 'The broken_render tool failed unexpectedly.',
+        });
+        assert.deepEqual(halted.pendingResults, []);
+      }),
+    ));
+});
+
+describe('Session back and replay', () => {
+  it('moves only the replay position, and rejects Back with no earlier speak', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        assert.deepEqual(
+          yield* rejection(ctx.command({ _tag: 'Back' })),
+          new CommandRejected({ command: 'Back', phase: 'idle' }),
+        );
+        yield* exchange(ctx, 'Hi', [line('host', 'One.'), line('host', 'Two.')]);
+        assert.deepEqual(
+          yield* rejection(ctx.command({ _tag: 'Back' })),
+          new CommandRejected({ command: 'Back', phase: 'speaking' }),
+        );
+        yield* playAll(ctx);
+        const before = yield* ctx.state;
+
+        yield* ctx.command({ _tag: 'Back' });
+        const back = yield* ctx.state;
+        assert.equal(back.replay, 2);
+        assert.equal(back.cursor, before.cursor);
+        assert.deepEqual(back.actions, before.actions);
+        yield* ctx.command({ _tag: 'Back' });
+        assert.equal((yield* ctx.state).replay, 1);
+        const request = yield* subscription.waitFor(isPlaybackRequest);
+        assert.equal(request.actionId, before.actions[1]?.id);
+
+        yield* playAll(ctx);
+        const end = yield* ctx.state;
+        assert.equal(end.replay, null);
+        assert.equal(derivePhase(end), 'idle');
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('holds the frontier while generation appends during a replay, then replays the cursor speak', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [line('host', 'Old.')]);
+        yield* playAll(ctx);
+
+        const model = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'SendMessage', text: 'More' });
+        yield* model.say(`[${line('host', 'New.')}`);
+        const speaking = yield* ctx.waitFor(
+          (current) => current.playback !== null && current.cursor === 3,
+        );
+        yield* ctx.command({ _tag: 'Back' });
+        const old = (yield* ctx.state).actions[1];
+        yield* model.say(`,${line('host', 'Newer.')},${call('view', 'held')}]`);
+        yield* model.end;
+        const appended = yield* ctx.waitFor((current) => current.generation === 'idle');
+        assert.equal(appended.cursor, speaking.cursor);
+        assert.equal(appended.replay, 1);
+        assert.equal(appended.playback?.actionId, old?.id);
+        assert.deepEqual(appended.executions, []);
+
+        yield* finishLine(ctx);
+        const resumed = yield* ctx.state;
+        assert.equal(resumed.replay, null);
+        assert.equal(resumed.playback?.actionId, resumed.actions[3]?.id);
+        yield* playAll(ctx);
+        yield* executionOf(ctx, 'call_1');
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('re-executes only replay-enabled tools under new IDs, and submits a replay failure after the replay', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [
+          line('host', 'A.'),
+          call('view', 'v'),
+          call('fetch', 'f'),
+          line('host', 'B.'),
+        ]);
+        yield* finishLine(ctx);
+        const firstView = yield* reply(ctx, 'call_1', { reply: 'rendered' });
+        yield* scriptNext(ctx, []);
+        yield* reply(ctx, 'call_2', { reply: 'data' });
+        yield* playAll(ctx);
+        yield* ctx.waitFor((current) => derivePhase(current) === 'idle');
+        yield* assertAgreement(subscription, ctx.state);
+        const settled = (yield* subscription.messages).length;
+
+        yield* ctx.command({ _tag: 'Back' });
+        yield* ctx.command({ _tag: 'Back' });
+        assert.equal((yield* ctx.state).replay, 1);
+        yield* finishLine(ctx);
+        const replayed = yield* executionOf(ctx, 'call_1');
+        assert.notEqual(replayed.executionId, firstView);
+        const replaying = yield* ctx.state;
+        assert.equal(replaying.replay, 4);
+        assert.deepEqual(
+          replaying.executions.map((execution) => execution.handle),
+          ['call_1'],
+        );
+
+        const next = yield* scriptNext(ctx, []);
+        yield* reply(ctx, 'call_1', { fail: 'no longer renders' });
+        yield* ctx.waitFor((current) => current.pendingResults.length === 1);
+        yield* Effect.sleep('300 millis');
+        assert.equal((yield* ctx.state).generation, 'idle');
+        yield* finishLine(ctx);
+        // The empty reply to the first submission left no assistant message, so both
+        // submissions read as one user message.
+        assert.equal(
+          lastUser(yield* next.prompt),
+          [
+            '<tool_result call="call_2" tool="fetch">f: data</tool_result>',
+            '<tool_error call="call_1" tool="view">no longer renders</tool_error>',
+          ].join('\n'),
+        );
+        yield* ctx.waitFor((current) => derivePhase(current) === 'idle');
+        const messages = yield* subscription.messages;
+        assertNeverIdle(messages, settled, messages.length - 1);
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('never folds to a false idle while a replayed call starts and runs', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [line('host', 'A.'), call('view', 'v')]);
+        yield* finishLine(ctx);
+        yield* reply(ctx, 'call_1', { reply: 'rendered' });
+        yield* ctx.waitFor((current) => derivePhase(current) === 'idle');
+        yield* assertAgreement(subscription, ctx.state);
+        const settled = (yield* subscription.messages).length;
+
+        yield* ctx.command({ _tag: 'Back' });
+        yield* finishLine(ctx);
+        yield* executionOf(ctx, 'call_1');
+        assert.equal((yield* ctx.state).replay, null);
+        yield* reply(ctx, 'call_1', { reply: 'rendered' });
+        yield* ctx.waitFor((current) => current.executions.length === 0);
+        yield* assertAgreement(subscription, ctx.state);
+        const messages = yield* subscription.messages;
+        assertNeverIdle(messages, settled, messages.length - 1);
+        assert.equal(derivePhase(fold(messages)), 'idle');
+      }),
+    ));
+
+  it('ends a replay on Interrupt, appending nothing when the conversation was idle', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [line('host', 'One.')]);
+        yield* playAll(ctx);
+        const idle = yield* ctx.state;
+        yield* ctx.command({ _tag: 'Back' });
+        assert.equal(derivePhase(yield* ctx.state), 'speaking');
+        yield* ctx.command({ _tag: 'Interrupt' });
+        const after = yield* ctx.state;
+        assert.deepEqual(after.actions, idle.actions);
+        assert.equal(after.replay, null);
+        assert.equal(after.playback, null);
+        assert.equal(derivePhase(after), 'idle');
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('trims an unreached call at the cursor when interrupted during a replay', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [line('host', 'One.')]);
+        yield* playAll(ctx);
+        const model = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'SendMessage', text: 'More' });
+        yield* ctx.command({ _tag: 'Back' });
+        yield* model.say(`[${call('view', 'never')}]`);
+        yield* model.end;
+        const held = yield* ctx.waitFor((current) => current.generation === 'idle');
+        assert.equal(currentAction(held)?.type, 'speak');
+        assert.equal(held.actions[held.cursor]?.type, 'tool_call');
+
+        yield* ctx.command({ _tag: 'Interrupt' });
+        const after = yield* ctx.state;
+        assert.deepEqual(actionTypes(after), [
+          'user_message',
+          'speak',
+          'user_message',
+          'interrupted',
+        ]);
+        assert.deepEqual(after.executions, []);
+        assert.equal(derivePhase(after), 'idle');
+      }),
+    ));
+});

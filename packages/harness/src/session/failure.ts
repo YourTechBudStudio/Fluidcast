@@ -1,5 +1,7 @@
-import type { GenerationFailed } from '@yourtechbudstudio/fluidcast-core/actions';
+import type { GenerationFailed, ToolFaulted } from '@yourtechbudstudio/fluidcast-core/actions';
 import type { GenerationError } from '@yourtechbudstudio/fluidcast-core/generation';
+
+import type { ToolFault } from '../tool.ts';
 
 /** A defect during generation: a bug, not a provider or output failure. */
 export const unexpectedFailure = { _tag: 'UnexpectedError' } as const;
@@ -61,3 +63,12 @@ export const failureAnnotations = (
       return { error: error._tag, reason: error.reason, line: error.index + 1 };
   }
 };
+
+/**
+ * The `error` of a `tool_faulted` action: a `ToolFault`'s display-safe reason, or an unexpected
+ * defect. Built only from identifiers, never tool input, payloads or defect messages.
+ */
+export const describeFault = (tool: string, fault: ToolFault | undefined): ToolFaulted['error'] =>
+  fault === undefined
+    ? { tag: 'UnexpectedError', message: `The ${tool} tool failed unexpectedly.` }
+    : { tag: fault._tag, message: `The ${tool} tool failed (${fault.reason}).` };

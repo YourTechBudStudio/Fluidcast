@@ -10,6 +10,6 @@ Stateless action generation and speech synthesis. Core never stores action IDs o
 
 ## Rules
 
-- No JSON Schema, `response_format` or constrained decoding. The output contract is the TypeScript type rendered into the prompt from `ModelAction`.
+- No JSON Schema, `response_format` or constrained decoding. The output contract is the TypeScript type rendered into the prompt from `ModelSpeak` and the configured tools' definitions.
 - Keep the system prompt deterministic for a given config, so providers can cache the prefix.
 - Errors carry identifiers only, never conversation content, prompts, provider messages or credentials.

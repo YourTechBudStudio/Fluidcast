@@ -12,7 +12,10 @@ export const COPY: Record<StatusMoment, readonly string[]> = {
     'Gathering my thoughts…',
     'Give me a sec…',
   ],
+  mulling: ['Mulling over your answer…'],
   waiting: ['Hang on, more coming…', 'Still going, one moment…', 'Lining up the next bit…'],
+  asking: ['Over to you.'],
+  askingText: ['Take your time. I’m listening.'],
   speaking: [],
   complete: ['Your turn.', 'Over to you.', 'What next?'],
   interrupted: [
@@ -25,6 +28,8 @@ export const COPY: Record<StatusMoment, readonly string[]> = {
     'That answer broke off. Retry to continue?',
     'I dropped the thread there. Retry?',
   ],
+  // Shown only when the fault gives no message: see `haltedCopy`.
+  halted: ['A tool failed, so I stopped. Restart the backend to begin again.'],
   audioMissing: [
     'That line isn’t in the conversation anymore. Interrupt to move on?',
     'I lost that line entirely. Interrupt and ask again?',
@@ -69,4 +74,11 @@ export const COPY: Record<StatusMoment, readonly string[]> = {
 export function copyFor(moment: StatusMoment, index: number): string {
   const pool = COPY[moment];
   return pool.length === 0 ? '' : pool[index % pool.length]!;
+}
+
+/** The halted line, led by what failed when the fault says. */
+export function haltedCopy(fault: string | null): string {
+  return fault
+    ? `${fault} I stopped here. Restart the backend to begin again.`
+    : copyFor('halted', 0);
 }

@@ -1,24 +1,28 @@
 import { Effect, Schema, Stream } from 'effect';
 
-import { makeActionId, ModelAction, type Speak } from '../actions/index.ts';
+import { makeActionId, ModelSpeak, type Speak } from '../actions/index.ts';
 import { InvalidAction, MalformedOutput } from './errors.ts';
+import type { ToolCallDraft } from './tools.ts';
 
 /**
  * Parses streamed model text into actions as soon as each top-level array element closes.
  *
  * Text before the first `[` (prose or a code fence) is skipped. The stream ends successfully at
  * the matching `]` and stops pulling upstream, so trailing text is never read and an in-flight
- * provider request is cancelled rather than drained. Any element that is not valid JSON, does not
- * match the schema, or names an unknown speaker fails the stream with its index, as does a missing
- * or misplaced separator where an element was expected; actions already emitted stay valid.
+ * provider request is cancelled rather than drained. An element whose `type` is not `speak` becomes
+ * a tool-call draft, without its `type` and `call` keys and without a handle; whether it names a
+ * tool and has valid input is checked later, when the cursor reaches it. Any element that is not
+ * valid JSON, is not an object with a string `type`, is an invalid `speak`, or names an unknown
+ * speaker fails the stream with its index, as does a missing or misplaced separator where an
+ * element was expected; actions already emitted stay valid.
  */
 export const parseActions = <E, R>(
   text: Stream.Stream<string, E, R>,
   options: { readonly speakerIds: ReadonlySet<string> },
-): Stream.Stream<Speak, E | MalformedOutput | InvalidAction, R> =>
+): Stream.Stream<Speak | ToolCallDraft, E | MalformedOutput | InvalidAction, R> =>
   Stream.suspend(() => {
     const scanner = makeScanner();
-    const decode = Schema.decodeUnknownEffect(ModelAction);
+    const decodeSpeak = Schema.decodeUnknownEffect(ModelSpeak);
     return text.pipe(
       Stream.map((chunk) => scanner.push(chunk)),
       Stream.takeUntil((scanned) => scanned.closed),
@@ -36,17 +40,34 @@ export const parseActions = <E, R>(
             try: (): unknown => JSON.parse(raw),
             catch: () => new InvalidAction({ index, reason: 'json' }),
           });
-          const action = yield* decode(json).pipe(
+          const type = isPlainObject(json) ? json['type'] : undefined;
+          if (!isPlainObject(json) || typeof type !== 'string') {
+            return yield* new InvalidAction({ index, reason: 'schema' });
+          }
+          if (type !== 'speak') {
+            const { type: _type, call: _call, ...input } = json;
+            return {
+              type: 'tool_call',
+              id: makeActionId(),
+              tool: type,
+              input,
+            } satisfies ToolCallDraft;
+          }
+          const speak = yield* decodeSpeak(json).pipe(
             Effect.mapError(() => new InvalidAction({ index, reason: 'schema' })),
           );
-          if (!options.speakerIds.has(action.speaker)) {
+          if (!options.speakerIds.has(speak.speaker)) {
             return yield* new InvalidAction({ index, reason: 'unknown_speaker' });
           }
-          return { ...action, id: makeActionId() } satisfies Speak;
+          return { ...speak, id: makeActionId() } satisfies Speak;
         }),
       ),
     );
   });
+
+/** A JSON object: `JSON.parse` output that is neither an array nor null. */
+const isPlainObject = (json: unknown): json is { readonly [key: string]: Schema.Json } =>
+  typeof json === 'object' && json !== null && !Array.isArray(json);
 
 /** An element's source text, or `undefined` where the array's structure is broken at that index. */
 interface RawElement {
