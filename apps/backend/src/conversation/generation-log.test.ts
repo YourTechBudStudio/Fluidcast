@@ -51,6 +51,7 @@ const record = async (
     instructions: '',
     speakers: [{ id: 'host', name: 'Host', personality: 'Warm.' }],
     history: [],
+    tools: [],
   }).pipe(Stream.runDrain, Effect.provide(layer), Effect.ignore);
   await Effect.runPromise(
     options.interrupt === true

@@ -29,6 +29,9 @@ export const sessionLayer = (
     instructions: config.instructions,
     speakers: config.speakers,
     speechFormat,
+    // Speech-only for now: the reference setup registers Show and Ask together with the web UI
+    // that answers them.
+    tools: [],
   }).pipe(
     Layer.provide(
       config.generationLog === undefined

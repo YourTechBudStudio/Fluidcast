@@ -21,6 +21,8 @@ const pureEntries = {
   '@yourtechbudstudio/fluidcast-harness/protocol': 'packages/harness/src/session/protocol.ts',
   '@yourtechbudstudio/fluidcast-client': 'packages/client/src/index.ts',
   '@fluidcast/app-contract': 'packages/app-contract/src/index.ts',
+  '@yourtechbudstudio/fluidcast-tool-show/schema': 'packages/tool-show/src/schema.ts',
+  '@yourtechbudstudio/fluidcast-tool-ask/schema': 'packages/tool-ask/src/schema.ts',
 };
 
 /**

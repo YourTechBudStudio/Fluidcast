@@ -70,6 +70,11 @@ const commands = HttpRouter.add(
           Effect.annotateLogs({ command: error.command, phase: error.phase }),
           Effect.andThen(failureJson(error, { status: commandStatus.rejected })),
         ),
+      ToolCommandRejected: (error) =>
+        Effect.logInfo('command: tool command rejected').pipe(
+          Effect.annotateLogs({ reason: error.reason }),
+          Effect.andThen(failureJson(error, { status: commandStatus.rejected })),
+        ),
     }),
     Effect.orDie,
   ),

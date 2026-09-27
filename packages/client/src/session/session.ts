@@ -1,14 +1,17 @@
-import { Effect, FiberHandle, Option, Ref, Result, Stream, SubscriptionRef } from 'effect';
+import { Effect, FiberHandle, Option, Ref, Result, Schema, Stream, SubscriptionRef } from 'effect';
 
 import type { Speak } from '@yourtechbudstudio/fluidcast-core/actions';
 import {
   derivePhase,
   effectiveActions,
+  presentedSpeak,
   reduce,
   SpeechNotFound,
   type Command,
   type CommandRejected,
+  type ExecutionId,
   type Phase,
+  type ToolCommandRejected,
   type PlaybackId,
   type SessionState,
   type SpeakerLabel,
@@ -19,11 +22,17 @@ import type { AudioUnavailable, makeAudio, Playable } from '../audio/index.ts';
 import { TransportError, type Transport } from '../transport.ts';
 import { reconnectSchedule } from './reconnect.ts';
 
-/** What a player shows: the actions up to the cursor and the derived phase. */
+/** What a player shows: the actions up to the cursor, the derived phase, and the tool work in flight. */
 export interface ConversationView {
   readonly actions: SessionState['actions'];
   readonly phase: Phase;
   readonly speakers: ReadonlyArray<SpeakerLabel>;
+  /** Open tool executions, in start order. Each one's call is in `actions`. */
+  readonly executions: SessionState['executions'];
+  /** Completed tool outcomes the model has not read yet. They join `actions` when submitted. */
+  readonly pendingResults: SessionState['pendingResults'];
+  /** The speak being presented: at the replay position while replaying, else at the cursor. */
+  readonly presented: Speak | undefined;
 }
 
 export type Connection = 'connecting' | 'connected' | 'reconnecting' | 'superseded';
@@ -78,6 +87,9 @@ export const makeSession = (transport: Transport['Service'], audio: Audio) =>
             actions: effectiveActions(state),
             phase: derivePhase(state),
             speakers: state.speakers,
+            executions: state.executions,
+            pendingResults: state.pendingResults,
+            presented: presentedSpeak(state),
           }),
         );
         yield* audio.reconcile(state);
@@ -125,7 +137,10 @@ export const makeSession = (transport: Transport['Service'], audio: Audio) =>
               return yield* new TransportError({ reason: 'Malformed' });
             }
             const next = reduce(current, message);
-            if (message._tag === 'CursorMoved') yield* stopPlayback;
+            // The presented line changed: the player stops the old clip at once.
+            if (message._tag === 'CursorMoved' || message._tag === 'ReplayMoved') {
+              yield* stopPlayback;
+            }
             yield* project(next);
             if (message._tag === 'PlaybackRequested') {
               yield* FiberHandle.run(
@@ -153,15 +168,40 @@ export const makeSession = (transport: Transport['Service'], audio: Audio) =>
 
     const send = (command: Command) => transport.send(command);
 
+    /** A command other than `ToolCommand`, which is the only one rejected as `ToolCommandRejected`. */
+    const sendPlain = (command: Command) =>
+      send(command).pipe(
+        Effect.catchTag('ToolCommandRejected', (rejected) =>
+          Effect.die(new Error(`unexpected ${rejected._tag} for ${command._tag}`)),
+        ),
+      );
+
     return {
       view: readOnly(view),
       connection: readOnly(connection),
       playback: readOnly(playback),
-      sendMessage: (text: string) => send({ _tag: 'SendMessage', text }),
-      interrupt: () => send({ _tag: 'Interrupt' }),
-      retry: () => send({ _tag: 'RetryGeneration' }),
+      sendMessage: (text: string) => sendPlain({ _tag: 'SendMessage', text }),
+      interrupt: () => sendPlain({ _tag: 'Interrupt' }),
+      retry: () => sendPlain({ _tag: 'RetryGeneration' }),
+      back: () => sendPlain({ _tag: 'Back' }),
       finished: (playbackId: PlaybackId): Effect.Effect<void, CommandRejected | TransportError> =>
-        send({ _tag: 'PlaybackFinished', playbackId }),
+        sendPlain({ _tag: 'PlaybackFinished', playbackId }),
+      sendToolCommand: <C>(
+        schema: Schema.Codec<C, Schema.Json>,
+        execution: { readonly handle: string; readonly executionId: ExecutionId },
+        payload: C,
+      ): Effect.Effect<void, CommandRejected | ToolCommandRejected | TransportError> =>
+        Effect.flatMap(
+          // A payload its own schema cannot encode is a programming error.
+          Effect.orDie(Schema.encodeEffect(schema)(payload)),
+          (encoded) =>
+            send({
+              _tag: 'ToolCommand',
+              handle: execution.handle,
+              executionId: execution.executionId,
+              payload: encoded,
+            }),
+        ),
       playable: (actionId: string) =>
         Effect.flatMap(Ref.get(projection), (state) => playableFor(state, actionId)),
     };

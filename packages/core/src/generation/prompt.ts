@@ -1,20 +1,29 @@
-import { ModelAction, type SpeakerProfile } from '../actions/index.ts';
-import { renderTypeScript } from './render-type.ts';
+import { Schema } from 'effect';
 
-const outputType = renderTypeScript(ModelAction);
+import { ModelSpeak, type SpeakerProfile } from '../actions/index.ts';
+import { renderTypeScript } from './render-type.ts';
+import { checkTools, modelSchema, type ToolDefinition } from './tools.ts';
 
 /**
- * Builds the system prompt. It is deterministic for a given configuration, so providers can cache
- * the prefix. Examples come last and use the lead speaker's real ID so the model never copies a
- * placeholder.
+ * Builds the system prompt. It is a pure function of the configuration, so providers can cache the
+ * prefix. Examples come last and use the lead speaker's real ID so the model never copies a
+ * placeholder. With no tools, the prompt is exactly the speech-only prompt.
  */
 export const buildSystemPrompt = (options: {
   readonly instructions: string;
   readonly speakers: ReadonlyArray<SpeakerProfile>;
+  readonly tools: ReadonlyArray<ToolDefinition>;
 }): string => {
   const [lead] = options.speakers;
   if (lead === undefined) throw new Error('buildSystemPrompt requires at least one speaker');
+  checkTools(options.tools);
   const instructions = options.instructions.trim();
+  const hasTools = options.tools.length > 0;
+  const outputType = renderTypeScript(
+    Schema.Union([ModelSpeak, ...options.tools.map(modelSchema)]).annotate({
+      identifier: 'Action',
+    }),
+  );
 
   const sections = [
     [
@@ -29,7 +38,8 @@ export const buildSystemPrompt = (options: {
       ),
       '</speakers>',
     ].join('\n'),
-    ['## Rules', ...rules(lead.id)].join('\n\n'),
+    ['## Rules', ...rules(lead.id, hasTools)].join('\n\n'),
+    ...(hasTools ? [['## Tool rules', ...toolRules(options.tools)].join('\n')] : []),
     ...(instructions === '' ? [] : [`<instructions>\n${instructions}\n</instructions>`]),
     [
       '## Output format',
@@ -43,7 +53,7 @@ export const buildSystemPrompt = (options: {
   return sections.join('\n\n');
 };
 
-const rules = (lead: string): Array<string> => [
+const rules = (lead: string, hasTools: boolean): Array<string> => [
   [
     '### One continuous voice',
     'Your speaks play back to back, so together they must sound like one person talking, not a list of separate facts.',
@@ -57,13 +67,17 @@ const rules = (lead: string): Array<string> => [
     "- Use transitions and connecting words: so, but, and that's when, here's the thing.",
     '- Talk to the listener directly, and use the occasional rhetorical question to pull them in.',
     '- Avoid robotic patterns, like starting every line with the same name or the same structure.',
-    "- Use plain spoken language: no markdown, lists, code, URLs, or anything that can't be read aloud.",
+    hasTools
+      ? "- Speak text is plain spoken language: no markdown, lists, code, URLs, or anything that can't be read aloud."
+      : "- Use plain spoken language: no markdown, lists, code, URLs, or anything that can't be read aloud.",
   ].join('\n'),
   [
     '### Match depth to the request',
     '- Simple questions get quick answers, without padding.',
     '- Explanations, stories, and walkthroughs deserve the full treatment: open with a hook, build in order, and land on a payoff.',
-    "- When the listener asks for something long or detailed, deliver it. Don't ask permission or stall with questions; just begin.",
+    hasTools
+      ? '- When the listener asks for something long or detailed, deliver it rather than stalling.'
+      : "- When the listener asks for something long or detailed, deliver it. Don't ask permission or stall with questions; just begin.",
   ].join('\n'),
   [
     '### Stay accurate',
@@ -81,7 +95,22 @@ const rules = (lead: string): Array<string> => [
     '### Speakers',
     `- The lead speaker, ${lead}, answers. Other speakers chime in briefly when it fits their personality.`,
   ].join('\n'),
+  ...(hasTools ? [toolsAndPacing] : []),
 ];
+
+/** Tool-agnostic pacing rules: Core never names a tool. */
+const toolsAndPacing = [
+  '### Tools and pacing',
+  '- Besides `speak`, you can write the tool actions listed in the output format. Each takes effect when playback reaches it, in the order you wrote it.',
+  '- Speak two or three lines before a tool action, so the listener knows what is coming.',
+  '- Walk the listener through anything a tool puts in front of them.',
+  '- Never write a `call` field. The player adds one to each tool action in your earlier responses, and results refer to it as `<tool_result call="…" tool="…">` or `<tool_error call="…" tool="…">` in later input.',
+  '- When a `<tool_error>` arrives, fix what it describes and try again.',
+].join('\n');
+
+/** Each tool's guidelines as bullets, in tool order, with exact duplicates removed. */
+const toolRules = (tools: ReadonlyArray<ToolDefinition>): Array<string> =>
+  [...new Set(tools.flatMap((tool) => tool.guidelines))].map((guideline) => `- ${guideline}`);
 
 const examples = (speaker: string): Array<string> =>
   [

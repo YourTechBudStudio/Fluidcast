@@ -14,6 +14,7 @@ import {
   CommandRejected,
   SpeechNotFound,
   SubscriptionMessage,
+  ToolCommandRejected,
 } from '@yourtechbudstudio/fluidcast-harness/protocol';
 
 /** Route paths. `speech` takes the action ID as its last segment. */
@@ -38,7 +39,8 @@ export const CommandBody = Command;
 /**
  * Responses:
  * - `204`: applied (a stale `PlaybackFinished` is also applied, as a no-op);
- * - `409`: `CommandRejected` as JSON;
+ * - `409`: `CommandRejected` as JSON, or `ToolCommandRejected` for a `ToolCommand` whose execution
+ *   is no longer open or whose payload the tool does not accept;
  * - `400`: `InvalidRequest` as JSON, when the body is not a valid command.
  */
 export const commandStatus = { applied: 204, rejected: 409, invalid: 400 } as const;
@@ -46,7 +48,7 @@ export const commandStatus = { applied: 204, rejected: 409, invalid: 400 } as co
 /** The request could not be decoded. Carries no request content. */
 export class InvalidRequest extends Schema.TaggedError<InvalidRequest>()('InvalidRequest', {}) {}
 
-export const CommandFailure = Schema.Union([CommandRejected, InvalidRequest]);
+export const CommandFailure = Schema.Union([CommandRejected, ToolCommandRejected, InvalidRequest]);
 export type CommandFailure = typeof CommandFailure.Type;
 
 // GET /api/speech/:actionId

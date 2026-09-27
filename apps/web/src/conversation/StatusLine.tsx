@@ -14,6 +14,7 @@ const DOT: Record<StatusMoment, { color: string; pulse: boolean; error?: true }>
   speaking: { color: 'var(--color-blue)', pulse: false },
   held: { color: 'var(--color-fg-subtle)', pulse: false },
   generationFailed: RED,
+  halted: RED,
   audioMissing: RED,
   voiceFailed: RED,
   audioUnreachable: RED,

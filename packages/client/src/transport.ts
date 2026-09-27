@@ -6,6 +6,7 @@ import type {
   CommandRejected,
   SpeechNotFound,
   SubscriptionMessage,
+  ToolCommandRejected,
 } from '@yourtechbudstudio/fluidcast-harness/protocol';
 
 /**
@@ -28,7 +29,8 @@ export type TransportFailure = typeof TransportFailure.Type;
 
 /**
  * The connection to the application backend failed. Failures the backend reports in the SDKs' own
- * terms (`CommandRejected`, `SpeechNotFound`, `SpeechError`) are never wrapped in this. `status` is
+ * terms (`CommandRejected`, `ToolCommandRejected`, `SpeechNotFound`, `SpeechError`) are never
+ * wrapped in this. `status` is
  * the transport's status code where it has one, for diagnostics.
  */
 export class TransportError extends Schema.TaggedError<TransportError>()('TransportError', {
@@ -48,7 +50,10 @@ export class Transport extends Context.Service<
      * without `Superseded`, or failing, counts as a lost connection and the client reconnects.
      */
     readonly subscribe: () => Stream.Stream<SubscriptionMessage, TransportError>;
-    readonly send: (command: Command) => Effect.Effect<void, CommandRejected | TransportError>;
+    /** Only a `ToolCommand` can fail with `ToolCommandRejected`. */
+    readonly send: (
+      command: Command,
+    ) => Effect.Effect<void, CommandRejected | ToolCommandRejected | TransportError>;
     /** Streams the encoded audio for a speak action. */
     readonly speech: (
       actionId: string,

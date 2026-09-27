@@ -5,9 +5,12 @@ export {
   GenerationFailed,
   Interrupted,
   isModelAuthored,
-  ModelAction,
   ModelSpeak,
   Speak,
   SpeakerProfile,
+  ToolCall,
+  ToolErrored,
+  ToolFaulted,
+  ToolResult,
   UserMessage,
 } from './schema.ts';

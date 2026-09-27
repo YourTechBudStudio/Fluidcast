@@ -412,6 +412,60 @@ importers:
         specifier: 'catalog:'
         version: 7.0.2
 
+  packages/tool-ask:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.4.1
+      '@yourtechbudstudio/fluidcast-core':
+        specifier: workspace:*
+        version: link:../core
+      '@yourtechbudstudio/fluidcast-harness':
+        specifier: workspace:*
+        version: link:../harness
+      '@yourtechbudstudio/fluidcast-typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.117
+      oxfmt:
+        specifier: 'catalog:'
+        version: 0.66.0
+      oxlint:
+        specifier: 'catalog:'
+        version: 1.81.0
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+
+  packages/tool-show:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.4.1
+      '@yourtechbudstudio/fluidcast-core':
+        specifier: workspace:*
+        version: link:../core
+      '@yourtechbudstudio/fluidcast-harness':
+        specifier: workspace:*
+        version: link:../harness
+      '@yourtechbudstudio/fluidcast-typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.117
+      oxfmt:
+        specifier: 'catalog:'
+        version: 0.66.0
+      oxlint:
+        specifier: 'catalog:'
+        version: 1.81.0
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+
   packages/typescript-config:
     devDependencies:
       '@types/node':

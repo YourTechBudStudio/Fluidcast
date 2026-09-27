@@ -15,6 +15,7 @@ export type Moment =
   | 'held'
   | 'audioFailed'
   | 'generationFailed'
+  | 'halted'
   | 'speaking'
   | 'thinking'
   | 'waiting'
@@ -114,6 +115,9 @@ export function momentOf(
   switch (view.phase) {
     case 'generationFailed':
       return 'generationFailed';
+    // A tool fault stopped the conversation for good.
+    case 'halted':
+      return 'halted';
     case 'speaking':
       return 'speaking';
     case 'waiting': {
@@ -137,6 +141,7 @@ const COMPOSER: Record<Moment, ComposerMode> = {
   held: 'busy',
   audioFailed: 'retryClip',
   generationFailed: 'retry',
+  halted: 'offline',
   speaking: 'busy',
   thinking: 'busy',
   waiting: 'busy',
@@ -152,6 +157,7 @@ const VISUAL: Record<Moment, VisualState> = {
   held: 'speaking',
   audioFailed: 'error',
   generationFailed: 'error',
+  halted: 'error',
   speaking: 'speaking',
   thinking: 'thinking',
   waiting: 'thinking',

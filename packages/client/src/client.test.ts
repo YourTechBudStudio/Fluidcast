@@ -12,6 +12,7 @@ import {
   Queue,
   Ref,
   Result,
+  Schema,
   Stream,
   type Scope,
 } from 'effect';
@@ -19,7 +20,9 @@ import { TestClock } from 'effect/testing';
 
 import { ActionId, type Action } from '@yourtechbudstudio/fluidcast-core/actions';
 import {
+  ExecutionId,
   PlaybackId,
+  ToolCommandRejected,
   type Command,
   type SessionEvent,
   type SessionState,
@@ -43,6 +46,9 @@ const state = (actions: ReadonlyArray<Action>, cursor: number): SessionState => 
   cursor,
   generation: 'running',
   playback: null,
+  executions: [],
+  pendingResults: [],
+  replay: null,
   speakers: [{ id: 'host', name: 'Host' }],
   speech: { mimeType: 'audio/ogg' },
 });
@@ -67,6 +73,8 @@ const fakeTransport = (options: { readonly url: boolean }) =>
     const connections = yield* Queue.unbounded<Connection>();
     const subscribeCalls = yield* Ref.make(0);
     const sent = yield* Ref.make<ReadonlyArray<Command>>([]);
+    // The next `send` fails with this instead of succeeding, if set.
+    const rejectNext = yield* Ref.make<ToolCommandRejected | undefined>(undefined);
     const downloads = new Map<
       string,
       { gate: Deferred.Deferred<void>; exit: Exit.Exit<unknown, unknown> | undefined }
@@ -88,7 +96,12 @@ const fakeTransport = (options: { readonly url: boolean }) =>
             Effect.map(Stream.fromQueue),
           ),
         ),
-      send: (command) => Ref.update(sent, (all) => [...all, command]),
+      send: (command) =>
+        Effect.gen(function* () {
+          yield* Ref.update(sent, (all) => [...all, command]);
+          const rejected = yield* Ref.getAndSet(rejectNext, undefined);
+          if (rejected !== undefined) return yield* rejected;
+        }),
       speech: (actionId) => {
         const entry = download(actionId);
         entry.exit = undefined;
@@ -126,6 +139,7 @@ const fakeTransport = (options: { readonly url: boolean }) =>
       connect,
       subscribeCalls: Ref.get(subscribeCalls),
       sent: Ref.get(sent),
+      rejectNext: (rejected: ToolCommandRejected) => Ref.set(rejectNext, rejected),
       /** Action IDs whose audio was requested, in order. */
       fetched: () => [...downloads.keys()],
       release: (actionId: string) => Deferred.succeed(download(actionId).gate, undefined),
@@ -326,5 +340,105 @@ describe('Client', () => {
         yield* settle;
         assert.equal(yield* subscribeCalls, expected);
       }).pipe(Effect.provide(TestClock.layer())),
+    ));
+
+  it('carries executions, pending results and the presented speak in the view', () =>
+    run(
+      Effect.gen(function* () {
+        const { client, connect } = yield* setup({ url: true });
+        const connection = yield* connect;
+        const call: Action = {
+          type: 'tool_call',
+          id: ActionId.make('call'),
+          handle: 'call_1',
+          tool: 'view',
+          input: { label: 'x' },
+        };
+        const execution = {
+          executionId: ExecutionId.make('e1'),
+          handle: 'call_1',
+          tool: 'view',
+          blocking: false,
+        };
+        const errored = {
+          type: 'tool_errored',
+          id: ActionId.make('err'),
+          handle: 'call_1',
+          tool: 'view',
+          message: 'failed',
+        } as const;
+        yield* connection.send(
+          { _tag: 'Snapshot', state: state([user, speak('a'), call, speak('b')], 3) },
+          { _tag: 'ToolStarted', ...execution },
+          { _tag: 'ResultQueued', result: errored },
+        );
+        const view = yield* eventually(
+          client.view.get,
+          (value) => Option.isSome(value) && value.value.pendingResults.length === 1,
+        );
+        const current = Option.getOrThrow(view);
+        assert.deepEqual(current.executions, [execution]);
+        assert.deepEqual(current.pendingResults, [errored]);
+        assert.equal(current.presented?.id, 'b');
+
+        yield* connection.send({ _tag: 'ReplayMoved', replay: 1 });
+        const replaying = yield* eventually(
+          client.view.get,
+          (value) => Option.isSome(value) && value.value.presented?.id === 'a',
+        );
+        // The actions stay those up to the cursor.
+        assert.equal(Option.getOrThrow(replaying).actions.length, 4);
+      }),
+    ));
+
+  it('stops playback on ReplayMoved before the replayed line is requested', () =>
+    run(
+      Effect.gen(function* () {
+        const { client, connect, fetched } = yield* setup({ url: true });
+        const connection = yield* connect;
+        yield* connection.send(
+          { _tag: 'Snapshot', state: state([user, speak('a'), speak('b'), speak('c')], 3) },
+          requested('p-c', 'c'),
+        );
+        yield* eventually(client.playback.get, Option.isSome);
+
+        yield* connection.send({ _tag: 'ReplayMoved', replay: 1 });
+        yield* eventually(client.playback.get, Option.isNone);
+        // Replayed lines prefetch too: the next speak after the replayed one.
+        yield* eventually(Effect.sync(fetched), (ids) => ids.includes('b'));
+
+        yield* connection.send(requested('p-a', 'a'));
+        const replayed = yield* eventually(
+          client.playback.get,
+          (value) => Option.isSome(value) && value.value.playbackId === 'p-a',
+        );
+        assert.equal(Option.getOrThrow(replayed).action.id, 'a');
+      }),
+    ));
+
+  it('sends Back, and encodes tool commands with the tool schema, passing rejections through', () =>
+    run(
+      Effect.gen(function* () {
+        const { client, connect, sent, rejectNext } = yield* setup({ url: true });
+        const connection = yield* connect;
+        yield* connection.send({ _tag: 'Snapshot', state: state([user], 1) });
+        yield* eventually(client.connection.get, (value) => value === 'connected');
+
+        yield* client.back();
+        const execution = { handle: 'call_1', executionId: ExecutionId.make('e1') };
+        const Count = Schema.Struct({ count: Schema.NumberFromString });
+        yield* client.sendToolCommand(Count, execution, { count: 2 });
+        assert.deepEqual(yield* sent, [
+          { _tag: 'Back' },
+          { _tag: 'ToolCommand', handle: 'call_1', executionId: 'e1', payload: { count: '2' } },
+        ]);
+
+        const rejection = new ToolCommandRejected({ executionId: 'e1', reason: 'stale' });
+        yield* rejectNext(rejection);
+        assert.deepEqual(
+          yield* Effect.flip(client.sendToolCommand(Count, execution, { count: 3 })),
+          rejection,
+        );
+      }),
     ));
 });

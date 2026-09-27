@@ -6,6 +6,7 @@ import { ProviderError, type GenerationError } from './errors.ts';
 import { renderHistory } from './history.ts';
 import { parseActions } from './parser.ts';
 import { buildSystemPrompt } from './prompt.ts';
+import type { ToolCallDraft, ToolDefinition } from './tools.ts';
 
 export interface GenerateOptions {
   /** Integrator instructions placed in the system prompt. */
@@ -14,20 +15,23 @@ export interface GenerateOptions {
   readonly speakers: ReadonlyArray<SpeakerProfile>;
   /** The actions that have taken effect, oldest first. */
   readonly history: ReadonlyArray<Action>;
+  /** The tools the model may call, in prompt order. Empty for a speech-only conversation. */
+  readonly tools: ReadonlyArray<ToolDefinition>;
 }
 
 /**
- * Generates the model's next actions from caller-owned history. Each `speak` is emitted, with a
- * fresh ID, as soon as its array element closes. Core stores nothing; the provider and API come
- * from the `LanguageModel` layer the caller supplies.
+ * Generates the model's next actions from caller-owned history. Each action is emitted, with a
+ * fresh ID, as soon as its array element closes. A tool call is emitted as a draft without a
+ * handle, unchecked: the caller assigns its handle and validates it when it takes effect. Core
+ * stores nothing; the provider and API come from the `LanguageModel` layer the caller supplies.
  */
 export const generate = (
   options: GenerateOptions,
-): Stream.Stream<Speak, GenerationError, LanguageModel.LanguageModel> =>
+): Stream.Stream<Speak | ToolCallDraft, GenerationError, LanguageModel.LanguageModel> =>
   Stream.suspend(() => {
     const prompt = [
       { role: 'system' as const, content: buildSystemPrompt(options) },
-      ...renderHistory(options.history),
+      ...renderHistory(options.history, options.tools),
     ];
     const text = LanguageModel.streamText({ prompt }).pipe(
       Stream.mapError(toProviderError),

@@ -1,0 +1,44 @@
+{
+  "name": "@yourtechbudstudio/fluidcast-tool-show",
+  "version": "0.0.0",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./schema": {
+      "types": "./dist/schema.d.ts",
+      "default": "./dist/schema.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "check": "pnpm lint && pnpm build && pnpm typecheck && pnpm test && pnpm format:check",
+    "dev": "tsc --watch --preserveWatchOutput --project tsconfig.build.json",
+    "fix": "oxlint . --fix && oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint . --deny-warnings",
+    "test": "node --test \"src/**/*.test.ts\"",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@yourtechbudstudio/fluidcast-core": "workspace:*",
+    "@yourtechbudstudio/fluidcast-harness": "workspace:*",
+    "@yourtechbudstudio/fluidcast-typescript-config": "workspace:*",
+    "effect": "catalog:",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@yourtechbudstudio/fluidcast-harness": "workspace:*",
+    "effect": "catalog:"
+  }
+}

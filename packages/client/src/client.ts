@@ -1,6 +1,11 @@
-import { Context, Effect, Layer, type Option } from 'effect';
+import { Context, Effect, Layer, type Option, type Schema } from 'effect';
 
-import type { CommandRejected, PlaybackId } from '@yourtechbudstudio/fluidcast-harness/protocol';
+import type {
+  CommandRejected,
+  ExecutionId,
+  PlaybackId,
+  ToolCommandRejected,
+} from '@yourtechbudstudio/fluidcast-harness/protocol';
 
 import {
   makeAudio,
@@ -25,7 +30,10 @@ import { Transport, type TransportError } from './transport.ts';
 export class Client extends Context.Service<
   Client,
   {
-    /** The actions up to the cursor and the phase. `None` until the first snapshot. */
+    /**
+     * The actions up to the cursor, the phase, open tool executions, pending tool outcomes and the
+     * presented speak. `None` until the first snapshot.
+     */
     readonly view: Subscribable<Option.Option<ConversationView>>;
     readonly connection: Subscribable<Connection>;
     /**
@@ -37,6 +45,18 @@ export class Client extends Context.Service<
     readonly interrupt: () => Effect.Effect<void, CommandRejected | TransportError>;
     /** Retries a failed generation. */
     readonly retry: () => Effect.Effect<void, CommandRejected | TransportError>;
+    /** Re-presents the previous line; forward replay follows. */
+    readonly back: () => Effect.Effect<void, CommandRejected | TransportError>;
+    /**
+     * Encodes `payload` with the tool package's command schema and sends it to that execution. The
+     * Harness validates it against the execution's own schema, and rejects it as `invalid` (the
+     * execution stays open) or `stale` (the execution is no longer open).
+     */
+    readonly sendToolCommand: <C>(
+      schema: Schema.Codec<C, Schema.Json>,
+      execution: { readonly handle: string; readonly executionId: ExecutionId },
+      payload: C,
+    ) => Effect.Effect<void, CommandRejected | ToolCommandRejected | TransportError>;
     /** Reports that the instruction with this `playbackId` finished playing. */
     readonly finished: (
       playbackId: PlaybackId,

@@ -3,6 +3,8 @@ import { Schema } from 'effect';
 import { SpeakerProfile } from '@yourtechbudstudio/fluidcast-core/actions';
 import { Voice, type AudioFormat } from '@yourtechbudstudio/fluidcast-core/speech';
 
+import type { Tool } from '../tool.ts';
+
 /**
  * A configured speaker: who it is and how it talks (Core's prompt profile), held together with how it sounds.
  * The Harness passes the profile to generation and the voice to synthesis.
@@ -24,4 +26,6 @@ export interface SessionConfig {
   readonly speakers: SessionSpeakers;
   /** The audio format `speech` produces. */
   readonly speechFormat: AudioFormat;
+  /** The tools the model may call, in prompt order. Pass `[]` for a speech-only session. */
+  readonly tools: ReadonlyArray<Tool>;
 }

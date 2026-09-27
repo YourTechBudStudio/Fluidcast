@@ -25,6 +25,7 @@ export const COPY: Record<StatusMoment, readonly string[]> = {
     'That answer broke off. Retry to continue?',
     'I dropped the thread there. Retry?',
   ],
+  halted: ['A tool failed, so I stopped. Restart the backend to begin again.'],
   audioMissing: [
     'That line isn’t in the conversation anymore. Interrupt to move on?',
     'I lost that line entirely. Interrupt and ask again?',

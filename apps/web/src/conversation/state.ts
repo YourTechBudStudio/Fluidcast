@@ -11,7 +11,14 @@ import { playbackAtom } from '../playback';
 import type { Connection, ConversationCommands, ConversationView } from './model';
 import { present } from './presentation';
 
-const EMPTY: ConversationView = { actions: [], phase: 'idle', speakers: [] };
+const EMPTY: ConversationView = {
+  actions: [],
+  phase: 'idle',
+  speakers: [],
+  executions: [],
+  pendingResults: [],
+  presented: undefined,
+};
 
 const viewResultAtom = clientRuntime.atom(
   Stream.unwrap(Effect.map(Effect.service(Client), (client) => client.view.changes)),

@@ -110,6 +110,7 @@ export const httpTransport: Layer.Layer<Transport> = Layer.effect(
         if (Option.isNone(failure)) return yield* fromStatus(response.status);
         switch (failure.value._tag) {
           case 'CommandRejected':
+          case 'ToolCommandRejected':
             return yield* failure.value;
           case 'InvalidRequest':
             // Only this HTTP contract produces it: the SDK sees a request the backend could not accept.
@@ -118,7 +119,9 @@ export const httpTransport: Layer.Layer<Transport> = Layer.effect(
       }).pipe(
         Effect.scoped,
         Effect.mapError((error) =>
-          error._tag === 'CommandRejected' ? error : toTransportError(error),
+          error._tag === 'CommandRejected' || error._tag === 'ToolCommandRejected'
+            ? error
+            : toTransportError(error),
         ),
       );
 
