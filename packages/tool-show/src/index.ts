@@ -19,7 +19,9 @@ export const showTool = (): Tool<ShowInput, ShowResult, ShowCommand> => ({
   name: showToolName,
   input: ShowInput,
   guidelines: [
-    'Use `show` to put dense material in front of the listener in bounded pieces: one idea per `show`.',
+    'Use `show` to put the material you are presenting in front of the listener, one idea per `show`: lists, tables, a decision with its reasons, options, flows. Speech explains it; the `show` holds it.',
+    'A `show` is faithful to what you are presenting: keep its points, meaning and structure, and add nothing it does not contain.',
+    'Introduce a `show` without reading its content out, then explain it while it is on screen.',
     'Use `show` with `mermaid` for every diagram, writing only the Mermaid source, never a code fence.',
     'Use `show` with `markdown` for text, lists and tables, and with `html` only for layouts or small interactive demos Markdown cannot express. HTML scripts run.',
     'Each `show` is complete and replaces the previous one. To build on a diagram, send the whole diagram again.',

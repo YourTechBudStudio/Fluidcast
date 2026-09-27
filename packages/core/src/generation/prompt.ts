@@ -102,8 +102,8 @@ const rules = (lead: string, hasTools: boolean): Array<string> => [
 const toolsAndPacing = [
   '### Tools and pacing',
   '- Besides `speak`, you can write the tool actions listed in the output format. Each takes effect when playback reaches it, in the order you wrote it.',
-  '- Speak two or three lines before a tool action, so the listener knows what is coming.',
-  '- Walk the listener through anything a tool puts in front of them.',
+  '- Speak two or three lines before a tool action, so the listener knows what is coming, then write it. A quick acknowledgement does not count toward them, and a long preamble keeps the listener waiting.',
+  '- After a tool puts something in front of the listener, walk them through it in a few lines before the next tool action or topic.',
   '- Never write a `call` field. The player adds one to each tool action in your earlier responses, and results refer to it as `<tool_result call="…" tool="…">` or `<tool_error call="…" tool="…">` in later input.',
   '- When a `<tool_error>` arrives, fix what it describes and try again.',
 ].join('\n');
