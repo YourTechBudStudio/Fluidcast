@@ -6,14 +6,19 @@ import { Button, Chip } from '../../ui';
 import { FORMAT_LABEL, FORMAT_TILE, FORMAT_TONE, titleOf } from './format';
 import { FormatIcon } from './FormatIcon';
 
-/** A Show's title bar: format tile, title, format chip and ✕. */
+/**
+ * A Show's title bar: format tile, title, format chip and ✕. `speaking` adds a breathing dot for narration, which only
+ * the phone sheet passes, because the sheet hides the orb.
+ */
 export function ShowHeader({
   input,
   onClose,
+  speaking = false,
   className = '',
 }: {
   readonly input: ShowInput;
   readonly onClose: () => void;
+  readonly speaking?: boolean;
   readonly className?: string;
 }) {
   return (
@@ -29,7 +34,13 @@ export function ShowHeader({
       <span className="shrink-0">
         <Chip tone={FORMAT_TONE[input.format]}>{FORMAT_LABEL[input.format]}</Chip>
       </span>
-      <span className="ml-auto flex shrink-0 items-center">
+      <span className="ml-auto flex shrink-0 items-center gap-2">
+        {speaking && (
+          <i
+            aria-hidden
+            className="size-1.5 rounded-full bg-blue shadow-[0_0_10px_var(--color-blue)] motion-safe:animate-breathe"
+          />
+        )}
         <Button
           tone="ghost"
           aria-label="Close show"

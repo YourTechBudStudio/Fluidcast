@@ -12,10 +12,12 @@ import { ShowHeader } from './ShowHeader';
 export function ShowSheet({
   show,
   open,
+  speaking,
   onClose,
 }: {
   readonly show: ShownShow | null;
   readonly open: boolean;
+  readonly speaking: boolean;
   readonly onClose: () => void;
 }) {
   const reduced = useReducedMotion();
@@ -33,7 +35,12 @@ export function ShowSheet({
             transition={surfaceTransition}
             className="pointer-events-auto absolute inset-x-0 top-2 bottom-0 flex flex-col overflow-hidden rounded-t-[26px] border border-b-0 border-line/40 bg-[rgb(42_46_65/0.96)] shadow-[0_-12px_40px_rgb(0_0_0/0.35)] backdrop-blur-2xl"
           >
-            <ShowHeader input={show.input} onClose={onClose} className="shrink-0 pt-2.5" />
+            <ShowHeader
+              input={show.input}
+              onClose={onClose}
+              speaking={speaking}
+              className="shrink-0 pt-2.5"
+            />
             <div
               aria-hidden
               className="mx-4 h-px shrink-0 bg-linear-to-r from-transparent via-line/45 to-transparent"

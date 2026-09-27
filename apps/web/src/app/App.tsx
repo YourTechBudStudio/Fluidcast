@@ -165,7 +165,14 @@ export function App() {
         )}
       </main>
 
-      {phone && <ShowSheet show={shown} open={panelOpen} onClose={closePanel} />}
+      {phone && (
+        <ShowSheet
+          show={shown}
+          open={panelOpen}
+          speaking={moment === 'speaking'}
+          onClose={closePanel}
+        />
+      )}
 
       <footer className="relative z-20 col-start-1 row-start-3 px-4 pt-3 pb-5 max-sm:px-3 max-sm:pt-2.5 max-sm:pb-3">
         <div className="mb-3.5 max-sm:mb-2.5">
