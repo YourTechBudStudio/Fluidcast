@@ -8,6 +8,7 @@ export type {
   Speaker,
 } from './model';
 export type {
+  AskPresence,
   ComposerMode,
   FailureStatus,
   Moment,
@@ -15,6 +16,7 @@ export type {
   StatusMoment,
   TimelineRow,
 } from './presentation';
+export { showDriverAtom, showPanelAtom, shownShowAtom, type ShowPanelState } from './shows';
 export {
   connectionAtom,
   conversationAtom,

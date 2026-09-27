@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { copyFor } from './copy';
+import { copyFor, haltedCopy } from './copy';
 import type { StatusMoment } from './presentation';
 
 const RED = { color: 'var(--color-red)', pulse: false, error: true } as const;
@@ -10,7 +10,10 @@ const DOT: Record<StatusMoment, { color: string; pulse: boolean; error?: true }>
   complete: { color: 'var(--color-cyan)', pulse: false },
   interrupted: { color: 'var(--color-cyan)', pulse: false },
   thinking: { color: 'var(--color-violet)', pulse: true },
+  mulling: { color: 'var(--color-violet)', pulse: true },
   waiting: { color: 'var(--color-violet)', pulse: true },
+  asking: { color: 'var(--color-cyan)', pulse: false },
+  askingText: { color: 'var(--color-cyan)', pulse: false },
   speaking: { color: 'var(--color-blue)', pulse: false },
   held: { color: 'var(--color-fg-subtle)', pulse: false },
   generationFailed: RED,
@@ -28,8 +31,17 @@ const DOT: Record<StatusMoment, { color: string; pulse: boolean; error?: true }>
   superseded: { color: 'var(--color-fg-subtle)', pulse: false },
 };
 
-/** One quiet line above the composer, on both layers. It rotates its copy each time the player enters a moment. */
-export function StatusLine({ moment }: { readonly moment: StatusMoment }) {
+/**
+ * One quiet line above the composer, on both layers. It rotates its copy each time the player enters a moment. When a
+ * tool halted the conversation, the line leads with what failed.
+ */
+export function StatusLine({
+  moment,
+  fault = null,
+}: {
+  readonly moment: StatusMoment;
+  readonly fault?: string | null;
+}) {
   // Widget-local rotation: how many times each moment has been entered. Adjusted during render when the moment changes (React's
   // "adjusting state when a prop changes" pattern), so the line never lags the moment by a commit. Computed only from state, so it is
   // idempotent under development mode's double render.
@@ -42,7 +54,8 @@ export function StatusLine({ moment }: { readonly moment: StatusMoment }) {
     const index = (rotation.entries[moment] ?? -1) + 1;
     setRotation({ moment, index, entries: { ...rotation.entries, [moment]: index } });
   }
-  const text = copyFor(rotation.moment, rotation.index);
+  const text =
+    rotation.moment === 'halted' ? haltedCopy(fault) : copyFor(rotation.moment, rotation.index);
 
   const dot = DOT[moment];
   const error = dot.error === true;

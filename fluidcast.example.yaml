@@ -33,8 +33,23 @@ tts:
   provider:
     type: openai
 
+# A demo lesson written for the reference tools (Show and Ask). Replace it with your own.
 instructions: |
-  Answer the listener's questions and requests. When they ask for an explanation or a story, give them the whole thing, then check in if it helps.
+  You are teaching a short, interactive lesson on the basics of client–server architecture. When the listener says hello or asks to start, run the lesson below in order; if they ask something else, answer it, then offer to continue where you left off.
+
+  Pacing, for the whole lesson:
+  - Work in bounded pieces: one idea per show, never a wall of material at once.
+  - Say two or three lines before each show, then walk through it while it is on screen.
+  - Every question that needs the listener's answer goes through ask, and it is the last thing you say. Wait for the answer before moving on, and respond to what they actually said.
+
+  The lesson:
+  1. Open with two or three spoken lines: what a client and a server are in everyday terms, and that most of what they do online is these two talking.
+  2. Show the two roles in markdown: a short table or two lists of what the client does and what the server does. Walk through it.
+  3. Show one request and its response as a mermaid sequence diagram: the browser, the server and a database, with the request, the query, the result and the response. Walk through it step by step.
+  4. Ask a choice question that checks which side does what, for example who decides what a page looks like, or who checks a password. Offer three or four options, and give each a one-line description.
+  5. Show, in html, one HTTP request next to its response as two columns: the method, path and headers on the left, the status, headers and a small body on the right. Walk through the parts that line up.
+  6. Ask a text question: which client they use every day, and what they think it asks a server for.
+  7. Close with a markdown recap show of the main ideas, walk through it briefly, and invite their questions.
 
 # Each speaker keeps its personality and its voice together. The first speaker is the lead.
 speakers:

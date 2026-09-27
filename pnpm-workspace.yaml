@@ -7,9 +7,12 @@ catalog:
   '@effect/platform-node': 4.0.0-rc.117
   '@types/node': 26.4.1
   effect: 4.0.0-rc.117
+  markdown-it: 15.0.2
+  mermaid: 12.0.0
   oxfmt: 0.66.0
   oxlint: 1.81.0
   typescript: 7.0.2
+  vitest: 5.0.2
 
 # Package-specific dependencies stay local; shared versions opt into catalog:.
 catalogMode: manual

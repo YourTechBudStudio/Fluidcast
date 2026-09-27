@@ -6,7 +6,10 @@ import {
   layer as harnessLayer,
   type Session,
   type SessionSpeakers,
+  type Tool,
 } from '@yourtechbudstudio/fluidcast-harness';
+import { askTool } from '@yourtechbudstudio/fluidcast-tool-ask';
+import { showTool } from '@yourtechbudstudio/fluidcast-tool-show';
 
 import { withGenerationLog } from './generation-log.ts';
 import { languageModelLayer, type LlmConfig } from './language-model.ts';
@@ -20,6 +23,12 @@ export interface ConversationConfig {
   readonly generationLog?: string;
 }
 
+/**
+ * The tools the reference session registers, in prompt order. Hard-coded for the reference setup
+ * until modes (#5) choose them per session.
+ */
+export const referenceTools = (): ReadonlyArray<Tool> => [showTool(), askTool()];
+
 /** The single in-memory Harness session, generating with the configured language model. */
 export const sessionLayer = (
   config: ConversationConfig,
@@ -29,9 +38,7 @@ export const sessionLayer = (
     instructions: config.instructions,
     speakers: config.speakers,
     speechFormat,
-    // Speech-only for now: the reference setup registers Show and Ask together with the web UI
-    // that answers them.
-    tools: [],
+    tools: referenceTools(),
   }).pipe(
     Layer.provide(
       config.generationLog === undefined

@@ -4,7 +4,12 @@ import { AsyncResult, Atom } from 'effect/unstable/reactivity';
 import { useMemo } from 'react';
 
 import { Client, type TransportError } from '@yourtechbudstudio/fluidcast-client';
-import type { CommandRejected } from '@yourtechbudstudio/fluidcast-harness/protocol';
+import type {
+  CommandRejected,
+  ExecutionId,
+  ToolCommandRejected,
+} from '@yourtechbudstudio/fluidcast-harness/protocol';
+import { AskCommand } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 
 import { clientRuntime } from '../client';
 import { playbackAtom } from '../playback';
@@ -59,13 +64,24 @@ export const sendFailureAtom = Atom.writable(
 ).pipe(Atom.keepAlive);
 
 /**
+ * Show executions whose report the Harness would not accept (`invalid`): the page and the backend disagree, so this
+ * page does not report them again. Page-local: the status line says the two are out of sync for as long as such an
+ * execution stays open, and a reload starts afresh. Written only by the Show driver.
+ */
+export const unresolvedShowsAtom = Atom.make(
+  new Set<ExecutionId>() as ReadonlySet<ExecutionId>,
+).pipe(Atom.keepAlive);
+
+/**
  * Runs a command and reports whether the Harness accepted it. A rejection means the view was briefly
  * stale: the subscription is already bringing the true phase, so it is only logged. A transport failure
  * is shown in the status line.
  */
 const accepted = (
   get: Atom.FnContext,
-  run: (client: Client['Service']) => Effect.Effect<void, CommandRejected | TransportError>,
+  run: (
+    client: Client['Service'],
+  ) => Effect.Effect<void, CommandRejected | ToolCommandRejected | TransportError>,
 ) =>
   Effect.flatMap(Effect.service(Client), run).pipe(
     Effect.tap(() => Effect.sync(() => get.set(sendFailureAtom, null))),
@@ -74,6 +90,11 @@ const accepted = (
       CommandRejected: (error: CommandRejected) =>
         Effect.logWarning('command rejected').pipe(
           Effect.annotateLogs({ command: error.command, phase: error.phase }),
+          Effect.as(false),
+        ),
+      ToolCommandRejected: (error: ToolCommandRejected) =>
+        Effect.logWarning('tool command rejected').pipe(
+          Effect.annotateLogs({ executionId: error.executionId, reason: error.reason }),
           Effect.as(false),
         ),
       TransportError: (error: TransportError) =>
@@ -94,23 +115,49 @@ const interruptAtom = clientRuntime.fn((_: void, get) =>
 const retryGenerationAtom = clientRuntime.fn((_: void, get) =>
   accepted(get, (client) => client.retry()),
 );
+const answerAskAtom = clientRuntime.fn(
+  (
+    {
+      execution,
+      answer,
+    }: {
+      readonly execution: { readonly handle: string; readonly executionId: ExecutionId };
+      readonly answer: AskCommand;
+    },
+    get,
+  ) => accepted(get, (client) => client.sendToolCommand(AskCommand, execution, answer)),
+);
+const backAtom = clientRuntime.fn((_: void, get) => accepted(get, (client) => client.back()));
 
 /** The commands the UI sends. Each resolves `true` once the Harness accepted it. */
 export function useConversationCommands(): ConversationCommands {
   const sendMessage = useAtomSet(sendMessageAtom, { mode: 'promise' });
   const interrupt = useAtomSet(interruptAtom, { mode: 'promise' });
   const retryGeneration = useAtomSet(retryGenerationAtom, { mode: 'promise' });
+  const answerAsk = useAtomSet(answerAskAtom, { mode: 'promise' });
+  const back = useAtomSet(backAtom, { mode: 'promise' });
   return useMemo(
     () => ({
       sendMessage,
       interrupt: () => interrupt(),
       retryGeneration: () => retryGeneration(),
+      answerAsk: (execution, answer) => answerAsk({ execution, answer }),
+      back: () => back(),
     }),
-    [sendMessage, interrupt, retryGeneration],
+    [sendMessage, interrupt, retryGeneration, answerAsk, back],
   );
 }
 
-/** Everything the player shows, derived from the conversation, the connection, playback and a failed send. */
+/**
+ * Everything the player shows, derived from the conversation, the connection, playback, a failed send and Show
+ * reports the Harness would not accept.
+ */
 export const presentationAtom = Atom.make((get) =>
-  present(get(conversationAtom), get(connectionAtom), get(playbackAtom), get(sendFailureAtom)),
+  present(
+    get(conversationAtom),
+    get(connectionAtom),
+    get(playbackAtom),
+    get(sendFailureAtom),
+    get(unresolvedShowsAtom),
+  ),
 );
