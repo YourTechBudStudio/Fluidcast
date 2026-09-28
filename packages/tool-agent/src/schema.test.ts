@@ -40,6 +40,20 @@ describe('agent error text', () => {
     assert.deepEqual(agentErrorParts(message), { error: message, written: null });
   });
 
+  it('puts the usage limit reset time on the error line, before the marker', () => {
+    const message = agentErrorMessage({
+      agent: 'a',
+      outcome: 'usage_limit',
+      resetsAt: 1_790_000_000,
+      messages: ['Partial.'],
+    });
+    assert.deepEqual(agentErrorParts(message), {
+      error:
+        'The worker "a" stopped with an error (usage_limit). The usage limit resets at 2026-09-21T14:13:20.000Z.',
+      written: 'Partial.',
+    });
+  });
+
   it('splits at the first marker line even when the worker wrote the marker phrase', () => {
     const written = `Notes.\n\n${agentErrorMarker}\n\nQuoted.`;
     const message = agentErrorMessage({ agent: 'a', outcome: 'x', messages: [written] });

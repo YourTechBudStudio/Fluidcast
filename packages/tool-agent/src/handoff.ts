@@ -47,7 +47,12 @@ export type ConversationEntry =
       readonly text: string;
     };
 
-/** A skill or command token, such as `brainstorm`. The prompt itself is what it receives as arguments. */
+/**
+ * A skill or command token, such as `brainstorm`. The prompt itself is what it receives as arguments.
+ * Several modifiers chain only when all are skills; a built-in or custom command is valid only as
+ * the sole modifier. A worker type cannot tell the two apart, so a hook that chains a command gets
+ * whatever the worker does with it.
+ */
 export interface Modifier {
   readonly name: string;
 }

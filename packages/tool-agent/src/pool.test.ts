@@ -362,6 +362,35 @@ describe('agent pool', () => {
       }),
     ));
 
+  it('names the usage limit reset time in the ToolError of a usage_limit turn end', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* setup();
+        const sent = yield* ctx.send('call_1', 'brainstorm', 'Start.');
+        const open = yield* ctx.connection();
+        const [one] = yield* ctx.ids(open, 1);
+        yield* open.emit(
+          consumed(one!),
+          entry({
+            _tag: 'turnEnd',
+            parentToolUseId: null,
+            outcome: 'usage_limit',
+            resetsAt: 1_790_000_000,
+          }),
+          settled,
+        );
+        assert.deepEqual(
+          yield* Effect.exit(Fiber.join(sent.fiber)),
+          Exit.fail(
+            new ToolError({
+              message:
+                'The worker "brainstorm" stopped with an error (usage_limit). The usage limit resets at 2026-09-21T14:13:20.000Z.',
+            }),
+          ),
+        );
+      }),
+    ));
+
   it('reports a busy connection failure through run only, and refuses later calls with it', () =>
     run(
       Effect.gen(function* () {

@@ -273,6 +273,7 @@ export const makePool = (options: PoolOptions) =>
                       message: agentErrorMessage({
                         agent,
                         outcome: turnEnd.outcome,
+                        resetsAt: turnEnd.resetsAt,
                         messages: period.texts,
                       }),
                     }),

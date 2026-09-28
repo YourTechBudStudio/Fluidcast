@@ -15,6 +15,10 @@
     "./schema": {
       "types": "./dist/schema.d.ts",
       "default": "./dist/schema.js"
+    },
+    "./claude": {
+      "types": "./dist/claude/index.d.ts",
+      "default": "./dist/claude/index.js"
     }
   },
   "scripts": {
@@ -28,6 +32,9 @@
     "typecheck": "tsc --project tsconfig.json"
   },
   "devDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "catalog:",
+    "@anthropic-ai/sdk": "0.127.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@types/node": "catalog:",
     "@yourtechbudstudio/fluidcast-core": "workspace:*",
     "@yourtechbudstudio/fluidcast-harness": "workspace:*",
@@ -37,13 +44,20 @@
     "effect": "catalog:",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "zod": "4.6.5"
   },
   "peerDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "catalog:",
     "@yourtechbudstudio/fluidcast-core": "workspace:*",
     "@yourtechbudstudio/fluidcast-harness": "workspace:*",
     "@yourtechbudstudio/fluidcast-tool-ask": "workspace:*",
     "@yourtechbudstudio/fluidcast-tool-show": "workspace:*",
     "effect": "catalog:"
+  },
+  "peerDependenciesMeta": {
+    "@anthropic-ai/claude-agent-sdk": {
+      "optional": true
+    }
   }
 }

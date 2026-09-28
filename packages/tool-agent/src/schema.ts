@@ -52,15 +52,21 @@ const markerLine = `\n\n${agentErrorMarker}\n\n`;
 
 /**
  * The model-facing text of a failed busy period, with one owner for building and splitting it:
- * `The worker "<id>" stopped with an error (<outcome>).`, then, when the worker wrote anything, a
- * blank line, the marker line, a blank line and its messages joined by blank lines.
+ * `The worker "<id>" stopped with an error (<outcome>).`, plus ` The usage limit resets at <ISO
+ * time>.` when `resetsAt` (epoch seconds, as on `turnEnd`) is known, then, when the worker wrote
+ * anything, a blank line, the marker line, a blank line and its messages joined by blank lines.
  */
 export const agentErrorMessage = (failure: {
   readonly agent: string;
   readonly outcome: string;
+  readonly resetsAt?: number | undefined;
   readonly messages: ReadonlyArray<string>;
 }): string => {
-  const error = `The worker "${failure.agent}" stopped with an error (${failure.outcome}).`;
+  const resets =
+    failure.resetsAt === undefined
+      ? ''
+      : ` The usage limit resets at ${new Date(failure.resetsAt * 1000).toISOString()}.`;
+  const error = `The worker "${failure.agent}" stopped with an error (${failure.outcome}).${resets}`;
   return failure.messages.length === 0
     ? error
     : `${error}${markerLine}${failure.messages.join('\n\n')}`;
