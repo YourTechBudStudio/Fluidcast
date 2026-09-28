@@ -23,6 +23,7 @@ const pureEntries = {
   '@fluidcast/app-contract': 'packages/app-contract/src/index.ts',
   '@yourtechbudstudio/fluidcast-tool-show/schema': 'packages/tool-show/src/schema.ts',
   '@yourtechbudstudio/fluidcast-tool-ask/schema': 'packages/tool-ask/src/schema.ts',
+  '@yourtechbudstudio/fluidcast-tool-agent/schema': 'packages/tool-agent/src/schema.ts',
 };
 
 /**
