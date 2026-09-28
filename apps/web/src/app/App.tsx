@@ -216,4 +216,5 @@ export function App() {
 }
 
 /** The question's call handle: the dock keeps one surface while a question goes from open to sent. */
-const askHandle = (ask: AskPresence) => (ask.mode === 'open' ? ask.execution.handle : ask.handle);
+const askHandle = (ask: AskPresence) =>
+  ask.mode === 'open' ? ask.execution.handles[0] : ask.handle;

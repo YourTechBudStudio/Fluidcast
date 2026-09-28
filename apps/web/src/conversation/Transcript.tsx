@@ -153,9 +153,15 @@ function TimelineItem({
       return (
         <Row node={<Node kind="interrupted" />} first={first} last={last}>
           <Head type="interrupted">
-            <span className="font-semibold text-amber">You interrupted</span>
+            <span className="font-semibold text-amber">
+              {row.during === 'speech' ? 'You interrupted' : 'You interrupted to say something'}
+            </span>
           </Head>
-          <p className="text-[14.5px] text-fg-muted">Lines that hadn’t played yet were dropped.</p>
+          {row.during === 'speech' && (
+            <p className="text-[14.5px] text-fg-muted">
+              Lines that hadn’t played yet were dropped.
+            </p>
+          )}
         </Row>
       );
     case 'failed':

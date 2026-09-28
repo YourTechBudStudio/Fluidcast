@@ -89,6 +89,17 @@ describe('buildSystemPrompt', () => {
       ].join('\n') + '\n\n',
     );
     assert.match(prompt, /### Tools and pacing\n- Besides `speak`/);
+    assert.ok(prompt.includes('one result can answer several calls, as `calls="call_3 call_7"`.'));
+    assert.ok(
+      prompt.includes(
+        '- A `<tool_progress>` reports what a running tool is doing. Voice it in one short line, then keep waiting for its result. It is not the result.',
+      ),
+    );
+    assert.ok(
+      prompt.includes(
+        '- A `<context tool="…">` at the end of the input describes a tool\'s current state. It is not the listener speaking. Use it; do not read it out.',
+      ),
+    );
     assert.match(prompt, /- Speak text is plain spoken language:/);
     assert.match(prompt, /deliver it rather than stalling\./);
     assert.doesNotMatch(prompt, /Don't ask permission/);

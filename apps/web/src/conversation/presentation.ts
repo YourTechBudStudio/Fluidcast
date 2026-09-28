@@ -89,12 +89,13 @@ export type TimelineRow =
       readonly text: string;
       /** Same speaker as the previous row: drawn as a continuation. */
       readonly continued: boolean;
-      /** The next action is `interrupted`: this line was cut. */
+      /** The next action interrupted this line while it played. */
       readonly interrupted: boolean;
       /** Set on the line at the cursor. */
       readonly now: 'playing' | 'audioFailed' | 'held' | 'queued' | null;
     }
-  | { readonly kind: 'interrupted'; readonly id: string }
+  /** `speech`: a playing line was cut. `wait`: the listener cut in while nothing played. */
+  | { readonly kind: 'interrupted'; readonly id: string; readonly during: 'speech' | 'wait' }
   | { readonly kind: 'failed'; readonly id: string; readonly tag: string; readonly message: string }
   | {
       readonly kind: 'show';
@@ -173,6 +174,12 @@ const isSpeak = (action: Action): action is Extract<Action, { type: 'speak' }> =
 
 const blocked = (view: ConversationView) => view.executions.some((e) => e.blocking);
 
+/** Whether the action at `index` is a line an interrupt cut while it played. */
+const cutAt = (view: ConversationView, index: number) => {
+  const next = view.actions[index + 1];
+  return next?.type === 'interrupted' && next.during === 'speech';
+};
+
 /** Where the presented speak sits in the view; the end when nothing is presented. */
 const presentedIndex = (view: ConversationView) =>
   view.presented
@@ -209,9 +216,10 @@ export function momentOf(
       return 'halted';
     case 'speaking':
       return 'speaking';
+    // A blocking tool holds the turn for the listener.
     case 'waiting':
-      // A blocking tool holds the turn for the listener.
-      if (blocked(view)) return 'asking';
+      return 'asking';
+    case 'working':
       // A continuation starts a new model turn too: until it speaks, the model is thinking.
       return view.actions.slice(turnBoundary(view) + 1).some(isSpeak) ? 'waiting' : 'thinking';
     case 'idle': {
@@ -319,9 +327,7 @@ function subtitleOf(
     case 'waiting':
       return lastSpeak ? line(lastSpeak, 'current') : null;
     case 'interrupted':
-      return lastSpeak
-        ? line(lastSpeak, 'dim', view.actions[lastSpeakIndex + 1]?.type === 'interrupted')
-        : null;
+      return lastSpeak ? line(lastSpeak, 'dim', cutAt(view, lastSpeakIndex)) : null;
     default:
       return lastSpeak ? line(lastSpeak, 'dim') : null;
   }
@@ -333,7 +339,7 @@ function askStateOf(
   answer: { readonly pending: boolean } | undefined,
 ): AskCardState {
   if (answer) return answer.pending ? 'pending' : 'answered';
-  return view.executions.some((e) => e.handle === handle) ? 'live' : 'unanswered';
+  return view.executions.some((e) => e.handles.includes(handle)) ? 'live' : 'unanswered';
 }
 
 function timelineOf(
@@ -366,7 +372,7 @@ function timelineOf(
           tone,
           text: action.text,
           continued: previous?.type === 'speak' && previous.speaker === action.speaker,
-          interrupted: view.actions[i + 1]?.type === 'interrupted',
+          interrupted: cutAt(view, i),
           now,
         });
         break;
@@ -410,15 +416,17 @@ function timelineOf(
         });
         break;
       }
-      // Outcomes belong to their call's row.
+      // Outcomes belong to their call's row. Progress has no producer yet, and context is for the model only.
       case 'tool_result':
       case 'tool_errored':
+      case 'tool_progress':
+      case 'tool_context':
         break;
       case 'tool_faulted':
         rows.push({ kind: 'faulted', id: action.id, message: action.error.message });
         break;
       case 'interrupted':
-        rows.push({ kind: 'interrupted', id: action.id });
+        rows.push({ kind: 'interrupted', id: action.id, during: action.during });
         break;
       case 'generation_failed':
         rows.push({
@@ -506,7 +514,10 @@ function askPresenceOf(view: ConversationView): AskPresence | null {
   // After an interrupt the answer goes with the next message, and after a generation failure Retry submits it: the
   // composer returns in both.
   const pending = pendingAnswer(view);
-  if (pending && (view.phase === 'speaking' || view.phase === 'waiting'))
+  if (
+    pending &&
+    (view.phase === 'speaking' || view.phase === 'waiting' || view.phase === 'working')
+  )
     return { mode: 'sent', ...pending };
   return null;
 }

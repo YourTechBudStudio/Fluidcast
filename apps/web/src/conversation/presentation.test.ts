@@ -47,23 +47,25 @@ const answered = (id: string, handle: string, answer: AskCommand, input: AskInpu
   ({
     type: 'tool_result',
     id: aid(id),
-    handle,
+    handles: [handle],
     tool: 'ask',
     result: { question: input.question, answer },
   }) as const;
 const errored = (id: string, handle: string, tool: string, message: string) =>
-  ({ type: 'tool_errored', id: aid(id), handle, tool, message }) as const;
+  ({ type: 'tool_errored', id: aid(id), handles: [handle], tool, message }) as const;
 const faulted = (id: string, handle: string, message: string): Action => ({
   type: 'tool_faulted',
   id: aid(id),
-  handle,
+  handles: [handle],
+  tool: 'show',
   error: { tag: 'UnexpectedError', message },
 });
 const execution = (id: string, handle: string, tool: string): Execution => ({
   executionId: eid(id),
-  handle,
+  handles: [handle],
   tool,
   blocking: tool === 'ask',
+  startedAt: 0,
 });
 
 const view = (partial: Partial<ConversationView>): ConversationView => ({
@@ -108,7 +110,11 @@ describe('the Ask in place of the composer', () => {
     const p = presentOf(
       view({ actions: asked, phase: 'waiting', executions: [execution('e1', 'call_1', 'ask')] }),
     );
-    expect(p.ask).toMatchObject({ mode: 'open', input: choice, execution: { handle: 'call_1' } });
+    expect(p.ask).toMatchObject({
+      mode: 'open',
+      input: choice,
+      execution: { handles: ['call_1'] },
+    });
     expect(p.moment).toBe('asking');
     expect(p.status).toBe('asking');
     expect(p.visual).toBe('idle');
@@ -155,7 +161,7 @@ describe('the Ask in place of the composer', () => {
     );
     expect(speaking.ask).toEqual({ mode: 'sent', handle: 'call_1', input: choice, answer });
     expect(speaking.interruptible).toBe(true);
-    const waiting = presentOf(view({ actions: asked, phase: 'waiting', pendingResults: pending }));
+    const waiting = presentOf(view({ actions: asked, phase: 'working', pendingResults: pending }));
     expect(waiting.ask?.mode).toBe('sent');
   });
 
@@ -163,7 +169,7 @@ describe('the Ask in place of the composer', () => {
     const pending = [answered('r1', 'call_1', answer)];
     const interrupted = presentOf(
       view({
-        actions: [...asked, { type: 'interrupted', id: aid('i1') }],
+        actions: [...asked, { type: 'interrupted', id: aid('i1'), during: 'wait' }],
         phase: 'idle',
         pendingResults: pending,
       }),
@@ -202,7 +208,7 @@ describe('interruptible', () => {
       presentOf(
         view({
           actions: [user('u1'), speak('s1'), showCall('c1', 'call_1')],
-          phase: 'waiting',
+          phase: 'working',
           executions: [execution('e1', 'call_1', 'show')],
         }),
       ).interruptible,
@@ -253,7 +259,7 @@ describe('an unresolved Show report', () => {
 
   it('reads out of sync for as long as its execution stays open, across a phase change', () => {
     expect(
-      presentOf(view({ actions: shown, phase: 'waiting', executions: open }), { unresolved })
+      presentOf(view({ actions: shown, phase: 'working', executions: open }), { unresolved })
         .status,
     ).toBe('outOfSync');
     const line = speak('s2');
@@ -272,7 +278,7 @@ describe('an unresolved Show report', () => {
   it('gives way to a failed send', () => {
     const sendFailure = new TransportError({ reason: 'Unreachable' });
     expect(
-      presentOf(view({ actions: shown, phase: 'waiting', executions: open }), {
+      presentOf(view({ actions: shown, phase: 'working', executions: open }), {
         unresolved,
         sendFailure,
       }).status,
@@ -288,25 +294,25 @@ describe('thinking and waiting after a continuation', () => {
       showCall('c1', 'call_1'),
       errored('r1', 'call_1', 'show', 'The show could not be rendered: parse error'),
     ];
-    const thinking = presentOf(view({ actions, phase: 'waiting' }));
+    const thinking = presentOf(view({ actions, phase: 'working' }));
     expect(thinking.moment).toBe('thinking');
     expect(thinking.status).toBe('thinking');
     expect(thinking.subtitle).toMatchObject({ key: 's1', tone: 'dim' });
     expect(rowOf(thinking.timeline, 'pending')).toEqual([{ kind: 'pending', label: 'Thinking…' }]);
-    const more = presentOf(view({ actions: [...actions, speak('s2')], phase: 'waiting' }));
+    const more = presentOf(view({ actions: [...actions, speak('s2')], phase: 'working' }));
     expect(more.moment).toBe('waiting');
   });
 
   it('mulls over an answer to a question', () => {
     const p = presentOf(
-      view({ actions: [...asked, answered('r1', 'call_1', answer)], phase: 'waiting' }),
+      view({ actions: [...asked, answered('r1', 'call_1', answer)], phase: 'working' }),
     );
     expect(p.moment).toBe('thinking');
     expect(p.status).toBe('mulling');
   });
 
   it('still shows your message while thinking about it', () => {
-    const p = presentOf(view({ actions: [user('u1', 'Hello')], phase: 'waiting' }));
+    const p = presentOf(view({ actions: [user('u1', 'Hello')], phase: 'working' }));
     expect(p.status).toBe('thinking');
     expect(p.subtitle).toMatchObject({ key: 'u1', tone: 'you' });
   });
@@ -342,7 +348,7 @@ describe('timeline rows', () => {
     const p = presentOf(
       view({
         actions: [user('u1'), showCall('c1', 'call_1'), showCall('c2', 'call_2')],
-        phase: 'waiting',
+        phase: 'working',
         pendingResults: [errored('r1', 'call_1', 'show', 'Parse error')],
       }),
     );
@@ -362,7 +368,7 @@ describe('timeline rows', () => {
           askCall('c2', 'call_2', text),
           askCall('c3', 'call_3'),
           askCall('c4', 'call_4'),
-          { type: 'interrupted', id: aid('i1') },
+          { type: 'interrupted', id: aid('i1'), during: 'wait' },
         ],
         executions: [execution('e3', 'call_3', 'ask')],
         pendingResults: [answered('r2', 'call_2', { kind: 'text', text: 'A browser' }, text)],
@@ -389,14 +395,14 @@ describe('timeline rows', () => {
     const correctionOf = (v: ConversationView) => rowOf(presentOf(v).timeline, 'invalidCall')[0];
 
     // Not reached yet: no error, and nothing is claimed.
-    expect(correctionOf(view({ actions: [user('u1'), invalid], phase: 'waiting' }))).toMatchObject({
+    expect(correctionOf(view({ actions: [user('u1'), invalid], phase: 'working' }))).toMatchObject({
       error: null,
       correction: null,
     });
     // Queued: on its way.
     expect(
       correctionOf(
-        view({ actions: [user('u1'), invalid], phase: 'waiting', pendingResults: [error] }),
+        view({ actions: [user('u1'), invalid], phase: 'working', pendingResults: [error] }),
       ),
     ).toMatchObject({ error: error.message, correction: 'pending' });
     // In the log: the model has it.
@@ -457,14 +463,14 @@ describe('a failed Show on the way back to the model', () => {
   it('is pending while it is reported, and while its error waits to be submitted', () => {
     expect(
       showCorrectionOf(
-        view({ actions: failed, phase: 'waiting', executions: reporting }),
+        view({ actions: failed, phase: 'working', executions: reporting }),
         'call_1',
         none,
       ),
     ).toEqual({ error: 'pending', awaited: true });
     expect(
       showCorrectionOf(
-        view({ actions: failed, phase: 'waiting', pendingResults: [error] }),
+        view({ actions: failed, phase: 'working', pendingResults: [error] }),
         'call_1',
         none,
       ),
@@ -473,7 +479,7 @@ describe('a failed Show on the way back to the model', () => {
 
   it('is sent once its error is in the log, awaiting a replacement while the turn goes on', () => {
     expect(
-      showCorrectionOf(view({ actions: [...failed, error], phase: 'waiting' }), 'call_1', none),
+      showCorrectionOf(view({ actions: [...failed, error], phase: 'working' }), 'call_1', none),
     ).toEqual({
       error: 'sent',
       awaited: true,
@@ -492,7 +498,7 @@ describe('a failed Show on the way back to the model', () => {
     expect(
       showCorrectionOf(
         view({
-          actions: [...failed, { type: 'interrupted', id: aid('i1') }],
+          actions: [...failed, { type: 'interrupted', id: aid('i1'), during: 'wait' }],
           phase: 'idle',
           pendingResults: [error],
         }),
@@ -504,7 +510,7 @@ describe('a failed Show on the way back to the model', () => {
 
   it('awaits nothing in a later turn the listener started', () => {
     const later = [...failed, error, speak('s1'), user('u2', 'Something else'), speak('s2')];
-    expect(showCorrectionOf(view({ actions: later, phase: 'waiting' }), 'call_1', none)).toEqual({
+    expect(showCorrectionOf(view({ actions: later, phase: 'working' }), 'call_1', none)).toEqual({
       error: 'sent',
       awaited: false,
     });
@@ -520,8 +526,13 @@ describe('a failed Show on the way back to the model', () => {
     expect(
       showCorrectionOf(
         view({
-          actions: [...failed, { type: 'interrupted', id: aid('i1') }, user('u2'), error],
-          phase: 'waiting',
+          actions: [
+            ...failed,
+            { type: 'interrupted', id: aid('i1'), during: 'wait' },
+            user('u2'),
+            error,
+          ],
+          phase: 'working',
         }),
         'call_1',
         none,
@@ -530,7 +541,7 @@ describe('a failed Show on the way back to the model', () => {
   });
 
   it('promises nothing when the report was not accepted, for an older Show, or after a halt', () => {
-    const waiting = view({ actions: failed, phase: 'waiting', executions: reporting });
+    const waiting = view({ actions: failed, phase: 'working', executions: reporting });
     expect(showCorrectionOf(waiting, 'call_1', new Set([eid('e1')]))).toBeNull();
     expect(
       showCorrectionOf(
@@ -549,5 +560,70 @@ describe('a failed Show on the way back to the model', () => {
         none,
       ),
     ).toBeNull();
+  });
+});
+
+describe('working and interrupts', () => {
+  it('asks only while a blocking tool waits; otherwise working reads as thinking or more coming', () => {
+    const asking = presentOf(
+      view({ actions: asked, phase: 'waiting', executions: [execution('e1', 'call_1', 'ask')] }),
+    );
+    expect(asking.moment).toBe('asking');
+    const shown = [user('u1'), showCall('c1', 'call_1')];
+    const open = [execution('e1', 'call_1', 'show')];
+    expect(presentOf(view({ actions: shown, phase: 'working', executions: open })).moment).toBe(
+      'thinking',
+    );
+    expect(
+      presentOf(view({ actions: [...shown, speak('s1')], phase: 'working', executions: open }))
+        .moment,
+    ).toBe('waiting');
+  });
+
+  it('starts a new turn at a used progress update', () => {
+    const progress: Action = {
+      type: 'tool_progress',
+      id: aid('p1'),
+      handles: ['call_1'],
+      tool: 'show',
+      text: 'Still rendering.',
+    };
+    const actions = [user('u1'), speak('s1'), showCall('c1', 'call_1'), progress];
+    const p = presentOf(
+      view({ actions, phase: 'working', executions: [execution('e1', 'call_1', 'show')] }),
+    );
+    expect(p.moment).toBe('thinking');
+    // Progress and context add no timeline row yet.
+    const context: Action = { type: 'tool_context', id: aid('x1'), tool: 'show', text: 'busy' };
+    const rows = presentOf(view({ actions: [...actions, context], phase: 'working' })).timeline;
+    expect(rows.map((row) => row.kind)).toEqual(['user', 'speak', 'show', 'pending']);
+  });
+
+  it('marks a line as cut only when the interrupt cut its speech', () => {
+    const cut = presentOf(
+      view({
+        actions: [
+          user('u1'),
+          speak('s1'),
+          { type: 'interrupted', id: aid('i1'), during: 'speech' },
+        ],
+      }),
+    );
+    expect(rowOf(cut.timeline, 'speak')[0]?.interrupted).toBe(true);
+    expect(rowOf(cut.timeline, 'interrupted')).toEqual([
+      { kind: 'interrupted', id: 'i1', during: 'speech' },
+    ]);
+    expect(cut.subtitle).toMatchObject({ key: 's1', interrupted: true });
+
+    const cutIn = presentOf(
+      view({
+        actions: [user('u1'), speak('s1'), { type: 'interrupted', id: aid('i1'), during: 'wait' }],
+      }),
+    );
+    expect(rowOf(cutIn.timeline, 'speak')[0]?.interrupted).toBe(false);
+    expect(rowOf(cutIn.timeline, 'interrupted')).toEqual([
+      { kind: 'interrupted', id: 'i1', during: 'wait' },
+    ]);
+    expect(cutIn.subtitle).toMatchObject({ key: 's1', interrupted: false });
   });
 });

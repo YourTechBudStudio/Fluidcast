@@ -1,10 +1,6 @@
 import type { Connection, ConversationView } from '@yourtechbudstudio/fluidcast-client';
 import type { Action as ProtocolAction } from '@yourtechbudstudio/fluidcast-core/actions';
-import type {
-  ExecutionId,
-  Phase,
-  SpeakerLabel,
-} from '@yourtechbudstudio/fluidcast-harness/protocol';
+import type { Execution, Phase, SpeakerLabel } from '@yourtechbudstudio/fluidcast-harness/protocol';
 import type { AskCommand } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 
 /** The player renders the protocol's own types (ADR 0007): no local mirror. */
@@ -20,10 +16,7 @@ export interface ConversationCommands {
   readonly interrupt: () => Promise<boolean>;
   readonly retryGeneration: () => Promise<boolean>;
   /** Answers the open Ask execution. */
-  readonly answerAsk: (
-    execution: { readonly handle: string; readonly executionId: ExecutionId },
-    answer: AskCommand,
-  ) => Promise<boolean>;
+  readonly answerAsk: (execution: Execution, answer: AskCommand) => Promise<boolean>;
   /** Presents the previous line again. */
   readonly back: () => Promise<boolean>;
 }

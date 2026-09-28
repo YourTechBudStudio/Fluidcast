@@ -36,12 +36,18 @@ export type SpeakerLabel = typeof SpeakerLabel.Type;
 export const ExecutionId = Schema.String.pipe(Schema.brand('ExecutionId'));
 export type ExecutionId = typeof ExecutionId.Type;
 
-/** An open execution of the tool call `handle`. `blocking` holds every other result until it completes. */
+/**
+ * An open execution. It completes every call in `handles` with its one outcome. `blocking` holds
+ * every other result until it completes.
+ */
 export const Execution = Schema.Struct({
   executionId: ExecutionId,
-  handle: Schema.String,
+  /** The calls this execution will complete, opening call first. */
+  handles: Schema.NonEmptyArray(Schema.String),
   tool: Schema.String,
   blocking: Schema.Boolean,
+  /** When it started, in epoch milliseconds (the Harness's clock). */
+  startedAt: Schema.Number,
 });
 export type Execution = typeof Execution.Type;
 
@@ -74,10 +80,18 @@ export const SessionState = Schema.Struct({
 export type SessionState = typeof SessionState.Type;
 
 /**
- * The phase a player presents. Always derived (`derivePhase`), never stored. `halted` is terminal:
- * a tool fault stopped the conversation.
+ * The phase a player presents. Always derived (`derivePhase`), never stored. `working`: the system
+ * is busy and nothing is playing. `waiting`: a blocking tool waits on the user. `halted` is
+ * terminal: a tool fault stopped the conversation.
  */
-export const Phase = Schema.Literals(['idle', 'speaking', 'waiting', 'generationFailed', 'halted']);
+export const Phase = Schema.Literals([
+  'idle',
+  'speaking',
+  'waiting',
+  'working',
+  'generationFailed',
+  'halted',
+]);
 export type Phase = typeof Phase.Type;
 
 // Events
@@ -99,6 +113,11 @@ export const GenerationChanged = Schema.TaggedStruct('GenerationChanged', {
 
 /** A tool call started executing. Its call is already in the effective actions (or behind the cursor, on replay). */
 export const ToolStarted = Schema.TaggedStruct('ToolStarted', Execution.fields);
+/** A newly reached call joined an open execution: its outcome now completes this handle too. */
+export const ToolJoined = Schema.TaggedStruct('ToolJoined', {
+  executionId: ExecutionId,
+  handle: Schema.String,
+});
 /** The execution ended. Any model-visible outcome was queued just before. */
 export const ToolCompleted = Schema.TaggedStruct('ToolCompleted', { executionId: ExecutionId });
 /** A model-visible outcome waits to be submitted. */
@@ -117,6 +136,7 @@ export const SessionEvent = Schema.Union([
   PlaybackRequested,
   GenerationChanged,
   ToolStarted,
+  ToolJoined,
   ToolCompleted,
   ResultQueued,
   ResultsSubmitted,
@@ -142,7 +162,10 @@ export const PlaybackFinished = Schema.TaggedStruct('PlaybackFinished', { playba
 export const Interrupt = Schema.TaggedStruct('Interrupt', {});
 export const RetryGeneration = Schema.TaggedStruct('RetryGeneration', {});
 
-/** A client's reply to an open execution, validated against that execution's command schema. */
+/**
+ * A client's reply to an open execution, validated against that execution's command schema.
+ * `handle` is any call the execution holds.
+ */
 export const ToolCommand = Schema.TaggedStruct('ToolCommand', {
   handle: Schema.String,
   executionId: ExecutionId,
@@ -203,6 +226,15 @@ export const reduce = (state: SessionState, event: SessionEvent): SessionState =
       const { _tag, ...execution } = event;
       return { ...state, executions: [...state.executions, execution] };
     }
+    case 'ToolJoined':
+      return {
+        ...state,
+        executions: state.executions.map((execution) =>
+          execution.executionId === event.executionId
+            ? { ...execution, handles: [...execution.handles, event.handle] }
+            : execution,
+        ),
+      };
     case 'ToolCompleted':
       return {
         ...state,
@@ -253,24 +285,20 @@ export const presentedSpeak = (state: SessionState): Speak | undefined => {
 };
 
 /**
- * The phase a player presents, first match wins. A tool call at the presented position is being
- * reached: it reads `waiting` only inside the step that starts it. Open executions and pending
- * results keep a turn `waiting` until they are submitted, unless an interrupt left them for the
- * user's next message.
+ * The phase a player presents, first match wins. `working`: the system is busy (generating,
+ * starting a call, holding results or running tools) and nothing is playing. `waiting`: a blocking
+ * tool waits on the user. An interrupt leaves open executions and pending results for the user's
+ * next message, so the turn reads `idle`.
  */
 export const derivePhase = (state: SessionState): Phase => {
   if (isHalted(state)) return 'halted';
   const current = currentAction(state);
   if (current?.type === 'speak') return 'speaking';
-  if (current?.type === 'tool_call') return 'waiting';
-  if (state.generation === 'running') return 'waiting';
   if (blockingExecution(state) !== undefined) return 'waiting';
+  if (current?.type === 'tool_call') return 'working';
+  if (state.generation === 'running') return 'working';
   if (state.generation === 'failed') return 'generationFailed';
-  if (
-    (state.executions.length > 0 || state.pendingResults.length > 0) &&
-    state.actions.at(-1)?.type !== 'interrupted'
-  ) {
-    return 'waiting';
-  }
+  if (state.actions.at(-1)?.type === 'interrupted') return 'idle';
+  if (state.pendingResults.length > 0 || state.executions.length > 0) return 'working';
   return 'idle';
 };

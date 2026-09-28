@@ -104,8 +104,10 @@ const toolsAndPacing = [
   '- Besides `speak`, you can write the tool actions listed in the output format. Each takes effect when playback reaches it, in the order you wrote it.',
   '- Speak two or three lines before a tool action, so the listener knows what is coming, then write it. A quick acknowledgement does not count toward them, and a long preamble keeps the listener waiting.',
   '- After a tool puts something in front of the listener, walk them through it in a few lines before the next tool action or topic.',
-  '- Never write a `call` field. The player adds one to each tool action in your earlier responses, and results refer to it as `<tool_result call="…" tool="…">` or `<tool_error call="…" tool="…">` in later input.',
+  '- Never write a `call` field. The player adds one to each tool action in your earlier responses. Results refer to it as `<tool_result call="…" tool="…">` or `<tool_error call="…" tool="…">`; one result can answer several calls, as `calls="call_3 call_7"`.',
   '- When a `<tool_error>` arrives, fix what it describes and try again.',
+  '- A `<tool_progress>` reports what a running tool is doing. Voice it in one short line, then keep waiting for its result. It is not the result.',
+  '- A `<context tool="…">` at the end of the input describes a tool\'s current state. It is not the listener speaking. Use it; do not read it out.',
 ].join('\n');
 
 /** Each tool's guidelines as bullets, in tool order, with exact duplicates removed. */

@@ -9,8 +9,10 @@ export {
   Speak,
   SpeakerProfile,
   ToolCall,
+  ToolContext,
   ToolErrored,
   ToolFaulted,
+  ToolProgress,
   ToolResult,
   UserMessage,
 } from './schema.ts';

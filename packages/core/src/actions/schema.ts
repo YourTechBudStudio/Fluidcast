@@ -42,6 +42,8 @@ export type Speak = typeof Speak.Type;
 export const Interrupted = Schema.Struct({
   type: Schema.Literal('interrupted'),
   id: ActionId,
+  /** `speech`: a line was playing and was cut. `wait`: nothing was playing; the user cut in to speak. */
+  during: Schema.Literals(['speech', 'wait']),
 });
 export type Interrupted = typeof Interrupted.Type;
 
@@ -73,11 +75,14 @@ export const ToolCall = Schema.Struct({
 });
 export type ToolCall = typeof ToolCall.Type;
 
+/** The calls an outcome completes: one execution's outcome can answer several calls. */
+const Handles = Schema.NonEmptyArray(Schema.String);
+
 /** Runtime-authored: a tool result the model has read. `result` is encoded with the tool's `result` schema. */
 export const ToolResult = Schema.Struct({
   type: Schema.Literal('tool_result'),
   id: ActionId,
-  handle: Schema.String,
+  handles: Handles,
   tool: Schema.String,
   result: Schema.Json,
 });
@@ -90,23 +95,49 @@ export type ToolResult = typeof ToolResult.Type;
 export const ToolErrored = Schema.Struct({
   type: Schema.Literal('tool_errored'),
   id: ActionId,
-  handle: Schema.String,
+  handles: Handles,
   tool: Schema.String,
   message: Schema.String,
 });
 export type ToolErrored = typeof ToolErrored.Type;
 
-/** Runtime-authored: a tool fault halted the conversation. `error` holds display-safe identifiers only. */
+/**
+ * Runtime-authored: a tool fault halted the conversation. `handles` is empty for a fault raised
+ * outside any call. `error` holds display-safe identifiers only.
+ */
 export const ToolFaulted = Schema.Struct({
   type: Schema.Literal('tool_faulted'),
   id: ActionId,
-  handle: Schema.String,
+  handles: Schema.Array(Schema.String),
+  tool: Schema.String,
   error: Schema.Struct({
     tag: Schema.String,
     message: Schema.String,
   }),
 });
 export type ToolFaulted = typeof ToolFaulted.Type;
+
+/** Runtime-authored: a running tool's progress update the model read. `text` is model-facing. */
+export const ToolProgress = Schema.Struct({
+  type: Schema.Literal('tool_progress'),
+  id: ActionId,
+  handles: Handles,
+  tool: Schema.String,
+  text: Schema.String,
+});
+export type ToolProgress = typeof ToolProgress.Type;
+
+/**
+ * Runtime-authored: a tool's per-iteration context, recorded when it changed. Only the latest one
+ * per tool is rendered, at the end of the model input; `text: ''` withdraws it.
+ */
+export const ToolContext = Schema.Struct({
+  type: Schema.Literal('tool_context'),
+  id: ActionId,
+  tool: Schema.String,
+  text: Schema.String,
+});
+export type ToolContext = typeof ToolContext.Type;
 
 /** Every conversation fact: user-, model-, and runtime-authored actions in one flat union (ADR 0006). */
 export const Action = Schema.Union([
@@ -118,6 +149,8 @@ export const Action = Schema.Union([
   ToolResult,
   ToolErrored,
   ToolFaulted,
+  ToolProgress,
+  ToolContext,
 ]);
 export type Action = typeof Action.Type;
 
