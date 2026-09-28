@@ -1,0 +1,26 @@
+/* MOCK ONLY. Worker Markdown: the Show reading column, a step smaller and full width, since it sits among tool output. */
+.worker-prose {
+  max-width: none;
+  font-size: 15.5px;
+  line-height: 1.6;
+}
+.worker-prose > * + * {
+  margin-top: 0.75em;
+}
+.worker-prose h1 {
+  font-size: 1.3em;
+}
+.worker-prose h2 {
+  font-size: 1.15em;
+}
+.worker-prose h3 {
+  font-size: 1.02em;
+}
+.worker-prose * + h2,
+.worker-prose * + h3 {
+  margin-top: 1.3em;
+}
+.worker-prose pre {
+  padding: 10px 14px;
+  font-size: 12.5px;
+}
