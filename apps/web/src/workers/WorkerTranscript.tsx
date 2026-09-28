@@ -1,24 +1,58 @@
-// MOCK ONLY. A worker's transcript on the main transcript's rail (program-design §9.3 `WorkerTranscript.tsx`): 30 px
-// markers on a vertical line, the raw entry type on the right. A tool call is one row; its output shows on click.
+import {
+  Bot,
+  Check,
+  ChevronRight,
+  Ellipsis,
+  FilePen,
+  FileText,
+  Globe,
+  type LucideIcon,
+  Search,
+  SquareTerminal,
+  Wrench,
+  X,
+} from 'lucide-react';
+import { type ReactNode, useMemo, useState } from 'react';
 
-import { Check, ChevronRight, Ellipsis, X } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import type { TranscriptEntry } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 
-import { Chip } from '../../ui';
-import { toolIcon } from './helpers';
-import { Prose } from './shared';
+import { Chip, Prose } from '../ui';
 import {
   instructionPreview,
   lineCount,
-  outcomeLabel,
   prettyInput,
   shortInput,
+  type ToolNode,
   type ToolState,
+  toolState,
   type TranscriptNode,
-  type Turn,
+  transcriptTree,
+  turns,
 } from './transcript';
 
-type ToolNode = Extract<TranscriptNode, { kind: 'tool' }>;
+const TOOL_ICONS: Record<string, LucideIcon> = {
+  Bash: SquareTerminal,
+  Read: FileText,
+  Edit: FilePen,
+  Write: FilePen,
+  Grep: Search,
+  Glob: Search,
+  WebSearch: Globe,
+  WebFetch: Globe,
+  Agent: Bot,
+};
+
+const toolIcon = (name: string): LucideIcon => TOOL_ICONS[name] ?? Wrench;
+
+/** "Turn ended", or its error outcome; a usage limit says when it resets, when that is known. */
+const outcomeLabel = (outcome: string, resetsAt: number | undefined) => {
+  if (outcome === 'success') return 'Turn ended';
+  const resets =
+    resetsAt === undefined
+      ? ''
+      : ` · resets ${new Date(resetsAt * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`;
+  return `Turn ended: ${outcome}${resets}`;
+};
 
 interface Item {
   readonly key: string;
@@ -28,23 +62,37 @@ interface Item {
   readonly gap?: boolean;
 }
 
-export function WorkerTranscript({
-  turns,
-  agent,
-  agentType,
-}: {
-  readonly turns: ReadonlyArray<Turn>;
+interface Speaker {
   readonly agent: string;
   readonly agentType: string;
+  readonly working: boolean;
+}
+
+/**
+ * A worker's transcript on the main transcript's rail: 30 px markers on a vertical line, the raw entry type on the
+ * right. A tool call is one row with its result folded in, shown on click.
+ */
+export function WorkerTranscript({
+  entries,
+  agent,
+  agentType,
+  working,
+}: {
+  readonly entries: ReadonlyArray<TranscriptEntry>;
+  readonly agent: string;
+  readonly agentType: string;
+  readonly working: boolean;
 }) {
+  const all = useMemo(() => turns(transcriptTree(entries)), [entries]);
+  const speaker: Speaker = { agent, agentType, working };
   const items: Item[] = [];
-  turns.forEach((turn, t) => {
+  all.forEach((turn, t) => {
     let afterText = false;
     turn.nodes.forEach((node, n) => {
-      items.push(itemOf(node, { agent, agentType }, afterText, t > 0 && n === 0));
+      items.push(itemOf(node, speaker, afterText, t > 0 && n === 0));
       afterText = node.kind === 'text';
     });
-    if (turn.running) {
+    if (working && t === all.length - 1 && turn.end === undefined) {
       items.push({
         key: `${turn.key}-working`,
         marker: <Marker tone="live" />,
@@ -54,10 +102,10 @@ export function WorkerTranscript({
           </Head>
         ),
       });
-    } else if (turn.outcome !== undefined) {
-      const ok = turn.outcome === 'success';
+    } else if (turn.end !== undefined) {
+      const ok = turn.end.outcome === 'success';
       items.push({
-        key: `${turn.key}-end`,
+        key: turn.end.key,
         marker: (
           <Marker tone={ok ? 'ok' : 'error'}>
             {ok ? <Check size={13} strokeWidth={2} /> : <X size={13} strokeWidth={2} />}
@@ -66,7 +114,7 @@ export function WorkerTranscript({
         body: (
           <Head type="turnEnd">
             <span className={`text-sm ${ok ? 'text-fg-subtle' : 'font-semibold text-red'}`}>
-              {outcomeLabel(turn.outcome)}
+              {outcomeLabel(turn.end.outcome, turn.end.resetsAt)}
             </span>
           </Head>
         ),
@@ -74,11 +122,6 @@ export function WorkerTranscript({
     }
   });
   return <Rail items={items} />;
-}
-
-interface Speaker {
-  readonly agent: string;
-  readonly agentType: string;
 }
 
 function itemOf(node: TranscriptNode, speaker: Speaker, afterText: boolean, gap: boolean): Item {
@@ -113,7 +156,7 @@ function itemOf(node: TranscriptNode, speaker: Speaker, afterText: boolean, gap:
                 </span>
               </Head>
             )}
-            <Prose text={node.text} className={afterText ? 'pt-1' : ''} />
+            <Prose source={node.text} compact className={afterText ? 'pt-1' : ''} />
           </>
         ),
       };
@@ -123,16 +166,26 @@ function itemOf(node: TranscriptNode, speaker: Speaker, afterText: boolean, gap:
         marker: <Marker tone="dot" />,
         body: <p className="pt-1.5 text-[14px] text-fg-subtle italic">{node.text}</p>,
       };
-    case 'tool':
+    case 'tool': {
+      const state = toolState(node, speaker.working);
       return {
         key: node.key,
         gap,
-        marker: <ToolMarker node={node} />,
-        body: <ToolRow node={node} speaker={speaker} />,
+        marker: <ToolMarker name={node.call.name} state={state} />,
+        body: <ToolRow node={node} state={state} speaker={speaker} />,
       };
+    }
     case 'turnEnd':
-      // Turn ends are drawn per turn by `WorkerTranscript`; `turns` never leaves one among the nodes.
-      return { key: node.key, marker: null, body: null };
+      // A nested turn end (a subagent's) reads as a plain line; top-level ones are drawn per turn.
+      return {
+        key: node.key,
+        marker: <Marker tone="dot" />,
+        body: (
+          <p className="pt-1.5 text-[14px] text-fg-subtle">
+            {outcomeLabel(node.outcome, node.resetsAt)}
+          </p>
+        ),
+      };
   }
 }
 
@@ -212,15 +265,16 @@ const MARKER_TONE: Record<ToolState, Tone> = {
   open: 'neutral',
 };
 
-function ToolMarker({ node }: { readonly node: ToolNode }) {
-  const Icon = toolIcon(node.call.name);
+function ToolMarker({ name, state }: { readonly name: string; readonly state: ToolState }) {
+  const Icon = toolIcon(name);
   return (
-    <Marker tone={MARKER_TONE[node.state]}>
+    <Marker tone={MARKER_TONE[state]}>
       <Icon size={13} strokeWidth={1.8} />
     </Marker>
   );
 }
 
+/** A prompt collapsed to its instruction; expanded, the exact text sent. */
 function PromptRow({
   source,
   text,
@@ -266,14 +320,24 @@ function PromptRow({
   );
 }
 
-/** One row per call. Subagent steps stay collapsed behind their latest status line until the row is opened. */
-function ToolRow({ node, speaker }: { readonly node: ToolNode; readonly speaker: Speaker }) {
+/** One row per call. A subagent's steps stay collapsed behind its latest status line until the row is opened. */
+function ToolRow({
+  node,
+  state,
+  speaker,
+}: {
+  readonly node: ToolNode;
+  readonly state: ToolState;
+  readonly speaker: Speaker;
+}) {
   const [open, setOpen] = useState(false);
-  const { call, result, state, children } = node;
+  const { call, result, children } = node;
   const output = result?.content ?? '';
   const subagent = children.length > 0;
-  const latestStatus = children.findLast((c) => c.kind === 'status');
+  const latestStatus = children.findLast((child) => child.kind === 'status');
   const lines = lineCount(output);
+  // A subagent's steps are never the worker's own running call.
+  const nested: Speaker = { ...speaker, working: false };
   return (
     <div>
       <button
@@ -295,7 +359,7 @@ function ToolRow({ node, speaker }: { readonly node: ToolNode; readonly speaker:
         {state === 'ok' && (
           <span className="shrink-0 font-mono text-[11px] text-fg-subtle max-sm:hidden">
             {subagent
-              ? `${children.filter((c) => c.kind === 'tool').length} steps`
+              ? `${children.filter((child) => child.kind === 'tool').length} steps`
               : `${lines} ${lines === 1 ? 'line' : 'lines'}`}
           </span>
         )}
@@ -307,13 +371,17 @@ function ToolRow({ node, speaker }: { readonly node: ToolNode; readonly speaker:
       )}
       {subagent && open && (
         <Rail
-          items={children.map((child) => itemOf(child, speaker, child.kind === 'text', false))}
+          items={children.map((child, i) =>
+            itemOf(child, nested, children[i - 1]?.kind === 'text', false),
+          )}
           nested
         />
       )}
       {open && (
         <div className="mt-1 mb-2 flex flex-col gap-2.5">
-          <Pre label="Input">{prettyInput(call.input)}</Pre>
+          <Pre label="Input" cut={call.truncated}>
+            {prettyInput(call.input)}
+          </Pre>
           {result && (
             <Pre
               label={state === 'error' ? 'Error' : 'Output'}

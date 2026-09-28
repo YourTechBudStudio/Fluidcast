@@ -23,15 +23,20 @@
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "catalog:",
+    "@anthropic-ai/sdk": "catalog:",
     "@effect/ai-openai": "catalog:",
     "@effect/ai-openai-compat": "4.0.0-rc.117",
     "@effect/platform-node": "catalog:",
     "@fluidcast/app-contract": "workspace:*",
+    "@modelcontextprotocol/sdk": "catalog:",
     "@yourtechbudstudio/fluidcast-core": "workspace:*",
     "@yourtechbudstudio/fluidcast-harness": "workspace:*",
+    "@yourtechbudstudio/fluidcast-tool-agent": "workspace:*",
     "@yourtechbudstudio/fluidcast-tool-ask": "workspace:*",
     "@yourtechbudstudio/fluidcast-tool-show": "workspace:*",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

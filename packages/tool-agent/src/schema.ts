@@ -30,11 +30,14 @@ export const agentInput = (types: readonly [string, ...Array<string>]) =>
 /** What the model writes to the Agent tool. */
 export type AgentInput = ReturnType<typeof agentInput>['Type'];
 
-/** Any agent call as clients read it, whatever types a backend configured. */
+/**
+ * Any agent call as clients read it, whatever types a backend configured: the ID and message are
+ * checked as the tool checks them, the type is not (clients cannot know the configured types).
+ */
 export const AgentCall = Schema.Struct({
   agentType: Schema.String,
-  agent: Schema.String,
-  message: Schema.String,
+  agent: AgentId,
+  message: Schema.NonEmptyString,
 });
 export type AgentCall = typeof AgentCall.Type;
 

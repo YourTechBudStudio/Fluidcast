@@ -1,14 +1,24 @@
 import { useAtomValue, useAtomSet } from '@effect/atom-react';
 import {
+  ChevronDown,
   CircleAlert,
   CircleHelp,
+  CornerDownRight,
   Ellipsis,
   OctagonX,
   Square,
+  SquareTerminal,
   TriangleAlert,
   User,
 } from 'lucide-react';
-import { type CSSProperties, type ReactNode, useEffect, useRef } from 'react';
+import {
+  type CSSProperties,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import type { ShowFormat, ShowInput } from '@yourtechbudstudio/fluidcast-tool-show/schema';
 
@@ -21,7 +31,7 @@ import {
   ShowCard,
   ShowCardTitle,
 } from '../tools';
-import { Chip, useReducedMotion } from '../ui';
+import { Chip, Prose, useReducedMotion } from '../ui';
 import { SPEAKER_TONES, type TimelineRow } from './presentation';
 import { bodyOf, showPanelAtom, showRenderAtom } from './shows';
 
@@ -29,9 +39,12 @@ import { bodyOf, showPanelAtom, showRenderAtom } from './shows';
 export function Transcript({
   rows,
   visible,
+  onOpenWorker,
 }: {
   readonly rows: readonly TimelineRow[];
   readonly visible: boolean;
+  /** Opens the Workers layer on this worker. */
+  readonly onOpenWorker: (agent: string) => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
@@ -66,6 +79,7 @@ export function Transcript({
               first={i === 0}
               last={i === rows.length - 1}
               visible={visible}
+              onOpenWorker={onOpenWorker}
             />
           ))
         )}
@@ -79,12 +93,14 @@ function TimelineItem({
   first,
   last,
   visible,
+  onOpenWorker,
 }: {
   readonly row: TimelineRow;
   readonly first: boolean;
   readonly last: boolean;
   /** The transcript layer is showing: miniatures may mount. */
   readonly visible: boolean;
+  readonly onOpenWorker: (agent: string) => void;
 }) {
   switch (row.kind) {
     case 'user':
@@ -210,6 +226,24 @@ function TimelineItem({
           <AskCard input={row.input} answer={row.answer} />
         </Row>
       );
+    case 'agent':
+      return <AgentRow row={row} first={first} last={last} onOpenWorker={onOpenWorker} />;
+    case 'agentResult':
+      return <AgentResultRow row={row} first={first} last={last} />;
+    case 'progress':
+      return (
+        <Row node={<Node kind="progress" />} first={first} last={last}>
+          <div className="flex min-h-[30px] items-start gap-3 pt-[5px]">
+            <p className="min-w-0 flex-1 text-[14.5px] leading-snug text-fg-subtle">
+              <span className="mr-2 font-mono text-[11.5px] tracking-[0.03em] text-violet/75">
+                {row.agent}
+              </span>
+              <span className="italic">{row.text}</span>
+            </p>
+            <Type>tool_progress</Type>
+          </div>
+        </Row>
+      );
     case 'invalidCall':
       return (
         <Row node={<Node kind="invalid" />} first={first} last={last}>
@@ -253,6 +287,204 @@ function TimelineItem({
         </Row>
       );
   }
+}
+
+/** Work handed to a worker. The worker's name opens it in the Workers layer. */
+function AgentRow({
+  row,
+  first,
+  last,
+  onOpenWorker,
+}: {
+  readonly row: Extract<TimelineRow, { kind: 'agent' }>;
+  readonly first: boolean;
+  readonly last: boolean;
+  readonly onOpenWorker: (agent: string) => void;
+}) {
+  const { agent, agentType, message } = row.call;
+  const others = row.together.join(' and ');
+  const note =
+    row.state === 'working' && row.joined
+      ? `Steers ${agent}’s current work. One result will answer this and ${others}.`
+      : row.state === 'answered' && row.together.length > 0
+        ? `One result answered this and ${others}.`
+        : null;
+  return (
+    <Row
+      node={
+        <Node
+          kind={
+            row.state === 'working' ? 'agentLive' : row.state === 'failed' ? 'agentFailed' : 'agent'
+          }
+        />
+      }
+      first={first}
+      last={last}
+    >
+      <Head type={`tool_call · ${row.handle}`}>
+        <span className="text-fg-subtle">Handed to</span>
+        <button
+          type="button"
+          onClick={() => onOpenWorker(agent)}
+          className="-mx-1 cursor-pointer rounded-sm px-1 font-semibold text-fg underline decoration-line/60 decoration-dotted underline-offset-4 hover:decoration-violet focus-visible:outline-2 focus-visible:outline-blue"
+        >
+          {agent}
+        </button>
+        <span className="font-mono text-[11.5px] tracking-[0.03em] text-fg-subtle">
+          {agentType}
+        </span>
+        {row.state === 'working' && (
+          <Chip tone="violet" live>
+            Working
+          </Chip>
+        )}
+        {row.state === 'failed' && <Chip tone="red">Failed</Chip>}
+      </Head>
+      <p className="mt-0.5 rounded-[6px_16px_16px_16px] border border-violet/20 bg-violet/[0.05] px-3.5 py-2.5 text-[15px] leading-normal text-fg-muted">
+        {message}
+      </p>
+      {note && <p className="mt-1.5 text-[13.5px] text-fg-subtle">{note}</p>}
+    </Row>
+  );
+}
+
+/** What the model read back from a worker, at the point in the log where it read it. */
+function AgentResultRow({
+  row,
+  first,
+  last,
+}: {
+  readonly row: Extract<TimelineRow, { kind: 'agentResult' }>;
+  readonly first: boolean;
+  readonly last: boolean;
+}) {
+  const { outcome } = row;
+  const failed = outcome._tag === 'error';
+  return (
+    <Row node={<Node kind={failed ? 'resultFailed' : 'result'} />} first={first} last={last}>
+      <Head type={`${failed ? 'tool_errored' : 'tool_result'} · ${row.handles.join(' ')}`}>
+        <span className={failed ? 'font-semibold text-red' : 'text-fg-subtle'}>
+          {failed ? 'Stopped with an error:' : 'Returned from'}
+        </span>
+        <span className="font-semibold text-fg">{row.agent}</span>
+        <span className="font-mono text-[11.5px] tracking-[0.03em] text-fg-subtle">
+          {row.agentType}
+        </span>
+        {row.handles.length > 1 && (
+          <span className="font-mono text-[11.5px] text-fg-subtle">
+            answers {row.handles.join(' + ')}
+          </span>
+        )}
+      </Head>
+      {outcome._tag === 'result' ? (
+        <ResultMessages messages={outcome.messages} />
+      ) : (
+        <>
+          <p className="mt-0.5 rounded-md border border-red/25 bg-red/6 px-3.5 py-2 text-[14px] text-fg-muted">
+            {outcome.error}
+          </p>
+          {outcome.written !== null && <WhatItWrote text={outcome.written} />}
+        </>
+      )}
+    </Row>
+  );
+}
+
+const resultCard = 'mt-0.5 rounded-[6px_16px_16px_16px] border border-line/35 bg-elevated/40';
+
+/** The last message (usually the conclusion), with every message behind "Show all". Fades only when it is cut. */
+function ResultMessages({ messages }: { readonly messages: readonly string[] }) {
+  const [open, setOpen] = useState(false);
+  const count = messages.length;
+  const more = count > 1;
+  const preview = useRef<HTMLDivElement>(null);
+  const [clipped, setClipped] = useState(false);
+  // Measured after layout, so the fade appears only when the preview really is cut.
+  useLayoutEffect(() => {
+    const el = preview.current;
+    setClipped(!open && el !== null && el.scrollHeight > el.clientHeight + 1);
+  }, [open, messages]);
+  if (count === 0) return null;
+  return (
+    <div className={resultCard}>
+      <div
+        ref={preview}
+        className={`relative px-4 pt-3 ${open || !more ? 'pb-1' : 'max-h-72 overflow-hidden'}`}
+      >
+        {more && !open && (
+          <p className="mb-2 font-mono text-[10.5px] font-medium tracking-[0.06em] text-fg-subtle uppercase">
+            Last of {count} messages
+          </p>
+        )}
+        <div className="flex flex-col gap-3 divide-y divide-line/20 [&>*]:pb-3">
+          {(open ? messages : messages.slice(-1)).map((text, i) => (
+            <Prose key={i} source={text} compact />
+          ))}
+        </div>
+        {clipped && <Fade />}
+      </div>
+      {more && (
+        <Toggle open={open} onToggle={() => setOpen(!open)}>
+          {open ? 'Show less' : `Show all ${count} messages`}
+        </Toggle>
+      )}
+    </div>
+  );
+}
+
+/** Everything a failed worker wrote before stopping, as one block: the joined text cannot be split into messages. */
+function WhatItWrote({ text }: { readonly text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`${resultCard} mt-2`}>
+      {open && (
+        <div className="px-4 pt-3 pb-1 [&>*]:pb-3">
+          <Prose source={text} compact />
+        </div>
+      )}
+      <Toggle open={open} onToggle={() => setOpen(!open)} rounded={open ? 'bottom' : 'all'}>
+        {open ? 'Show less' : 'Show what it wrote'}
+      </Toggle>
+    </div>
+  );
+}
+
+function Toggle({
+  open,
+  onToggle,
+  rounded = 'bottom',
+  children,
+}: {
+  readonly open: boolean;
+  readonly onToggle: () => void;
+  readonly rounded?: 'bottom' | 'all';
+  readonly children: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      onClick={onToggle}
+      className={`flex min-h-11 w-full cursor-pointer items-center gap-2 px-4 text-left font-mono text-[12px] text-fg-muted hover:bg-elevated/40 hover:text-fg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue ${rounded === 'all' ? 'rounded-[6px_16px_16px_16px]' : 'rounded-b-[16px] border-t border-line/25'}`}
+    >
+      <ChevronDown
+        size={14}
+        strokeWidth={1.8}
+        aria-hidden
+        className={`transition-transform duration-(--duration-ui) ease-expo ${open ? 'rotate-180' : ''}`}
+      />
+      {children}
+    </button>
+  );
+}
+
+function Fade() {
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-linear-to-t from-[#30344a] to-transparent"
+    />
+  );
 }
 
 /** A Show's card. Clicking its miniature reopens this exact Show in the panel; nothing runs or reports again. */
@@ -330,7 +562,11 @@ function Head({ type, children }: { readonly type?: string; readonly children: R
 }
 
 function Type({ children }: { readonly children: string }) {
-  return <span className="ml-auto pt-0 font-mono text-[11px] text-fg-subtle/75">{children}</span>;
+  return (
+    <span className="ml-auto pt-0 font-mono text-[11px] text-fg-subtle/75 max-sm:hidden">
+      {children}
+    </span>
+  );
 }
 
 type NodeKind =
@@ -343,7 +579,13 @@ type NodeKind =
   | 'show'
   | 'ask'
   | 'invalid'
-  | 'faulted';
+  | 'faulted'
+  | 'agent'
+  | 'agentLive'
+  | 'agentFailed'
+  | 'result'
+  | 'resultFailed'
+  | 'progress';
 
 function Node({
   kind,
@@ -451,6 +693,57 @@ function Node({
           className={`${base} bg-red/16 text-red shadow-[0_0_0_1px_rgb(237_135_150/0.55)]`}
         >
           <OctagonX size={14} strokeWidth={1.8} />
+        </span>
+      );
+    case 'agent':
+      return (
+        <span
+          aria-hidden
+          className={`${base} bg-violet/10 text-violet/80 shadow-[0_0_0_1px_rgb(198_160_246/0.35)]`}
+        >
+          <SquareTerminal size={14} strokeWidth={1.8} />
+        </span>
+      );
+    case 'agentLive':
+      return (
+        <span
+          aria-hidden
+          className={`${base} bg-violet/14 text-violet shadow-[0_0_0_1px_var(--color-violet),0_0_14px_rgb(198_160_246/0.5)]`}
+        >
+          <SquareTerminal size={14} strokeWidth={1.8} />
+        </span>
+      );
+    case 'agentFailed':
+      return (
+        <span
+          aria-hidden
+          className={`${base} bg-red/14 text-red shadow-[0_0_0_1px_rgb(237_135_150/0.45)]`}
+        >
+          <SquareTerminal size={14} strokeWidth={1.8} />
+        </span>
+      );
+    case 'result':
+      return (
+        <span
+          aria-hidden
+          className={`${base} bg-canvas text-violet shadow-[0_0_0_1px_rgb(198_160_246/0.45)]`}
+        >
+          <CornerDownRight size={14} strokeWidth={1.8} />
+        </span>
+      );
+    case 'resultFailed':
+      return (
+        <span
+          aria-hidden
+          className={`${base} bg-red/14 text-red shadow-[0_0_0_1px_rgb(237_135_150/0.45)]`}
+        >
+          <CornerDownRight size={14} strokeWidth={1.8} />
+        </span>
+      );
+    case 'progress':
+      return (
+        <span aria-hidden className={base}>
+          <i className="size-[7px] rounded-full bg-violet/45" />
         </span>
       );
   }

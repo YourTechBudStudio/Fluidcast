@@ -497,7 +497,7 @@ export const makePool = (options: PoolOptions) =>
       });
 
     /** Awaits the period `assign` opened for this execution, with progress while it runs. */
-    const run = (_input: AgentInput, context: InvocationContext<never>) =>
+    const run = (_input: AgentInput, context: InvocationContext<unknown>) =>
       Effect.gen(function* () {
         const opening = yield* decide((current): readonly [Opening | undefined, PoolState] => {
           const openings = new Map(current.openings);

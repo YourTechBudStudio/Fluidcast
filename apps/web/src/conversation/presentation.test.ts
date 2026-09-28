@@ -12,6 +12,8 @@ import { showCorrectionOf } from './tools';
 
 // Fixtures: a view is built from its actions, like the Client SDK's projection.
 
+type Handles = readonly [string, ...string[]];
+
 const aid = (id: string) => id as ActionId;
 const eid = (id: string) => id as ExecutionId;
 
@@ -60,12 +62,46 @@ const faulted = (id: string, handle: string, message: string): Action => ({
   tool: 'show',
   error: { tag: 'UnexpectedError', message },
 });
-const execution = (id: string, handle: string, tool: string): Execution => ({
+const execution = (
+  id: string,
+  handle: string,
+  tool: string,
+  startedAt = 0,
+  handles: Handles = [handle],
+): Execution => ({
   executionId: eid(id),
-  handles: [handle],
+  handles,
   tool,
   blocking: tool === 'ask',
-  startedAt: 0,
+  startedAt,
+});
+const agentCall = (
+  id: string,
+  handle: string,
+  agent = 'brainstorm',
+  message = 'Compare both designs.',
+) => call(id, handle, 'agent', { agentType: 'claude', agent, message });
+const agentResult = (
+  id: string,
+  handles: Handles,
+  messages: readonly string[],
+  agent = 'brainstorm',
+) =>
+  ({
+    type: 'tool_result',
+    id: aid(id),
+    handles,
+    tool: 'agent',
+    result: { agent, messages: [...messages] },
+  }) as const;
+const agentErrored = (id: string, handles: Handles, message: string) =>
+  ({ type: 'tool_errored', id: aid(id), handles, tool: 'agent', message }) as const;
+const progressOf = (id: string, handle: string, line: string): Action => ({
+  type: 'tool_progress',
+  id: aid(id),
+  handles: [handle],
+  tool: 'agent',
+  text: line,
 });
 
 const view = (partial: Partial<ConversationView>): ConversationView => ({
@@ -303,12 +339,12 @@ describe('thinking and waiting after a continuation', () => {
     expect(more.moment).toBe('waiting');
   });
 
-  it('mulls over an answer to a question', () => {
+  it('thinks about an answer to a question like anything else', () => {
     const p = presentOf(
       view({ actions: [...asked, answered('r1', 'call_1', answer)], phase: 'working' }),
     );
     expect(p.moment).toBe('thinking');
-    expect(p.status).toBe('mulling');
+    expect(p.status).toBe('thinking');
   });
 
   it('still shows your message while thinking about it', () => {
@@ -625,5 +661,286 @@ describe('working and interrupts', () => {
       { kind: 'interrupted', id: 'i1', during: 'wait' },
     ]);
     expect(cutIn.subtitle).toMatchObject({ key: 's1', interrupted: false });
+  });
+});
+
+describe('the Agent tool', () => {
+  const handed = [user('u1'), agentCall('c1', 'call_1'), speak('s1', 'On it.')];
+
+  it('thinks while a worker runs, whatever else goes on, counting from the earliest Agent execution', () => {
+    const agents = [
+      execution('e1', 'call_1', 'agent', 5_000),
+      execution('e0', 'call_0', 'show', 1_000),
+    ];
+    // After a spoken line: still thinking, not "more coming", and the line stays dimmed.
+    const afterSpeak = presentOf(view({ actions: handed, phase: 'working', executions: agents }));
+    expect(afterSpeak.moment).toBe('thinking');
+    expect(afterSpeak.status).toBe('thinking');
+    // An earlier open Show does not count; only Agent executions do.
+    expect(afterSpeak.thinkingSince).toBe(5_000);
+    expect(afterSpeak.subtitle).toMatchObject({ key: 's1', tone: 'dim' });
+    // With several workers, the earliest one.
+    const two = presentOf(
+      view({
+        actions: handed,
+        phase: 'working',
+        executions: [...agents, execution('e2', 'call_2', 'agent', 2_000)],
+      }),
+    );
+    expect(two.thinkingSince).toBe(2_000);
+    // With results from another tool queued.
+    const queued = presentOf(
+      view({
+        actions: handed,
+        phase: 'working',
+        executions: [execution('e1', 'call_1', 'agent', 5_000)],
+        pendingResults: [errored('r0', 'call_0', 'show', 'The show could not be rendered.')],
+      }),
+    );
+    expect(queued.moment).toBe('thinking');
+    // While the interface agent generates (a progress iteration), before it speaks.
+    const generating = presentOf(
+      view({
+        actions: [...handed, progressOf('p1', 'call_1', 'Reading the designs.')],
+        phase: 'working',
+        executions: [execution('e1', 'call_1', 'agent', 5_000)],
+      }),
+    );
+    expect(generating.moment).toBe('thinking');
+  });
+
+  it('has no elapsed start without a running worker, or outside thinking', () => {
+    const noWorker = presentOf(view({ actions: [user('u1')], phase: 'working' }));
+    expect(noWorker.moment).toBe('thinking');
+    expect(noWorker.thinkingSince).toBeNull();
+    const speaking = presentOf(
+      view({
+        actions: handed,
+        phase: 'speaking',
+        executions: [execution('e1', 'call_1', 'agent', 5_000)],
+      }),
+    );
+    expect(speaking.moment).toBe('speaking');
+    expect(speaking.thinkingSince).toBeNull();
+  });
+
+  it('shows where each agent call stands, and which calls share an execution or a result', () => {
+    const actions = [
+      user('u1'),
+      agentCall('c1', 'call_1'),
+      user('u2'),
+      agentCall('c2', 'call_2', 'brainstorm', 'Also check the tests.'),
+      agentCall('c3', 'call_3', 'review'),
+      agentCall('c4', 'call_4', 'fixer'),
+    ];
+    const p = presentOf(
+      view({
+        actions,
+        phase: 'working',
+        executions: [execution('e1', 'call_1', 'agent', 0, ['call_1', 'call_2'])],
+        pendingResults: [
+          agentErrored(
+            'r3',
+            ['call_3'],
+            'The worker "review" stopped with an error (error_max_turns).',
+          ),
+        ],
+      }),
+    );
+    expect(
+      rowOf(p.timeline, 'agent').map(({ handle, state, joined, together }) => ({
+        handle,
+        state,
+        joined,
+        together,
+      })),
+    ).toEqual([
+      { handle: 'call_1', state: 'working', joined: false, together: ['call_2'] },
+      { handle: 'call_2', state: 'working', joined: true, together: ['call_1'] },
+      { handle: 'call_3', state: 'failed', joined: false, together: [] },
+      // No execution and no outcome: after a halt, for example.
+      { handle: 'call_4', state: null, joined: false, together: [] },
+    ]);
+    expect(rowOf(p.timeline, 'agent')[0]?.call).toEqual({
+      agentType: 'claude',
+      agent: 'brainstorm',
+      message: 'Compare both designs.',
+    });
+
+    const shared = presentOf(
+      view({
+        actions: [...actions.slice(0, 4), agentResult('r1', ['call_1', 'call_2'], ['Done.'])],
+      }),
+    );
+    expect(
+      rowOf(shared.timeline, 'agent').map(({ state, joined, together }) => ({
+        state,
+        joined,
+        together,
+      })),
+    ).toEqual([
+      { state: 'answered', joined: false, together: ['call_2'] },
+      { state: 'answered', joined: true, together: ['call_1'] },
+    ]);
+  });
+
+  it('puts one result row per agent outcome where the model read it, with every call it answers', () => {
+    const p = presentOf(
+      view({
+        actions: [
+          user('u1'),
+          agentCall('c1', 'call_1'),
+          agentCall('c2', 'call_2', 'brainstorm', 'And the tests.'),
+          agentResult('r1', ['call_1', 'call_2'], ['First, the designs.', 'Then, the conclusion.']),
+          speak('s1', 'It found two things.'),
+        ],
+      }),
+    );
+    expect(p.timeline.map((row) => row.kind)).toEqual([
+      'user',
+      'agent',
+      'agent',
+      'agentResult',
+      'speak',
+    ]);
+    expect(rowOf(p.timeline, 'agentResult')).toEqual([
+      {
+        kind: 'agentResult',
+        id: 'r1',
+        handles: ['call_1', 'call_2'],
+        agent: 'brainstorm',
+        agentType: 'claude',
+        outcome: { _tag: 'result', messages: ['First, the designs.', 'Then, the conclusion.'] },
+      },
+    ]);
+  });
+
+  it('gives a pending outcome no result row until the model reads it', () => {
+    const p = presentOf(
+      view({
+        actions: [user('u1'), agentCall('c1', 'call_1')],
+        phase: 'working',
+        pendingResults: [agentResult('r1', ['call_1'], ['Done.'])],
+      }),
+    );
+    expect(rowOf(p.timeline, 'agentResult')).toEqual([]);
+    expect(rowOf(p.timeline, 'agent')[0]?.state).toBe('answered');
+  });
+
+  it('splits a failed busy period into the error and what the worker wrote', () => {
+    const message =
+      'The worker "brainstorm" stopped with an error (error_max_turns).\n\nWhat it wrote before stopping:\n\nFirst.\n\nSecond.';
+    const p = presentOf(
+      view({
+        actions: [user('u1'), agentCall('c1', 'call_1'), agentErrored('r1', ['call_1'], message)],
+      }),
+    );
+    expect(rowOf(p.timeline, 'agentResult')[0]?.outcome).toEqual({
+      _tag: 'error',
+      error: 'The worker "brainstorm" stopped with an error (error_max_turns).',
+      written: 'First.\n\nSecond.',
+    });
+    const silent = presentOf(
+      view({
+        actions: [
+          user('u1'),
+          agentCall('c1', 'call_1'),
+          agentErrored(
+            'r1',
+            ['call_1'],
+            'The worker "brainstorm" stopped with an error (error_during_execution).',
+          ),
+        ],
+      }),
+    );
+    expect(rowOf(silent.timeline, 'agentResult')[0]?.outcome).toEqual({
+      _tag: 'error',
+      error: 'The worker "brainstorm" stopped with an error (error_during_execution).',
+      written: null,
+    });
+  });
+
+  it('shows a result that does not decode as its JSON text', () => {
+    const odd = {
+      type: 'tool_result',
+      id: aid('r1'),
+      handles: ['call_1'],
+      tool: 'agent',
+      result: { unexpected: true },
+    } as const;
+    const p = presentOf(view({ actions: [user('u1'), agentCall('c1', 'call_1'), odd] }));
+    expect(rowOf(p.timeline, 'agentResult')[0]?.outcome).toEqual({
+      _tag: 'result',
+      messages: [JSON.stringify({ unexpected: true }, null, 2)],
+    });
+  });
+
+  it('shows an agent call with an invalid ID or an empty message as an invalid call, with its error on that row', () => {
+    const invalid = call('c1', 'call_1', 'agent', {
+      agentType: 'claude',
+      agent: 'Brainstorm',
+      message: 'Go.',
+    });
+    const empty = call('c2', 'call_2', 'agent', { agentType: 'claude', agent: 'b', message: '' });
+    const p = presentOf(
+      view({
+        actions: [
+          user('u1'),
+          invalid,
+          empty,
+          errored('r1', 'call_1', 'agent', 'Invalid `agent`: bad id'),
+        ],
+      }),
+    );
+    expect(p.timeline.map((row) => row.kind)).toEqual(['user', 'invalidCall', 'invalidCall']);
+    expect(rowOf(p.timeline, 'invalidCall')[0]).toMatchObject({
+      tool: 'agent',
+      error: 'Invalid `agent`: bad id',
+    });
+    expect(p.latestAgent).toBeNull();
+  });
+
+  it('shows progress with the worker it came from, and no row for tool context', () => {
+    const context: Action = {
+      type: 'tool_context',
+      id: aid('x1'),
+      tool: 'agent',
+      text: 'Workers: brainstorm',
+    };
+    const p = presentOf(
+      view({
+        actions: [
+          user('u1'),
+          agentCall('c1', 'call_1'),
+          context,
+          progressOf('p1', 'call_1', 'Reading the designs.'),
+        ],
+        phase: 'working',
+        executions: [execution('e1', 'call_1', 'agent')],
+      }),
+    );
+    expect(p.timeline.map((row) => row.kind)).toEqual(['user', 'agent', 'progress', 'pending']);
+    expect(rowOf(p.timeline, 'progress')).toEqual([
+      { kind: 'progress', id: 'p1', agent: 'brainstorm', text: 'Reading the designs.' },
+    ]);
+  });
+
+  it('knows the worker the last valid agent call addressed, up to the cursor', () => {
+    expect(presentOf(view({ actions: [user('u1')] })).latestAgent).toBeNull();
+    const p = presentOf(
+      view({
+        actions: [
+          user('u1'),
+          agentCall('c1', 'call_1', 'brainstorm'),
+          agentCall('c2', 'call_2', 'review'),
+          call('c3', 'call_3', 'agent', {
+            agentType: 'claude',
+            agent: 'Not Valid',
+            message: 'Go.',
+          }),
+        ],
+      }),
+    );
+    expect(p.latestAgent).toBe('review');
   });
 });

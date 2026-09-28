@@ -2,7 +2,7 @@ import { RegistryProvider } from '@effect/atom-react';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { App, MockApp } from './app';
+import { App } from './app';
 
 import './styles.css';
 
@@ -15,12 +15,7 @@ if (!rootElement) {
 createRoot(rootElement).render(
   <StrictMode>
     <RegistryProvider>
-      {/* MOCK ONLY (story #4): remove before merge. */}
-      {new URLSearchParams(window.location.search).get('mock') === 'workers' ? (
-        <MockApp />
-      ) : (
-        <App />
-      )}
+      <App />
     </RegistryProvider>
   </StrictMode>,
 );

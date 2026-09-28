@@ -25,6 +25,10 @@ export const routes = {
   commands: '/api/commands',
   /** `GET`: the audio for one speak action, streamed. */
   speech: '/api/speech/:actionId',
+  /** `GET`: the live workers as Server-Sent Events, one `WorkerList` per change. */
+  workers: '/api/workers',
+  /** `GET`: one worker's transcript as SSE: a `TranscriptSnapshot`, then `TranscriptAppended`s. */
+  workerTranscript: '/api/workers/:agent/transcript',
 } as const;
 
 /** The path of the speech route for one action. */
@@ -79,3 +83,18 @@ export const SubscriptionMessageJson = Schema.fromJsonString(SubscriptionMessage
 
 /** How often the server sends a heartbeat comment. */
 export const heartbeatIntervalMillis = 15_000;
+
+// GET /api/workers and GET /api/workers/:agent/transcript
+
+/** The path of the transcript route for one worker. */
+export const workerTranscriptPath = (agent: string): string =>
+  `/api/workers/${encodeURIComponent(agent)}/transcript`;
+
+/**
+ * Responses:
+ * - `200`: SSE, with the same framing as `/api/events` (one `data:` line per message, heartbeat
+ *   comments), each message JSON-encoded with the Agent tool's `WorkerListJson` or
+ *   `TranscriptMessageJson` (`fluidcast-tool-agent/schema`, which owns the Workers surface);
+ * - `404` (transcript only): the Agent tool's `WorkerNotFound` as JSON.
+ */
+export const workerStatus = { ok: 200, notFound: 404 } as const;

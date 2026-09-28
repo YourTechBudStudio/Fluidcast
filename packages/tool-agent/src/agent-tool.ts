@@ -42,7 +42,8 @@ export interface Workers {
 }
 
 export interface AgentTool {
-  readonly tool: Tool<AgentInput, AgentResult, never>;
+  /** Accepts no client commands (it has no `command`), so the Harness rejects every one. */
+  readonly tool: Tool<AgentInput, AgentResult>;
   readonly workers: Workers;
 }
 
@@ -78,7 +79,7 @@ export const agentTool = <Types extends Readonly<Record<string, WorkerType>>>(
       model: yield* LanguageModel.LanguageModel,
       input,
     });
-    const tool: Tool<AgentInput, AgentResult, never> = {
+    const tool: Tool<AgentInput, AgentResult> = {
       name: agentToolName,
       input,
       guidelines: guidelines(options.types),

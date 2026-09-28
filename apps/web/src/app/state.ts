@@ -1,4 +1,5 @@
 import { DEFAULT_VISUAL, isVisualId, type VisualId } from '../visuals';
+import { type Layer, LAYERS } from './layers';
 import { persistedAtom } from './persisted';
 
 export const visualAtom = persistedAtom<VisualId>(
@@ -8,10 +9,10 @@ export const visualAtom = persistedAtom<VisualId>(
   DEFAULT_VISUAL,
 );
 
-/** Whether the back layer (transcript) is showing instead of the front layer (visual and subtitle). */
-export const transcriptOpenAtom = persistedAtom<boolean>(
-  'fluidcast.transcript',
-  (raw) => (raw === '1' ? true : raw === '0' ? false : undefined),
-  (open) => (open ? '1' : '0'),
-  false,
+/** Which layer the player column shows: the stage (visual and subtitle), the transcript or the Workers layer. */
+export const layerAtom = persistedAtom<Layer>(
+  'fluidcast.layer',
+  (raw) => LAYERS.find((layer) => layer === raw),
+  String,
+  'stage',
 );

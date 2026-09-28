@@ -97,8 +97,10 @@ export const loadConfig = (
       options.environment ?? process.env,
     ).pipe(Effect.catch((message) => fail(message)));
 
-    const relativeToConfig = (target: string) => paths.resolve(paths.dirname(file), target);
-    return yield* resolve(parsed, environment, relativeToConfig).pipe(
+    const directory = paths.dirname(file);
+    const relativeToConfig = (target: string) => paths.resolve(directory, target);
+    const workers = workersConfig(parsed, options.environment ?? process.env, directory);
+    return yield* resolve(parsed, environment, relativeToConfig, workers).pipe(
       Effect.catch((message) => fail(message)),
     );
   });
@@ -129,6 +131,33 @@ const definedOnly = (environment: Environment): Record<string, string> =>
 const nonEmpty = (value: string | undefined): string | undefined =>
   value === undefined || value === '' ? undefined : value;
 
+/** The environment variable holding a provider type's key. */
+const apiKeyEnvFor = (file: ConfigFile, type: ProviderType): string =>
+  file.providers?.[type]?.apiKeyEnv ?? defaultApiKeyEnv[type];
+
+/**
+ * Where workers run and the environment they get: the real environment (never `.env` values) minus
+ * the variables holding the configured providers' keys. Credential hygiene, not isolation.
+ */
+const workersConfig = (
+  file: ConfigFile,
+  real: Environment,
+  directory: string,
+): ConversationConfig['workers'] => {
+  const providerKeyNames = new Set([
+    apiKeyEnvFor(file, file.llm.provider.type),
+    apiKeyEnvFor(file, file.tts.provider.type),
+  ]);
+  return {
+    cwd: directory,
+    environment: Object.freeze(
+      Object.fromEntries(
+        Object.entries(definedOnly(real)).filter(([name]) => !providerKeyNames.has(name)),
+      ),
+    ),
+  };
+};
+
 /** Resolves the connection for a provider type: its base URL, and its key read from the environment. */
 const connection = (
   file: ConfigFile,
@@ -136,7 +165,7 @@ const connection = (
   type: ProviderType,
 ): Effect.Effect<Connection, string> => {
   const section = file.providers?.[type];
-  const keyEnv = section?.apiKeyEnv ?? defaultApiKeyEnv[type];
+  const keyEnv = apiKeyEnvFor(file, type);
   const key = nonEmpty(environment[keyEnv]);
   if (key === undefined) {
     return Effect.fail(
@@ -154,6 +183,7 @@ const resolve = (
   file: ConfigFile,
   environment: Environment,
   relativeToConfig: (path: string) => string,
+  workers: ConversationConfig['workers'],
 ): Effect.Effect<Config, string> =>
   Effect.gen(function* () {
     const llmConnection = yield* connection(file, environment, file.llm.provider.type);
@@ -170,6 +200,7 @@ const resolve = (
         },
         instructions: file.instructions ?? '',
         speakers: file.speakers,
+        workers,
         ...(file.debug?.generationLog === undefined
           ? {}
           : { generationLog: relativeToConfig(file.debug.generationLog) }),

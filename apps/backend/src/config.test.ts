@@ -110,6 +110,37 @@ speakers:
     );
   });
 
+  it('runs workers next to the config with the real environment minus the provider keys', async () => {
+    const config = await loaded(
+      validYaml.replace(
+        'openai-compatible: { baseUrl',
+        'openai-compatible: { apiKeyEnv: MY_COMPATIBLE_KEY, baseUrl',
+      ),
+      {
+        ...keys,
+        MY_COMPATIBLE_KEY: 'custom-key',
+        PATH: '/usr/bin',
+        HOME: '/home/listener',
+        UNSET: undefined,
+      },
+      'FROM_DOTENV=dotenv-only\nFLUIDCAST_OPENAI_API_KEY=openai-from-file\n',
+    );
+    const { workers } = config.conversation;
+    assert.equal(workers.cwd, directories.at(-1));
+    assert.deepEqual(workers.environment, {
+      // Not a configured provider's key variable here (the llm uses `MY_COMPATIBLE_KEY`), so kept.
+      FLUIDCAST_OPENAI_COMPATIBLE_API_KEY: 'compatible-key',
+      PATH: '/usr/bin',
+      HOME: '/home/listener',
+    });
+    assert.ok(Object.isFrozen(workers.environment));
+  });
+
+  it('omits a default key variable that only the real environment holds', async () => {
+    const config = await loaded(validYaml, { ...keys, PATH: '/usr/bin' }, 'OTHER=from-file\n');
+    assert.deepEqual(config.conversation.workers.environment, { PATH: '/usr/bin' });
+  });
+
   it('names the missing key variable without leaking other values', async () => {
     const message = await failure(validYaml, {
       FLUIDCAST_OPENAI_COMPATIBLE_API_KEY: 'k',

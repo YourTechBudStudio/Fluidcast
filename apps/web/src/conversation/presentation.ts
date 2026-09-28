@@ -2,6 +2,11 @@ import { absurd } from 'effect/Function';
 
 import type { TransportError } from '@yourtechbudstudio/fluidcast-client';
 import type { Execution, ExecutionId } from '@yourtechbudstudio/fluidcast-harness/protocol';
+import {
+  type AgentCall,
+  agentErrorParts,
+  agentToolName,
+} from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 import type { AskCommand, AskInput } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 import type { ShowInput } from '@yourtechbudstudio/fluidcast-tool-show/schema';
 
@@ -10,9 +15,13 @@ import type { AskCardState, Correction } from '../tools';
 import type { VisualState } from '../visuals';
 import type { Action, Connection, ConversationView, Speaker } from './model';
 import {
+  agentOf,
+  agentResultOf,
+  agentThinkingSince,
   answerFor,
-  answerOf,
   askOf,
+  findCall,
+  latestAgent,
   latestShowHandle,
   openAsk,
   pendingAnswer,
@@ -66,15 +75,10 @@ export type FailureStatus =
 /**
  * What the status line speaks to: the moment, with an audio failure refined to its cause, or a command that could
  * not reach the backend. A failed send changes nothing else, because the conversation did not change; connection
- * moments still take priority. Two refinements only change the copy:
- * - `askingText`: `asking`, for a question answered in the listener's own words;
- * - `mulling`: `thinking`, about the answer to a question.
+ * moments still take priority. One refinement only changes the copy: `askingText`, `asking` for a question answered
+ * in the listener's own words.
  */
-export type StatusMoment =
-  | Exclude<Moment, 'audioFailed'>
-  | FailureStatus
-  | 'askingText'
-  | 'mulling';
+export type StatusMoment = Exclude<Moment, 'audioFailed'> | FailureStatus | 'askingText';
 
 /** Which controls the composer offers. */
 export type ComposerMode = 'compose' | 'busy' | 'retry' | 'retryClip' | 'offline';
@@ -128,6 +132,40 @@ export type TimelineRow =
        */
       readonly correction: Correction;
     }
+  | {
+      /** Work handed to a worker. */
+      readonly kind: 'agent';
+      readonly id: string;
+      readonly handle: string;
+      readonly call: AgentCall;
+      /**
+       * `working` while an open execution holds the call; `answered` or `failed` once an outcome that includes it is
+       * known (submitted or pending); `null` otherwise, for example after a halt.
+       */
+      readonly state: 'working' | 'answered' | 'failed' | null;
+      /** The call joined a busy worker's execution, so it steered that worker's current work. */
+      readonly joined: boolean;
+      /** The other calls the same execution or outcome answers. */
+      readonly together: readonly string[];
+    }
+  | {
+      /** What the model read back from a worker, at the position in the log where it read it. */
+      readonly kind: 'agentResult';
+      readonly id: string;
+      readonly handles: readonly string[];
+      readonly agent: string;
+      readonly agentType: string;
+      readonly outcome:
+        | { readonly _tag: 'result'; readonly messages: readonly string[] }
+        | { readonly _tag: 'error'; readonly error: string; readonly written: string | null };
+    }
+  /** A worker's progress, as the model read it. */
+  | {
+      readonly kind: 'progress';
+      readonly id: string;
+      readonly agent: string;
+      readonly text: string;
+    }
   | { readonly kind: 'faulted'; readonly id: string; readonly message: string }
   | { readonly kind: 'pending'; readonly label: string };
 
@@ -162,6 +200,13 @@ export interface Presentation {
   readonly fault: string | null;
   /** The Show the Show button opens, if there has been one. */
   readonly latestShow: string | null;
+  /**
+   * While thinking, when the earliest open Agent execution started (epoch milliseconds), so the status line counts the
+   * whole time workers have been busy; `null` when no worker is running or the moment is not `thinking`.
+   */
+  readonly thinkingSince: number | null;
+  /** The worker the last valid agent call addressed: the one the Workers layer opens on. */
+  readonly latestAgent: string | null;
 }
 
 const lastIndexWhere = <A>(items: readonly A[], f: (a: A) => boolean) => {
@@ -220,6 +265,8 @@ export function momentOf(
     case 'waiting':
       return 'asking';
     case 'working':
+      // While a worker runs, the system is thinking, whatever else goes on around it.
+      if (view.executions.some((execution) => execution.tool === agentToolName)) return 'thinking';
       // A continuation starts a new model turn too: until it speaks, the model is thinking.
       return view.actions.slice(turnBoundary(view) + 1).some(isSpeak) ? 'waiting' : 'thinking';
     case 'idle': {
@@ -317,13 +364,17 @@ function subtitleOf(
       const earlier = before.slice(turnStart + 1).findLast(isSpeak);
       return earlier ? line(earlier, 'current') : yourLine(view);
     }
-    case 'thinking':
-      // Thinking about your message shows it; thinking about a tool's outcome keeps the last line.
-      return view.actions[turnBoundary(view)]?.type === 'user_message'
+    case 'thinking': {
+      // A line said in this turn (while a worker runs) stays, dimmed. Otherwise thinking about your message shows it,
+      // and thinking about a tool's outcome keeps the last line.
+      const boundary = turnBoundary(view);
+      if (lastSpeakIndex > boundary && lastSpeak) return line(lastSpeak, 'dim');
+      return view.actions[boundary]?.type === 'user_message'
         ? yourLine(view)
         : lastSpeak
           ? line(lastSpeak, 'dim')
           : null;
+    }
     case 'waiting':
       return lastSpeak ? line(lastSpeak, 'current') : null;
     case 'interrupted':
@@ -340,6 +391,56 @@ function askStateOf(
 ): AskCardState {
   if (answer) return answer.pending ? 'pending' : 'answered';
   return view.executions.some((e) => e.handles.includes(handle)) ? 'live' : 'unanswered';
+}
+
+type Outcome = Extract<Action, { type: 'tool_result' | 'tool_errored' }>;
+
+/** Where an agent call stands, and which other calls share its execution or outcome. */
+function agentStateOf(
+  view: ConversationView,
+  handle: string,
+): Pick<Extract<TimelineRow, { kind: 'agent' }>, 'state' | 'joined' | 'together'> {
+  const holds = (group: { readonly handles: readonly string[] }) => group.handles.includes(handle);
+  const execution = view.executions.find(holds);
+  const outcome = [...view.actions, ...view.pendingResults].find(
+    (action): action is Outcome =>
+      (action.type === 'tool_result' || action.type === 'tool_errored') && holds(action),
+  );
+  const state = execution
+    ? 'working'
+    : outcome?.type === 'tool_result'
+      ? 'answered'
+      : outcome?.type === 'tool_errored'
+        ? 'failed'
+        : null;
+  const handles = (execution ?? outcome)?.handles ?? [handle];
+  return {
+    state,
+    joined: handles[0] !== handle,
+    together: handles.filter((other) => other !== handle),
+  };
+}
+
+/** The row for an agent outcome, when the call it answers first is a valid agent call. */
+function agentResultRowOf(
+  view: ConversationView,
+  outcome: Outcome,
+): Extract<TimelineRow, { kind: 'agentResult' }> | null {
+  if (outcome.tool !== agentToolName) return null;
+  const call = agentOf(findCall(view, outcome.handles[0]));
+  // The Harness's error for an invalid call belongs to that call's own row.
+  if (!call) return null;
+  return {
+    kind: 'agentResult',
+    id: outcome.id,
+    handles: outcome.handles,
+    agent: call.agent,
+    agentType: call.agentType,
+    outcome:
+      outcome.type === 'tool_result'
+        ? { _tag: 'result', messages: agentResultOf(outcome) }
+        : { _tag: 'error', ...agentErrorParts(outcome.message) },
+  };
 }
 
 function timelineOf(
@@ -392,6 +493,17 @@ function timelineOf(
           showFailed = failure !== null;
           break;
         }
+        const agent = agentOf(action);
+        if (agent) {
+          rows.push({
+            kind: 'agent',
+            id: action.id,
+            handle: action.handle,
+            call: agent,
+            ...agentStateOf(view, action.handle),
+          });
+          break;
+        }
         const ask = askOf(action);
         if (ask) {
           const answer = answerFor(view, action.handle);
@@ -416,10 +528,21 @@ function timelineOf(
         });
         break;
       }
-      // Outcomes belong to their call's row. Progress has no producer yet, and context is for the model only.
+      // An agent outcome has its own row where the model read it; other outcomes belong to their call's row.
       case 'tool_result':
-      case 'tool_errored':
-      case 'tool_progress':
+      case 'tool_errored': {
+        const row = agentResultRowOf(view, action);
+        if (row) rows.push(row);
+        break;
+      }
+      case 'tool_progress': {
+        // Only the Agent tool reports progress.
+        const agent = agentOf(findCall(view, action.handles[0]));
+        if (agent)
+          rows.push({ kind: 'progress', id: action.id, agent: agent.agent, text: action.text });
+        break;
+      }
+      // Context is for the model only.
       case 'tool_context':
         break;
       case 'tool_faulted':
@@ -490,21 +613,9 @@ function statusOf(
       return playback.kind === 'failed' ? audioStatus(playback.error) : 'audioUnplayable';
     case 'asking':
       return openAsk(view)?.input.kind === 'text' ? 'askingText' : 'asking';
-    case 'thinking':
-      return answeredLast(view) ? 'mulling' : 'thinking';
     default:
       return moment;
   }
-}
-
-/** Whether the latest submitted batch of tool outcomes, the current turn's boundary, holds an Ask answer. */
-function answeredLast(view: ConversationView): boolean {
-  for (let i = turnBoundary(view); i >= 0; i--) {
-    const action = view.actions[i]!;
-    if (action.type === 'tool_result' && answerOf(action)) return true;
-    if (action.type !== 'tool_result' && action.type !== 'tool_errored') return false;
-  }
-  return false;
 }
 
 function askPresenceOf(view: ConversationView): AskPresence | null {
@@ -549,5 +660,7 @@ export function present(
     canGoBack: canGoBackOf(view, connection),
     fault: view.actions.findLast((a) => a.type === 'tool_faulted')?.error.message ?? null,
     latestShow: latestShowHandle(view) ?? null,
+    thinkingSince: moment === 'thinking' ? (agentThinkingSince(view) ?? null) : null,
+    latestAgent: latestAgent(view),
   };
 }

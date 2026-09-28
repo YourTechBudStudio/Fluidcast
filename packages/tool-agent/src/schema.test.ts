@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { Schema } from 'effect';
 
 import {
+  AgentCall,
   agentErrorMarker,
   agentErrorMessage,
   agentErrorParts,
@@ -82,6 +83,25 @@ describe('agent input', () => {
     assert.throws(() => decode({ agentType: 'claude', agent: 'a'.repeat(41), message: 'Go.' }));
     assert.throws(() => decode({ agentType: 'claude', agent: 'a', message: '' }));
     assert.ok(Schema.is(AgentId)('a'.repeat(40)));
+  });
+});
+
+describe('agent calls as clients read them', () => {
+  const decode = Schema.decodeUnknownSync(AgentCall);
+
+  it('accepts any type, since clients cannot know the configured ones', () => {
+    assert.deepEqual(decode({ agentType: 'codex', agent: 'review', message: 'Go.' }), {
+      agentType: 'codex',
+      agent: 'review',
+      message: 'Go.',
+    });
+  });
+
+  it('rejects ids the tool rejects and empty messages', () => {
+    assert.throws(() => decode({ agentType: 'claude', agent: 'Brainstorm', message: 'Go.' }));
+    assert.throws(() => decode({ agentType: 'claude', agent: 'a b', message: 'Go.' }));
+    assert.throws(() => decode({ agentType: 'claude', agent: 'a'.repeat(41), message: 'Go.' }));
+    assert.throws(() => decode({ agentType: 'claude', agent: 'a', message: '' }));
   });
 });
 

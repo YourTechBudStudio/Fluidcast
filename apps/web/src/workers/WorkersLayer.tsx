@@ -1,65 +1,57 @@
-// MOCK ONLY. The Workers layer (program-design §9.3): a header with a worker menu (there is no list screen), the
-// session-ID copy button and a close button, then the selected worker's transcript.
-
 import { Menu } from '@base-ui/react/menu';
+import { useAtom, useAtomValue } from '@effect/atom-react';
 import { Check, ChevronDown, SquareTerminal, X } from 'lucide-react';
-import { useLayoutEffect, useRef } from 'react';
+import { type ReactNode, useLayoutEffect, useRef } from 'react';
 
-import { Button, Chip, Kbd, useReducedMotion } from '../../ui';
-import type { MockScene, WorkerSummary } from './fixtures';
-import { STATUS_LABEL } from './helpers';
-import { CopySessionId, StatusDot } from './shared';
-import { transcriptTree, turns } from './transcript';
+import type { WorkerStatus, WorkerSummary } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
+
+import { Button, Chip, Kbd, useReducedMotion } from '../ui';
+import { CopySessionId } from './CopySessionId';
+import {
+  selectedWorker,
+  selectedWorkerAtom,
+  workerListAtom,
+  workerTranscriptAtom,
+  type WorkersConnection,
+} from './state';
 import { WorkerTranscript } from './WorkerTranscript';
 
+const STATUS_COLOR: Record<WorkerStatus, string> = {
+  working: 'var(--color-violet)',
+  done: 'var(--color-green)',
+  failed: 'var(--color-red)',
+};
+
+const STATUS_LABEL: Record<WorkerStatus, string> = {
+  working: 'Working',
+  done: 'Done',
+  failed: 'Failed',
+};
+
+/** Follow new output only while the reader is this close to the end. */
+const FOLLOW_PX = 48;
+
+/**
+ * The Workers layer: a header with a worker menu (there is no list screen), the selected worker's status, its
+ * session-ID copy button and a close button, then that worker's transcript. Mounted only while the layer shows, so its
+ * streams run only then.
+ */
 export function WorkersLayer({
-  scene,
-  open,
-  selected,
-  onSelect,
+  latest,
   onClose,
 }: {
-  readonly scene: MockScene;
-  /** Opening the layer always lands on the latest output. */
-  readonly open: boolean;
-  readonly selected: string | null;
-  readonly onSelect: (agent: string) => void;
+  /** The worker the last agent call addressed: it carries the "Latest" chip. */
+  readonly latest: string | null;
   readonly onClose: () => void;
 }) {
-  const worker = scene.workers.find((w) => w.agent === selected) ?? null;
-  const scroller = useRef<HTMLDivElement>(null);
-  const reduced = useReducedMotion();
-  const working = worker?.status === 'working';
-  const entries = worker ? (scene.transcripts[worker.agent] ?? []) : [];
-
-  // Land on the latest output when the layer opens or the worker changes; afterwards follow new output only while the
-  // reader is at the bottom, so someone who scrolled up to read is left alone.
-  const atBottom = useRef(true);
-  useLayoutEffect(() => {
-    const el = scroller.current;
-    if (!open || !el) return;
-    el.scrollTo({ top: el.scrollHeight });
-    atBottom.current = true;
-  }, [open, selected, scene.connection]);
-  useLayoutEffect(() => {
-    const el = scroller.current;
-    if (el && atBottom.current)
-      el.scrollTo({ top: el.scrollHeight, behavior: reduced ? 'auto' : 'smooth' });
-  }, [entries, reduced]);
-
-  let body;
-  if (scene.connection === 'connecting') body = <Loading />;
-  else if (scene.workers.length === 0) body = <Empty />;
-  else if (scene.connection === 'notFound' || worker === null)
-    body = <NotFound onBack={() => onSelect(scene.latest ?? scene.workers.at(-1)!.agent)} />;
-  else
-    body = (
-      <WorkerTranscript
-        turns={turns(transcriptTree(entries, working), working)}
-        agent={worker.agent}
-        agentType={worker.agentType}
-      />
-    );
+  const list = useAtomValue(workerListAtom);
+  const [selected, setSelected] = useAtom(selectedWorkerAtom);
+  const workers = list.data ?? [];
+  const worker = selectedWorker(workers, selected);
+  // The latest agent call's worker, else the most recently created one.
+  const latestWorker =
+    workers.find((w) => w.agent === latest)?.agent ?? workers.at(-1)?.agent ?? null;
+  const loading = list.data === undefined;
 
   return (
     <div className="absolute inset-0 flex flex-col">
@@ -68,16 +60,16 @@ export function WorkersLayer({
           <h2 tabIndex={-1} data-layer-heading className="sr-only">
             Workers
           </h2>
-          {scene.connection === 'connecting' ? (
+          {loading ? (
             <span className="inline-flex min-h-11 items-center px-3 font-mono text-[12px] text-fg-subtle">
               Loading workers…
             </span>
           ) : worker ? (
             <WorkerMenu
-              workers={scene.workers}
-              latest={scene.latest}
+              workers={workers}
+              latest={latestWorker}
               value={worker}
-              onChange={onSelect}
+              onChange={setSelected}
             />
           ) : (
             <span className="inline-flex min-h-11 items-center gap-2 px-3 font-mono text-[11px] font-medium tracking-[0.05em] text-fg-subtle uppercase">
@@ -85,9 +77,9 @@ export function WorkersLayer({
               Workers
             </span>
           )}
-          {worker && scene.connection !== 'connecting' && <WorkerState worker={worker} />}
+          {worker && <WorkerState status={worker.status} />}
           <div className="ml-auto flex items-center gap-1">
-            {worker && scene.connection !== 'connecting' && <CopySessionId id={worker.sessionId} />}
+            {worker && <CopySessionId id={worker.sessionId} />}
             <Button
               tone="ghost"
               aria-label="Close workers"
@@ -101,48 +93,148 @@ export function WorkersLayer({
             </Button>
           </div>
         </div>
-        {scene.connection === 'reconnecting' && (
-          <p className="mx-auto flex max-w-220 items-center gap-2 px-3 pt-2 font-mono text-[11.5px] text-fg-subtle">
-            <i className="size-1.5 rounded-full bg-fg-subtle motion-safe:animate-breathe" />
-            Reconnecting… showing what arrived before the connection dropped.
-          </p>
-        )}
       </header>
-      <div
-        ref={scroller}
-        onScroll={(event) => {
-          const el = event.currentTarget;
-          atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-        }}
-        className="min-h-0 flex-1 overflow-y-auto px-4 pt-5 pb-8 [mask-image:linear-gradient(transparent,#000_20px)] max-sm:px-3"
-      >
-        <div
-          className={`mx-auto max-w-220 ${scene.connection === 'reconnecting' ? 'opacity-70' : ''}`}
-        >
-          {body}
-        </div>
-      </div>
+      {loading ? (
+        <Scroller connection={list.connection}>
+          <Loading />
+        </Scroller>
+      ) : workers.length === 0 ? (
+        <Scroller connection={list.connection}>
+          <Empty />
+        </Scroller>
+      ) : worker === undefined ? (
+        <Scroller connection={list.connection}>
+          <NotFound onBack={() => setSelected(latestWorker)} />
+        </Scroller>
+      ) : (
+        <WorkerBody
+          key={worker.agent}
+          worker={worker}
+          listConnection={list.connection}
+          onBack={() => setSelected(latestWorker)}
+        />
+      )}
     </div>
   );
 }
 
+/** The selected worker's transcript feed. Keyed by worker, so a new selection starts afresh and lands on the end. */
+function WorkerBody({
+  worker,
+  listConnection,
+  onBack,
+}: {
+  readonly worker: WorkerSummary;
+  readonly listConnection: WorkersConnection;
+  readonly onBack: () => void;
+}) {
+  const transcript = useAtomValue(workerTranscriptAtom(worker.agent));
+  const connection =
+    transcript.connection === 'live' && listConnection === 'reconnecting'
+      ? 'reconnecting'
+      : transcript.connection;
+  let body;
+  if (transcript.connection === 'notFound') body = <NotFound onBack={onBack} />;
+  else if (transcript.data === undefined) body = <Loading />;
+  else
+    body = (
+      <WorkerTranscript
+        entries={transcript.data}
+        agent={worker.agent}
+        agentType={worker.agentType}
+        working={worker.status === 'working'}
+      />
+    );
+  return (
+    <Scroller connection={connection} follow={transcript.data}>
+      {body}
+    </Scroller>
+  );
+}
+
+/**
+ * The layer's scrolling body. It lands on the end when it mounts and when the connection changes; afterwards new
+ * output (`follow`) scrolls it to the end only while the reader is within 48 px of it, so someone who scrolled up to
+ * read is left where they are.
+ */
+function Scroller({
+  connection,
+  follow,
+  children,
+}: {
+  readonly connection: WorkersConnection;
+  readonly follow?: unknown;
+  readonly children: ReactNode;
+}) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const atEnd = useRef(true);
+  const reduced = useReducedMotion();
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight });
+    atEnd.current = true;
+  }, [connection]);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (el && atEnd.current)
+      el.scrollTo({ top: el.scrollHeight, behavior: reduced ? 'auto' : 'smooth' });
+  }, [follow, reduced]);
+  return (
+    <>
+      {connection === 'reconnecting' && (
+        <p className="mx-auto flex w-full max-w-220 items-center gap-2 px-7 pt-2 font-mono text-[11.5px] text-fg-subtle max-sm:px-6">
+          <i className="size-1.5 rounded-full bg-fg-subtle motion-safe:animate-breathe" />
+          Reconnecting… showing what arrived before the connection dropped.
+        </p>
+      )}
+      <div
+        ref={scroller}
+        onScroll={(event) => {
+          const el = event.currentTarget;
+          atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_PX;
+        }}
+        className="min-h-0 flex-1 overflow-y-auto px-4 pt-5 pb-8 [mask-image:linear-gradient(transparent,#000_20px)] max-sm:px-3"
+      >
+        <div className={`mx-auto max-w-220 ${connection === 'reconnecting' ? 'opacity-70' : ''}`}>
+          {children}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function StatusDot({
+  status,
+  size = 7,
+}: {
+  readonly status: WorkerStatus;
+  readonly size?: number;
+}) {
+  const color = STATUS_COLOR[status];
+  return (
+    <i
+      aria-hidden
+      className={`shrink-0 rounded-full ${status === 'working' ? 'motion-safe:animate-breathe' : ''}`}
+      style={{ width: size, height: size, backgroundColor: color, boxShadow: `0 0 10px ${color}` }}
+    />
+  );
+}
+
 /** The selected worker's status, without a clock (the status line carries elapsed time). Hidden on phones. */
-function WorkerState({ worker }: { readonly worker: WorkerSummary }) {
+function WorkerState({ status }: { readonly status: WorkerStatus }) {
   const tone =
-    worker.status === 'working'
-      ? 'text-violet'
-      : worker.status === 'failed'
-        ? 'text-red'
-        : 'text-fg-subtle';
+    status === 'working' ? 'text-violet' : status === 'failed' ? 'text-red' : 'text-fg-subtle';
   return (
     <span
-      className={`inline-flex min-h-11 items-center font-mono max-sm:hidden text-[12px] ${tone}`}
+      className={`inline-flex min-h-11 items-center font-mono text-[12px] max-sm:hidden ${tone}`}
     >
-      {STATUS_LABEL[worker.status]}
+      {STATUS_LABEL[status]}
     </span>
   );
 }
 
+/** Switches workers, newest first. Choosing one returns focus to the trigger (Base UI's behaviour). */
 function WorkerMenu({
   workers,
   latest,
@@ -177,7 +269,7 @@ function WorkerMenu({
                 Workers
               </Menu.GroupLabel>
               <Menu.RadioGroup value={value.agent} onValueChange={(next: string) => onChange(next)}>
-                {[...workers].reverse().map((w) => (
+                {workers.toReversed().map((w) => (
                   <Menu.RadioItem
                     key={w.agent}
                     value={w.agent}
@@ -223,11 +315,11 @@ function Loading() {
   return (
     <div aria-busy className="flex flex-col gap-3">
       <p className="font-mono text-[12px] text-fg-subtle">Loading transcript…</p>
-      {[92, 64, 78, 40, 70].map((w, i) => (
+      {[92, 64, 78, 40, 70].map((width, i) => (
         <span
           key={i}
           className="h-3.5 rounded-full bg-elevated/60 motion-safe:animate-breathe"
-          style={{ width: `${w}%`, animationDelay: `${i * 120}ms` }}
+          style={{ width: `${width}%`, animationDelay: `${i * 120}ms` }}
         />
       ))}
     </div>
