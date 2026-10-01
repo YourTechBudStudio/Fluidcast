@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -26,17 +26,20 @@ const keys = {
   FLUIDCAST_OPENAI_COMPATIBLE_API_KEY: 'compatible-key',
 };
 
-/** Writes the config (and optionally a `.env`) into a fresh directory and loads it. */
-const load = (yaml: string, environment: Environment, envFile?: string) => {
+/**
+ * Writes the config (and optionally a `.env`) into a fresh directory and loads it, with
+ * `homeDirectory` as the user's home when given.
+ */
+const load = (yaml: string, environment: Environment, envFile?: string, homeDirectory?: string) => {
   const directory = mkdtempSync(join(tmpdir(), 'fluidcast-config-'));
   directories.push(directory);
   writeFileSync(join(directory, 'fluidcast.yaml'), yaml);
   if (envFile !== undefined) writeFileSync(join(directory, '.env'), envFile);
   return Effect.runPromise(
-    loadConfig(join(directory, 'fluidcast.yaml'), { environment }).pipe(
-      Effect.result,
-      Effect.provide(NodeServices.layer),
-    ),
+    loadConfig(join(directory, 'fluidcast.yaml'), {
+      environment,
+      ...(homeDirectory === undefined ? {} : { homeDirectory }),
+    }).pipe(Effect.result, Effect.provide(NodeServices.layer)),
   );
 };
 
@@ -183,5 +186,97 @@ speakers:
       keys,
     );
     assert.match(message, /unique ids/);
+  });
+});
+
+describe('loadConfig with the ChatGPT sign-in', () => {
+  const chatGptYaml = `
+llm: { model: m, provider: { type: chatgpt, reasoningEffort: low } }
+tts: { model: t, provider: { type: openai } }
+speakers:
+  - { id: host, name: Host, personality: warm, voice: { name: alloy } }
+`;
+
+  /** A fresh home directory, with `credentials` as its ChatGPT sign-in when given. */
+  const home = (credentials?: string) => {
+    const directory = mkdtempSync(join(tmpdir(), 'fluidcast-home-'));
+    directories.push(directory);
+    if (credentials !== undefined) {
+      mkdirSync(join(directory, '.fluidcast'));
+      writeFileSync(join(directory, '.fluidcast', 'chatgpt-auth.json'), credentials);
+    }
+    return directory;
+  };
+
+  const signedIn = () =>
+    home(
+      JSON.stringify({
+        hostId: 'host',
+        clientId: 'issued',
+        accessToken: 'secret-access-token',
+        refreshToken: 'secret-refresh-token',
+        // Expired: loading checks the sign-in exists, not that its token is fresh.
+        expiresAt: 0,
+      }),
+    );
+
+  it('resolves to the credential file and needs no LLM API key', async () => {
+    const directory = signedIn();
+    const config = await loaded(
+      chatGptYaml,
+      { FLUIDCAST_OPENAI_API_KEY: 'openai-key' },
+      undefined,
+      directory,
+    );
+    const { llm } = config.conversation;
+    assert.deepEqual(llm, {
+      model: 'm',
+      reasoningEffort: 'low',
+      type: 'chatgpt',
+      credentialsPath: join(directory, '.fluidcast', 'chatgpt-auth.json'),
+    });
+  });
+
+  it('tells the user to sign in when there is no credential file', async () => {
+    const message = await failure(
+      chatGptYaml,
+      { FLUIDCAST_OPENAI_API_KEY: 'openai-key' },
+      undefined,
+      home(),
+    );
+    assert.match(message, /not signed in to ChatGPT/);
+    assert.match(message, /pnpm chatgpt:login/);
+  });
+
+  it('rejects an invalid credential file without echoing it', async () => {
+    const message = await failure(
+      chatGptYaml,
+      { FLUIDCAST_OPENAI_API_KEY: 'openai-key' },
+      undefined,
+      home('{"accessToken":"secret-access-token"}'),
+    );
+    assert.match(message, /is not a valid ChatGPT sign-in/);
+    assert.match(message, /pnpm chatgpt:login/);
+    assert.doesNotMatch(message, /secret-access-token/);
+  });
+
+  it('rejects a providers.chatgpt connection', async () => {
+    const message = await failure(
+      `providers:\n  chatgpt: { baseUrl: http://127.0.0.1:9/v1 }\n${chatGptYaml}`,
+      { FLUIDCAST_OPENAI_API_KEY: 'openai-key' },
+      undefined,
+      signedIn(),
+    );
+    assert.match(message, /excess property/);
+    assert.match(message, /\["providers"\]\["chatgpt"\]/);
+  });
+
+  it("strips only the API-key providers' variables from the workers' environment", async () => {
+    const config = await loaded(chatGptYaml, { ...keys, PATH: '/usr/bin' }, undefined, signedIn());
+    assert.deepEqual(config.conversation.workers.environment, {
+      // Not configured here: the LLM is the ChatGPT sign-in, which has no key variable.
+      FLUIDCAST_OPENAI_COMPATIBLE_API_KEY: 'compatible-key',
+      PATH: '/usr/bin',
+    });
   });
 });
