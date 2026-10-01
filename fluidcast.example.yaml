@@ -5,8 +5,9 @@ server:
   host: 127.0.0.1
   port: 4700
 
-# How each provider type is reached, shared by every section that uses it. Optional: an absent
-# entry uses OpenAI's base URL and the default key variable (FLUIDCAST_<TYPE>_API_KEY).
+# How each API-key provider type is reached, shared by every section that uses it. Optional: an
+# absent entry uses OpenAI's base URL and the default key variable (FLUIDCAST_<TYPE>_API_KEY).
+# The chatgpt LLM type has no entry here: it uses your ChatGPT sign-in instead of a key.
 providers:
   # OpenAI: the Responses API for the LLM, and text-to-speech.
   openai:
@@ -23,6 +24,12 @@ llm:
   provider:
     type: openai
     # reasoningEffort: low
+  # Or use your ChatGPT Plus/Pro subscription instead of an API key: run pnpm chatgpt:login once,
+  # and set model to one your ChatGPT plan offers. No providers entry or key is needed for it;
+  # tts below still needs the OpenAI API key.
+  # provider:
+  #   type: chatgpt
+  #   # reasoningEffort: low
   # Sampling temperature. Absent uses the server's default.
   # temperature: 0.7
 

@@ -11,8 +11,9 @@ export const ReasoningEffort = Schema.Literals([
   'high',
   'xhigh',
 ]);
+export type ReasoningEffort = typeof ReasoningEffort.Type;
 
-/** `llm.provider`: the provider type, which selects its connection, plus that type's options. */
+/** `llm.provider`: the provider type, which selects how it is reached, plus that type's options. */
 export const LlmProvider = Schema.Union([
   /** OpenAI's Responses API. */
   Schema.Struct({
@@ -22,6 +23,14 @@ export const LlmProvider = Schema.Union([
   /** Chat Completions on any compatible server. */
   Schema.Struct({
     type: Schema.Literal('openai-compatible'),
+    reasoningEffort: Schema.optionalKey(ReasoningEffort),
+  }),
+  /**
+   * Your ChatGPT subscription through Sign in with ChatGPT; run `pnpm chatgpt:login` once. It has
+   * no `providers` connection: the sign-in authorizes OpenAI's Responses API.
+   */
+  Schema.Struct({
+    type: Schema.Literal('chatgpt'),
     reasoningEffort: Schema.optionalKey(ReasoningEffort),
   }),
 ]);

@@ -7,7 +7,7 @@ import { after, describe, it } from 'node:test';
 import * as NodeServices from '@effect/platform-node/NodeServices';
 import { Effect, Redacted } from 'effect';
 
-import { loadConfig, type Environment } from './config.ts';
+import { loadConfig, type Config, type Environment } from './config.ts';
 
 const directories: Array<string> = [];
 after(() => directories.forEach((directory) => rmSync(directory, { recursive: true })));
@@ -40,6 +40,13 @@ const load = (yaml: string, environment: Environment, envFile?: string) => {
   );
 };
 
+/** The LLM's API-key connection; fails the test for the ChatGPT sign-in. */
+const llmConnection = (config: Config) => {
+  const { llm } = config.conversation;
+  if (llm.type === 'chatgpt') return assert.fail('expected an API-key LLM provider');
+  return llm.connection;
+};
+
 const loaded = async (...args: Parameters<typeof load>) => {
   const result = await load(...args);
   assert.equal(result._tag, 'Success');
@@ -59,18 +66,16 @@ describe('loadConfig', () => {
       { FLUIDCAST_OPENAI_COMPATIBLE_API_KEY: 'from-environment' },
       'FLUIDCAST_OPENAI_COMPATIBLE_API_KEY=from-file\nFLUIDCAST_OPENAI_API_KEY=openai-from-file\n',
     );
-    assert.equal(Redacted.value(config.conversation.llm.connection.apiKey), 'from-environment');
+    assert.equal(Redacted.value(llmConnection(config).apiKey), 'from-environment');
     assert.equal(Redacted.value(config.speech.connection.apiKey), 'openai-from-file');
   });
 
   it('resolves each section against its provider type, and applies defaults', async () => {
     const config = await loaded(validYaml, keys);
-    assert.deepEqual(config.conversation.llm.provider, {
-      type: 'openai-compatible',
-      reasoningEffort: 'low',
-    });
+    assert.equal(config.conversation.llm.type, 'openai-compatible');
+    assert.equal(config.conversation.llm.reasoningEffort, 'low');
     assert.equal(config.conversation.llm.temperature, 0.7);
-    assert.equal(config.conversation.llm.connection.baseUrl, 'http://127.0.0.1:9/v1');
+    assert.equal(llmConnection(config).baseUrl, 'http://127.0.0.1:9/v1');
     assert.equal(Redacted.value(config.speech.connection.apiKey), 'openai-key');
     assert.equal(config.speech.connection.baseUrl, undefined);
     assert.equal(config.speech.format, 'opus');
@@ -89,7 +94,7 @@ speakers:
 `,
       { SHARED_KEY: 'shared' },
     );
-    assert.deepEqual(config.conversation.llm.connection, config.speech.connection);
+    assert.deepEqual(llmConnection(config), config.speech.connection);
     assert.equal(Redacted.value(config.speech.connection.apiKey), 'shared');
     assert.deepEqual(config.conversation.speakers[0].voice, {
       name: 'alloy',

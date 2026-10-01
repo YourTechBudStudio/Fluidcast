@@ -9,6 +9,7 @@
     "backend:dev": "pnpm --filter '@fluidcast/backend^...' build && pnpm --filter @fluidcast/backend dev",
     "build": "pnpm -r --workspace-concurrency=1 --if-present build",
     "build:libs": "pnpm -r --workspace-concurrency=1 --filter '!@fluidcast/web' --if-present build",
+    "chatgpt:login": "pnpm --filter @fluidcast/backend chatgpt:login",
     "check": "pnpm lint && pnpm check:pure && pnpm typecheck && pnpm test && pnpm format:check",
     "check:pure": "node scripts/check-pure-exports.mjs",
     "fix": "pnpm lint:fix && pnpm format",

@@ -1,15 +1,16 @@
+import { homedir } from 'node:os';
 import { parseEnv } from 'node:util';
 
 import { Effect, FileSystem, Path, Redacted, Schema } from 'effect';
 import { Yaml } from 'effect/unstable/encoding';
 
-import { ConversationSections, type ConversationConfig } from './conversation/index.ts';
+import { credentialsPath, readCredentials } from './chatgpt/index.ts';
 import {
-  defaultApiKeyEnv,
-  ProvidersSection,
-  type Connection,
-  type ProviderType,
-} from './providers.ts';
+  ConversationSections,
+  type ConversationConfig,
+  type LlmConfig,
+} from './conversation/index.ts';
+import { defaultApiKeyEnv, ProvidersSection, ProviderType, type Connection } from './providers.ts';
 import { SpeechSections, type SpeechConfig } from './speech/index.ts';
 
 /** The YAML file's shape: the server and provider sections plus each slice's sections. */
@@ -56,6 +57,8 @@ export type Environment = Readonly<Record<string, string | undefined>>;
 export interface LoadConfigOptions {
   /** The real environment. Defaults to `process.env`; it is read, never modified. */
   readonly environment?: Environment;
+  /** The user's home directory, which holds the ChatGPT sign-in. Defaults to `os.homedir()`. */
+  readonly homeDirectory?: string;
 }
 
 /**
@@ -100,7 +103,8 @@ export const loadConfig = (
     const directory = paths.dirname(file);
     const relativeToConfig = (target: string) => paths.resolve(directory, target);
     const workers = workersConfig(parsed, options.environment ?? process.env, directory);
-    return yield* resolve(parsed, environment, relativeToConfig, workers).pipe(
+    const home = options.homeDirectory ?? homedir();
+    return yield* resolve(parsed, environment, relativeToConfig, workers, home).pipe(
       Effect.catch((message) => fail(message)),
     );
   });
@@ -131,6 +135,9 @@ const definedOnly = (environment: Environment): Record<string, string> =>
 const nonEmpty = (value: string | undefined): string | undefined =>
   value === undefined || value === '' ? undefined : value;
 
+/** Whether a provider type is reached with an API key (has a `providers` connection). */
+const isApiKeyProvider = Schema.is(ProviderType);
+
 /** The environment variable holding a provider type's key. */
 const apiKeyEnvFor = (file: ConfigFile, type: ProviderType): string =>
   file.providers?.[type]?.apiKeyEnv ?? defaultApiKeyEnv[type];
@@ -144,10 +151,11 @@ const workersConfig = (
   real: Environment,
   directory: string,
 ): ConversationConfig['workers'] => {
-  const providerKeyNames = new Set([
-    apiKeyEnvFor(file, file.llm.provider.type),
-    apiKeyEnvFor(file, file.tts.provider.type),
-  ]);
+  const providerKeyNames = new Set(
+    [file.llm.provider.type, file.tts.provider.type]
+      .filter(isApiKeyProvider)
+      .map((type) => apiKeyEnvFor(file, type)),
+  );
   return {
     cwd: directory,
     environment: Object.freeze(
@@ -178,26 +186,58 @@ const connection = (
   });
 };
 
+/**
+ * The LLM's settings, and how it is reached: an API-key connection, or the ChatGPT sign-in, which
+ * must exist (it is not refreshed here).
+ */
+const llmConfig = (
+  file: ConfigFile,
+  environment: Environment,
+  homeDirectory: string,
+): Effect.Effect<LlmConfig, string, FileSystem.FileSystem> =>
+  Effect.gen(function* () {
+    const { provider } = file.llm;
+    const settings = {
+      model: file.llm.model,
+      ...(file.llm.temperature === undefined ? {} : { temperature: file.llm.temperature }),
+      ...(provider.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: provider.reasoningEffort }),
+    };
+    if (provider.type !== 'chatgpt') {
+      return {
+        ...settings,
+        type: provider.type,
+        connection: yield* connection(file, environment, provider.type),
+      };
+    }
+    const path = credentialsPath(homeDirectory);
+    yield* readCredentials(path).pipe(
+      Effect.mapError((error) =>
+        error.reason === 'Missing'
+          ? `llm.provider is chatgpt but you are not signed in to ChatGPT (no ${path}). Run pnpm chatgpt:login.`
+          : `${path} is not a valid ChatGPT sign-in. Run pnpm chatgpt:login again.`,
+      ),
+    );
+    return { ...settings, type: 'chatgpt' as const, credentialsPath: path };
+  });
+
 /** Applies defaults and resolves secrets. Fails with a message naming what is missing. */
 const resolve = (
   file: ConfigFile,
   environment: Environment,
   relativeToConfig: (path: string) => string,
   workers: ConversationConfig['workers'],
-): Effect.Effect<Config, string> =>
+  homeDirectory: string,
+): Effect.Effect<Config, string, FileSystem.FileSystem> =>
   Effect.gen(function* () {
-    const llmConnection = yield* connection(file, environment, file.llm.provider.type);
+    const llm = yield* llmConfig(file, environment, homeDirectory);
     const ttsConnection = yield* connection(file, environment, file.tts.provider.type);
 
     return {
       server: { host: file.server?.host ?? '127.0.0.1', port: file.server?.port ?? 4700 },
       conversation: {
-        llm: {
-          model: file.llm.model,
-          provider: file.llm.provider,
-          ...(file.llm.temperature === undefined ? {} : { temperature: file.llm.temperature }),
-          connection: llmConnection,
-        },
+        llm,
         instructions: file.instructions ?? '',
         speakers: file.speakers,
         workers,
