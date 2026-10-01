@@ -1,32 +1,28 @@
 import * as Generated from '@effect/ai-openai/Generated';
 import * as OpenAiClient from '@effect/ai-openai/OpenAiClient';
-import { Effect, Layer, Stream, type Redacted } from 'effect';
-import type { HttpClient, HttpClientError } from 'effect/unstable/http';
+import { Effect, Layer, Stream } from 'effect';
+import type { HttpClientError } from 'effect/unstable/http';
 
 import { SpeechError, SpeechSynthesizer } from './synthesizer.ts';
 
 export interface OpenAiSpeechOptions {
-  /** Base URL of an OpenAI-compatible API, e.g. `https://api.openai.com/v1`. */
-  readonly baseUrl?: string;
-  readonly apiKey?: Redacted.Redacted<string>;
   /** The TTS model, e.g. `gpt-4o-mini-tts`. */
   readonly model: string;
 }
 
 /**
  * A `SpeechSynthesizer` over an OpenAI-compatible `/audio/speech` endpoint, streaming the
- * response body. Non-2xx responses fail with `SpeechError`. The caller supplies the `HttpClient`.
+ * response body. The application supplies the `OpenAiClient`, and with it the base URL and
+ * authentication; build it with `OpenAiClient.make` or `OpenAiClient.layer`, whose client rejects
+ * non-2xx responses, so they fail with `SpeechError`.
  */
-export const layerOpenAi = (
+export const layer = (
   options: OpenAiSpeechOptions,
-): Layer.Layer<SpeechSynthesizer, never, HttpClient.HttpClient> =>
+): Layer.Layer<SpeechSynthesizer, never, OpenAiClient.OpenAiClient> =>
   Layer.effect(
     SpeechSynthesizer,
     Effect.gen(function* () {
-      const client = yield* OpenAiClient.make({
-        ...(options.baseUrl === undefined ? {} : { apiUrl: options.baseUrl }),
-        ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
-      });
+      const client = yield* OpenAiClient.OpenAiClient;
       const api = Generated.make(client.client);
       return SpeechSynthesizer.of({
         synthesize: (request) =>

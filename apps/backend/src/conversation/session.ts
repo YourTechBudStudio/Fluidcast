@@ -1,4 +1,5 @@
-import { Effect, type FileSystem, Layer } from 'effect';
+import { type Context, Effect, type FileSystem, Layer } from 'effect';
+import type { LanguageModel } from 'effect/unstable/ai';
 import type { HttpClient } from 'effect/unstable/http';
 
 import type { AudioFormat, SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';
@@ -55,15 +56,21 @@ export const referenceTools = (agents: Tool): ReadonlyArray<Tool> => [
   agents,
 ];
 
-/** The interface agent's model, recording each generation when `debug.generationLog` is set. */
-const interfaceModel = (config: ConversationConfig) =>
+/**
+ * The interface agent's model: the session's built `model`, recording each generation when
+ * `debug.generationLog` is set.
+ */
+const interfaceModel = (
+  config: ConversationConfig,
+  model: Context.Context<LanguageModel.LanguageModel>,
+) =>
   config.generationLog === undefined
-    ? languageModelLayer(config.llm)
+    ? Layer.succeedContext(model)
     : withGenerationLog(
         config.generationLog,
         config.llm.model,
         new Set(config.speakers.map((speaker) => speaker.id)),
-      ).pipe(Layer.provide(languageModelLayer(config.llm)));
+      ).pipe(Layer.provide(Layer.succeedContext(model)));
 
 /**
  * The single in-memory Harness session, generating with the configured language model, and its
@@ -80,12 +87,12 @@ export const sessionLayer = (
 > =>
   Layer.unwrap(
     Effect.gen(function* () {
-      // The progress model: the interface agent's model without the generation log, whose records
-      // assume action output.
-      const progressModel = yield* Layer.build(languageModelLayer(config.llm));
+      // Built once and shared: the Agent tool's progress model uses it directly, without the
+      // generation log, whose records assume action output.
+      const model = yield* Layer.build(languageModelLayer(config.llm));
       // The reference setup preloads nothing, so setup cannot fail.
       const agents = yield* agentTool({ types: referenceWorkerTypes(config.workers) }).pipe(
-        Effect.provideContext(progressModel),
+        Effect.provideContext(model),
         Effect.orDie,
       );
       return Layer.merge(
@@ -94,7 +101,7 @@ export const sessionLayer = (
           speakers: config.speakers,
           speechFormat,
           tools: referenceTools(agents.tool),
-        }).pipe(Layer.provide(interfaceModel(config))),
+        }).pipe(Layer.provide(interfaceModel(config, model))),
         Layer.succeed(AgentWorkers, agents.workers),
       );
     }),
