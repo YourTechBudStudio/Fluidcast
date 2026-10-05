@@ -1,28 +1,25 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import * as NodeServices from '@effect/platform-node/NodeServices';
-import { Effect, Layer, Redacted, Schema, Stream } from 'effect';
+import { Effect, Layer, Redacted, Stream } from 'effect';
 import { LanguageModel } from 'effect/unstable/ai';
-import { Yaml } from 'effect/unstable/encoding';
 
-import {
-  checkTools,
-  Example,
-  outputJsonSchema,
-} from '@yourtechbudstudio/fluidcast-core/generation';
+import { checkTools, outputJsonSchema } from '@yourtechbudstudio/fluidcast-core/generation';
 import { SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';
-import { forwardTool } from '@yourtechbudstudio/fluidcast-tool-agent';
+import { guidedWalkthrough } from '@yourtechbudstudio/fluidcast-presets';
+import { forwardAgentTool } from '@yourtechbudstudio/fluidcast-tool-agent';
 import { forwardToolName } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 import { askToolName } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
+import { showTool } from '@yourtechbudstudio/fluidcast-tool-show';
 import { showToolName } from '@yourtechbudstudio/fluidcast-tool-show/schema';
 
-import { RemindersSection } from './config.ts';
 import {
   type ConversationConfig,
+  referenceSessionConfig,
   referenceTools,
   referenceWorker,
   sessionLayer,
@@ -35,11 +32,11 @@ const unusedModel = LanguageModel.make({
 });
 
 describe('referenceTools', () => {
-  it('registers Show, Ask and Forward, in that order, as a valid tool set', async () => {
-    // Building the Forward tool spawns nothing: the worker connects on its first message.
+  it('registers Show, Ask and Forward Agent, in that order, as a valid tool set', async () => {
+    // Building the Forward Agent tool spawns nothing: the worker connects on its first message.
     const tools = await Effect.runPromise(
       Effect.gen(function* () {
-        const forward = yield* forwardTool({
+        const forward = yield* forwardAgentTool({
           worker: referenceWorker({ cwd: process.cwd(), environment: {} }),
         });
         return referenceTools(forward.tool);
@@ -50,11 +47,11 @@ describe('referenceTools', () => {
       [showToolName, askToolName, forwardToolName],
     );
     assert.doesNotThrow(() => checkTools(tools));
-    // The structured-output schema of the same tools: each action by name, `forward` with no fields.
+    // The structured-output schema of the same tools: each action by name, `forward_agent` with no fields.
     const schema = outputJsonSchema({ speakers: [{ id: 'host' }], tools });
     const defs = schema['$defs'] as Record<string, Record<string, unknown>>;
-    assert.deepEqual(Object.keys(defs).sort(), ['Ask', 'Forward', 'Show']);
-    assert.deepEqual(defs['Forward']?.['properties'], {
+    assert.deepEqual(Object.keys(defs).sort(), ['Ask', 'ForwardAgent', 'Show']);
+    assert.deepEqual(defs['ForwardAgent']?.['properties'], {
       type: { type: 'string', enum: [forwardToolName] },
     });
   });
@@ -66,9 +63,7 @@ describe('sessionLayer', () => {
     llm: ConversationConfig['llm'] = { type: 'chatgpt', model: 'm', credentialsPath: '/unused' },
   ): ConversationConfig => ({
     llm,
-    instructions: '',
-    examples: [],
-    speakers: [{ id: 'host', name: 'Host', personality: 'warm', voice: { name: 'alloy' } }],
+    preset: { voice: { name: 'alloy' } },
     worker: { cwd: process.cwd(), environment: {} },
     ...(generationLog === undefined ? {} : { generationLog }),
   });
@@ -87,7 +82,7 @@ describe('sessionLayer', () => {
       SpeechSynthesizer,
       SpeechSynthesizer.of({ synthesize: () => Stream.die('unused') }),
     );
-    // Building the Forward tool spawns no worker: it connects on its first message.
+    // Building the Forward Agent tool spawns no worker: it connects on its first message.
     return Effect.runPromise(
       Layer.build(
         sessionLayer(conversation, 'opus').pipe(
@@ -100,37 +95,14 @@ describe('sessionLayer', () => {
     );
   };
 
-  it('uses the one provided model for the Harness and the Forward tool', async () => {
+  it('uses the one provided model for the Harness and the Forward Agent tool', async () => {
     assert.equal(await builds(config()), 1);
   });
 
-  it('passes the examples to the Harness, which refuses one that uses a tool it lacks', async () => {
-    const example = (tool: string) => [
-      { type: 'user_message' as const, text: 'Show me.' },
-      {
-        type: 'tool_call' as const,
-        tool,
-        handle: 'call_1',
-        input: { format: 'markdown', content: '- One' },
-      },
-    ];
-    assert.equal(await builds({ ...config(), examples: [example(showToolName)] }), 1);
-    await assert.rejects(
-      builds({ ...config(), examples: [example('draw')] }),
-      /Example 1 uses the tool "draw", which is not configured/,
-    );
-  });
-
-  it("accepts the example config's examples and reminders with the reference tools", async () => {
-    const file = readFileSync(
-      new URL('../../../../fluidcast.example.yaml', import.meta.url),
-      'utf8',
-    );
-    const { examples, reminders } = Schema.decodeUnknownSync(
-      Schema.Struct({ examples: Schema.Array(Example), reminders: RemindersSection }),
-    )(Yaml.parse(file));
-    assert.ok(examples.length > 0);
-    assert.equal(await builds({ ...config(), examples, reminders }), 1);
+  it("builds with each profile: the preset's examples fit the reference tools", async () => {
+    for (const profile of ['compact', 'detailed'] as const) {
+      assert.equal(await builds({ ...config(), preset: { profile, voice: { name: 'alloy' } } }), 1);
+    }
   });
 
   it('uses the one provided model with structured output on', async () => {
@@ -150,5 +122,35 @@ describe('sessionLayer', () => {
     } finally {
       rmSync(directory, { recursive: true });
     }
+  });
+});
+
+describe('referenceSessionConfig', () => {
+  // Passed through untouched, so any tools will do.
+  const tools = [showTool()];
+  const voice = { name: 'alloy', instructions: 'calm' };
+
+  it('takes the instructions, examples, speakers and reminders from the configured profile', () => {
+    for (const profile of ['compact', 'detailed'] as const) {
+      const session = referenceSessionConfig({ profile, voice }, 'opus', tools);
+      const preset = guidedWalkthrough({ profile, voice });
+      assert.deepEqual(session, { ...preset, speechFormat: 'opus', tools });
+    }
+  });
+
+  it('carries worked examples with the detailed profile (the default) and none with compact', () => {
+    assert.ok((referenceSessionConfig({ voice }, 'opus', tools).examples ?? []).length > 0);
+    assert.deepEqual(
+      referenceSessionConfig({ profile: 'compact', voice }, 'opus', tools).examples,
+      [],
+    );
+  });
+
+  it("gives the preset's speaker the configured voice", () => {
+    const { speakers } = referenceSessionConfig({ voice }, 'opus', tools);
+    assert.deepEqual(
+      speakers.map((speaker) => speaker.voice),
+      [voice],
+    );
   });
 });

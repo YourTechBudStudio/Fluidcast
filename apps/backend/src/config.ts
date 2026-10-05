@@ -89,6 +89,12 @@ export const loadConfig = (
           message: `${file} is not valid YAML: ${error instanceof Error ? error.message : 'parse error'}`,
         }),
     });
+    const removed = removedSections(document);
+    if (removed.length > 0) {
+      return yield* fail(
+        `${file} uses removed sections: ${removed.join(', ')}. The voice's behavior now comes from the Guided Walkthrough preset: delete them and add \`preset: { profile, voice }\`, moving the speaker's voice to preset.voice. See fluidcast.example.yaml.`,
+      );
+    }
     const parsed = yield* Schema.decodeUnknownEffect(ConfigFile)(document, {
       errors: 'all',
       onExcessProperty: 'error',
@@ -108,6 +114,15 @@ export const loadConfig = (
       Effect.catch((message) => fail(message)),
     );
   });
+
+/** Top-level sections the `preset` section replaced. */
+const replacedByPreset = ['instructions', 'examples', 'reminders', 'speakers'];
+
+/** The replaced sections a parsed config document still has, in their usual order. */
+const removedSections = (document: unknown): ReadonlyArray<string> =>
+  typeof document === 'object' && document !== null
+    ? replacedByPreset.filter((key) => Object.hasOwn(document, key))
+    : [];
 
 /** The real environment over the `.env` file's variables, if the file exists. */
 const readEnvironment = (fs: FileSystem.FileSystem, envFile: string, real: Environment) =>

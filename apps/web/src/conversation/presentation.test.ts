@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { TransportError } from '@yourtechbudstudio/fluidcast-client';
 import type { ActionId, Speak } from '@yourtechbudstudio/fluidcast-core/actions';
 import type { Execution, ExecutionId } from '@yourtechbudstudio/fluidcast-harness/protocol';
+import { forwardToolName } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 import type { AskCommand, AskInput } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 
 import type { PlaybackStatus } from '../playback';
@@ -75,22 +76,22 @@ const execution = (
   blocking: tool === 'ask',
   startedAt,
 });
-const forwardCall = (id: string, handle: string) => call(id, handle, 'forward', {});
+const forwardCall = (id: string, handle: string) => call(id, handle, forwardToolName, {});
 const forwardResult = (id: string, handles: Handles, messages: readonly string[]) =>
   ({
     type: 'tool_result',
     id: aid(id),
     handles,
-    tool: 'forward',
+    tool: forwardToolName,
     result: { messages: [...messages] },
   }) as const;
 const forwardErrored = (id: string, handles: Handles, message: string) =>
-  ({ type: 'tool_errored', id: aid(id), handles, tool: 'forward', message }) as const;
+  ({ type: 'tool_errored', id: aid(id), handles, tool: forwardToolName, message }) as const;
 const progressOf = (id: string, handle: string, line: string): Action => ({
   type: 'tool_progress',
   id: aid(id),
   handles: [handle],
-  tool: 'forward',
+  tool: forwardToolName,
   text: line,
 });
 
@@ -144,7 +145,8 @@ describe('the Ask in place of the composer', () => {
     expect(p.moment).toBe('asking');
     expect(p.status).toBe('asking');
     expect(p.visual).toBe('idle');
-    expect(p.interruptible).toBe(false);
+    // Esc interrupts an open question, closing it unanswered, like the Ask card's Interrupt.
+    expect(p.interruptible).toBe(true);
   });
 
   it('asks a text question in its own words', () => {
@@ -158,7 +160,7 @@ describe('the Ask in place of the composer', () => {
     expect(p.status).toBe('askingText');
   });
 
-  it('stays open while narration after it plays, and Interrupt stays unavailable', () => {
+  it('stays open while narration after it plays, and Interrupt stays available', () => {
     const line = speak('s2');
     const p = presentOf(
       view({
@@ -171,7 +173,7 @@ describe('the Ask in place of the composer', () => {
     expect(p.moment).toBe('speaking');
     expect(p.ask?.mode).toBe('open');
     expect(p.composer).toBe('busy');
-    expect(p.interruptible).toBe(false);
+    expect(p.interruptible).toBe(true);
   });
 
   it('shows the answer as sent while narration or the continuation is still to come', () => {
@@ -659,7 +661,7 @@ describe('the Forward tool', () => {
 
   it('thinks while the worker runs, whatever else goes on, counting from the Forward execution', () => {
     const executions = [
-      execution('e1', 'call_1', 'forward', 5_000),
+      execution('e1', 'call_1', forwardToolName, 5_000),
       execution('e0', 'call_0', 'show', 1_000),
     ];
     // After a spoken line: still thinking, not "more coming", and the line stays dimmed.
@@ -674,7 +676,7 @@ describe('the Forward tool', () => {
       view({
         actions: handed,
         phase: 'working',
-        executions: [execution('e1', 'call_1', 'forward', 5_000)],
+        executions: [execution('e1', 'call_1', forwardToolName, 5_000)],
         pendingResults: [errored('r0', 'call_0', 'show', 'The show could not be rendered.')],
       }),
     );
@@ -684,7 +686,7 @@ describe('the Forward tool', () => {
       view({
         actions: [...handed, progressOf('p1', 'call_1', "I'm reading the designs.")],
         phase: 'working',
-        executions: [execution('e1', 'call_1', 'forward', 5_000)],
+        executions: [execution('e1', 'call_1', forwardToolName, 5_000)],
       }),
     );
     expect(generating.moment).toBe('thinking');
@@ -698,7 +700,7 @@ describe('the Forward tool', () => {
       view({
         actions: handed,
         phase: 'speaking',
-        executions: [execution('e1', 'call_1', 'forward', 5_000)],
+        executions: [execution('e1', 'call_1', forwardToolName, 5_000)],
       }),
     );
     expect(speaking.moment).toBe('speaking');
@@ -711,7 +713,7 @@ describe('the Forward tool', () => {
       forwardCall('c1', 'call_1'),
       user('u2'),
       // The model added a stray field: still a forward.
-      call('c2', 'call_2', 'forward', { task: 'stray' }),
+      call('c2', 'call_2', forwardToolName, { task: 'stray' }),
       forwardCall('c3', 'call_3'),
       forwardCall('c4', 'call_4'),
     ];
@@ -719,7 +721,7 @@ describe('the Forward tool', () => {
       view({
         actions,
         phase: 'working',
-        executions: [execution('e1', 'call_1', 'forward', 0, ['call_1', 'call_2'])],
+        executions: [execution('e1', 'call_1', forwardToolName, 0, ['call_1', 'call_2'])],
         pendingResults: [
           forwardErrored('r3', ['call_3'], 'The work stopped with an error (error_max_turns).'),
         ],
@@ -844,7 +846,7 @@ describe('the Forward tool', () => {
       type: 'tool_result',
       id: aid('r1'),
       handles: ['call_1'],
-      tool: 'forward',
+      tool: forwardToolName,
       result: { unexpected: true },
     } as const;
     const p = presentOf(view({ actions: [user('u1'), forwardCall('c1', 'call_1'), odd] }));
@@ -858,7 +860,7 @@ describe('the Forward tool', () => {
     const context: Action = {
       type: 'tool_context',
       id: aid('x1'),
-      tool: 'forward',
+      tool: forwardToolName,
       text: 'Your work is in progress.',
     };
     const p = presentOf(
@@ -870,7 +872,7 @@ describe('the Forward tool', () => {
           progressOf('p1', 'call_1', "I'm reading the designs."),
         ],
         phase: 'working',
-        executions: [execution('e1', 'call_1', 'forward')],
+        executions: [execution('e1', 'call_1', forwardToolName)],
       }),
     );
     expect(p.timeline.map((row) => row.kind)).toEqual(['user', 'forward', 'progress', 'pending']);

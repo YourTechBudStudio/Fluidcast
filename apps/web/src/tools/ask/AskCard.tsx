@@ -75,18 +75,11 @@ export function AskCard({
                 >
                   {on && <Check size={11} strokeWidth={3} />}
                 </span>
-                <span className="min-w-0">
-                  <span
-                    className={`block text-[14.5px] ${on ? 'font-semibold text-fg' : 'text-fg-muted'}`}
-                  >
-                    {option.label}
-                    {on && <span className="sr-only"> (your answer)</span>}
-                  </span>
-                  {option.description && (
-                    <span className="block text-[13px] leading-snug text-fg-subtle">
-                      {option.description}
-                    </span>
-                  )}
+                <span
+                  className={`min-w-0 text-[14.5px] ${on ? 'font-semibold text-fg' : 'text-fg-muted'}`}
+                >
+                  {option.label}
+                  {on && <span className="sr-only"> (your answer)</span>}
                 </span>
               </li>
             );

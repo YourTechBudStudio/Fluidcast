@@ -3,8 +3,16 @@ import { LanguageModel } from 'effect/unstable/ai';
 
 import { outputJsonSchema } from '@yourtechbudstudio/fluidcast-core/generation';
 import type { AudioFormat, SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';
-import { layer as harnessLayer, type Session, type Tool } from '@yourtechbudstudio/fluidcast-harness';
-import { guidedWalkthrough, type GuidedWalkthrough } from '@yourtechbudstudio/fluidcast-presets';
+import {
+  layer as harnessLayer,
+  type Session,
+  type SessionConfig,
+  type Tool,
+} from '@yourtechbudstudio/fluidcast-harness';
+import {
+  guidedWalkthrough,
+  guidedWalkthroughProgressPrompt,
+} from '@yourtechbudstudio/fluidcast-presets';
 import { forwardAgentTool } from '@yourtechbudstudio/fluidcast-tool-agent';
 import { claudeWorker } from '@yourtechbudstudio/fluidcast-tool-agent/claude';
 import { askTool } from '@yourtechbudstudio/fluidcast-tool-ask';
@@ -45,6 +53,17 @@ export const referenceTools = (forward: Tool): ReadonlyArray<Tool> => [
 ];
 
 /**
+ * The Harness session config: the Guided Walkthrough preset in the configured profile and voice,
+ * plus the speech format and tools. The preset is the only source of instructions, examples,
+ * speakers and reminders.
+ */
+export const referenceSessionConfig = (
+  preset: PresetSection,
+  speechFormat: AudioFormat,
+  tools: ReadonlyArray<Tool>,
+): SessionConfig => ({ ...guidedWalkthrough(preset), speechFormat, tools });
+
+/**
  * The voice's model: the session's built `model`, constrained to the output's JSON Schema when the
  * `openai-compatible` provider sets `structuredOutput`, and recording each generation when
  * `debug.generationLog` is set. The schema is built once, from the same speakers and tools as the
@@ -52,11 +71,9 @@ export const referenceTools = (forward: Tool): ReadonlyArray<Tool> => [
  */
 const interfaceModel = (
   config: ConversationConfig,
-  preset: GuidedWalkthrough,
+  { speakers, tools }: SessionConfig,
   model: Context.Context<LanguageModel.LanguageModel>,
-  tools: ReadonlyArray<Tool>,
 ) => {
-  const { speakers } = preset.session;
   const voice =
     config.llm.type === 'openai-compatible' && config.llm.structuredOutput
       ? Context.make(
@@ -78,8 +95,8 @@ const interfaceModel = (
 
 /**
  * The single in-memory Harness session, with the Guided Walkthrough preset and the provided
- * language model, and its one worker behind the Forward Agent tool. The worker is acquired before the Harness is built, so the
- * Harness is torn down first.
+ * language model, and its one worker behind the Forward Agent tool. The worker is acquired before the
+ * Harness is built, so the Harness is torn down first.
  */
 export const sessionLayer = (
   config: ConversationConfig,
@@ -91,20 +108,21 @@ export const sessionLayer = (
 > =>
   Layer.unwrap(
     Effect.gen(function* () {
-      const preset = guidedWalkthrough(config.preset);
       // One model, shared: the Forward Agent tool's progress model uses it directly, without the
       // generation log, whose records assume action output, or structured output.
       const model = yield* Effect.context<LanguageModel.LanguageModel>();
       // The reference setup preloads no session, so setup cannot fail.
       const forward = yield* forwardAgentTool({
         worker: referenceWorker(config.worker),
-        progress: { prompt: preset.progressPrompt },
+        progress: { prompt: guidedWalkthroughProgressPrompt },
       }).pipe(Effect.provideContext(model), Effect.orDie);
-      const tools = referenceTools(forward.tool);
+      const session = referenceSessionConfig(
+        config.preset,
+        speechFormat,
+        referenceTools(forward.tool),
+      );
       return Layer.merge(
-        harnessLayer({ ...preset.session, speechFormat, tools }).pipe(
-          Layer.provide(interfaceModel(config, preset, model, tools)),
-        ),
+        harnessLayer(session).pipe(Layer.provide(interfaceModel(config, session, model))),
         Layer.succeed(ConversationWorker, forward.worker),
       );
     }),

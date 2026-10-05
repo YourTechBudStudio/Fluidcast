@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -143,10 +143,33 @@ preset: { voice: { name: alloy, instructions: calm } }
       await failure(validYaml.replace('preset: { voice:', 'preset: { profile: tiny, voice:'), keys),
       /profile/,
     );
-    // Behavior comes from the preset: instructions, examples and reminders are not settings.
-    for (const key of ['instructions: Be brief.', 'reminders: { userMessage: x }']) {
-      assert.match(await failure(`${validYaml}${key}\n`, keys), /is invalid/);
+  });
+
+  it('rejects each section the preset replaced, naming it and pointing to preset', async () => {
+    const sections = {
+      instructions: 'instructions: Be brief.',
+      examples: 'examples: []',
+      reminders: 'reminders: { userMessage: x }',
+      speakers: 'speakers: [{ id: host, name: Host, voice: { name: alloy } }]',
+    };
+    for (const [name, yaml] of Object.entries(sections)) {
+      const message = await failure(`${validYaml}${yaml}\n`, keys);
+      assert.match(message, new RegExp(`uses removed sections: ${name}\\.`));
+      assert.match(message, /preset: \{ profile, voice \}/);
     }
+    assert.match(
+      await failure(`${validYaml}${sections.speakers}\n${sections.instructions}\n`, keys),
+      /removed sections: instructions, speakers\./,
+    );
+  });
+
+  it('loads fluidcast.example.yaml', async () => {
+    const example = readFileSync(
+      new URL('../../../fluidcast.example.yaml', import.meta.url),
+      'utf8',
+    );
+    const config = await loaded(example, keys);
+    assert.equal(config.conversation.preset.profile, 'detailed');
   });
 
   it('passes an optional reply limit, except with the ChatGPT sign-in', async () => {

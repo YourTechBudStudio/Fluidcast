@@ -179,7 +179,10 @@ export interface Presentation {
   readonly subtitle: SubtitleLine | null;
   readonly timeline: readonly TimelineRow[];
   readonly ask: AskPresence | null;
-  /** Esc and Interrupt act: something is playing or on its way, and no blocking tool holds the turn. */
+  /**
+   * Esc and Interrupt act: something is playing or on its way, or a question is open. Interrupting an
+   * open question closes it unanswered, as the Ask card's Interrupt does.
+   */
   readonly interruptible: boolean;
   /** An earlier line can be presented again. */
   readonly canGoBack: boolean;
@@ -201,8 +204,6 @@ const lastIndexWhere = <A>(items: readonly A[], f: (a: A) => boolean) => {
 
 const isSpeak = (action: Action): action is Extract<Action, { type: 'speak' }> =>
   action.type === 'speak';
-
-const blocked = (view: ConversationView) => view.executions.some((e) => e.blocking);
 
 /** Whether the action at `index` is a line an interrupt cut while it played. */
 const cutAt = (view: ConversationView, index: number) => {
@@ -633,7 +634,7 @@ export function present(
     subtitle: subtitleOf(view, moment, playback),
     timeline: timelineOf(view, moment, playback),
     ask: askPresenceOf(view),
-    interruptible: (composer === 'busy' || composer === 'retryClip') && !blocked(view),
+    interruptible: composer === 'busy' || composer === 'retryClip',
     canGoBack: canGoBackOf(view, connection),
     fault: view.actions.findLast((a) => a.type === 'tool_faulted')?.error.message ?? null,
     latestShow: latestShowHandle(view) ?? null,

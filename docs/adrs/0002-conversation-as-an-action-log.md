@@ -18,7 +18,7 @@ Fluidcast must keep speaking while tools and the worker work in the background, 
 
 **The cursor decides when actions take effect.** Each action type declares its execution rule: speech holds the cursor until playback completes, and tool calls start background work and release it. Commands request changes, actions record the conversation, and events describe changes to the log and cursor.
 
-**Presentation controls never cancel background work.** Interrupt discards presentation that has not taken effect, and running tools continue with their results still eligible. Away holds presentation while work continues. Only faults halt a conversation.
+**Presentation controls never cancel background work.** Interrupt discards presentation that has not taken effect, including a blocking tool still waiting on the listener, such as an open question, which closes unanswered; every other running tool continues with its result still eligible. Away holds presentation while work continues. Only faults halt a conversation.
 
 ## Consequences
 

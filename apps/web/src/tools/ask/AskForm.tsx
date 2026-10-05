@@ -59,7 +59,6 @@ export function AskForm({
   const box = useRef<HTMLTextAreaElement>(null);
   const blocked = disabled || sending || mode !== 'open';
   const options = input.kind === 'text' ? [] : input.options;
-  const described = options.some((option) => option.description);
   const multi = input.kind === 'multi';
   const sendable = answerForSend(input, draft);
 
@@ -130,11 +129,7 @@ export function AskForm({
               <div
                 role="group"
                 aria-label="Options"
-                className={
-                  described
-                    ? 'mt-3.5 grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-2 max-sm:grid-cols-1'
-                    : 'mt-3.5 flex flex-wrap gap-2 max-sm:flex-col'
-                }
+                className="mt-3.5 flex flex-wrap gap-2 max-sm:flex-col"
               >
                 {options.map((option, i) => {
                   const on = draft.picked.includes(i);
@@ -147,18 +142,14 @@ export function AskForm({
                       aria-keyshortcuts={i < 9 ? String(i + 1) : undefined}
                       onClick={() => choose(i)}
                       style={{ animationDelay: `${120 + i * 45}ms` }}
-                      className={`rise-in group relative flex min-h-11 cursor-pointer items-center gap-3 border text-left transition-[background-color,border-color,color,opacity] duration-(--duration-ui) ease-expo focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue aria-disabled:cursor-default aria-disabled:opacity-45 ${
-                        described
-                          ? 'items-start rounded-md px-3.5 py-3 max-sm:py-2.5'
-                          : 'rounded-full py-1.5 pr-4 pl-2 max-sm:rounded-md max-sm:pl-3.5'
-                      } ${
+                      className={`rise-in group flex min-h-11 cursor-pointer items-center gap-3 border text-left transition-[background-color,border-color,color,opacity] duration-(--duration-ui) ease-expo focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue aria-disabled:cursor-default aria-disabled:opacity-45 rounded-full py-1.5 pr-4 pl-2 max-sm:rounded-md max-sm:pl-3.5 ${
                         on
                           ? 'border-cyan/60 bg-cyan/12 text-fg'
                           : 'border-line/45 bg-subtle/55 text-fg hover:border-cyan/45 hover:bg-cyan/7'
                       }`}
                     >
                       <span
-                        className={`grid shrink-0 place-items-center ${described ? 'mt-0.5' : ''} ${multi ? '' : 'max-sm:hidden'}`}
+                        className={`grid shrink-0 place-items-center ${multi ? '' : 'max-sm:hidden'}`}
                       >
                         {multi ? (
                           <span
@@ -170,26 +161,16 @@ export function AskForm({
                           i < 9 && <Kbd>{i + 1}</Kbd>
                         )}
                       </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-[15.5px] font-semibold">{option.label}</span>
-                        {option.description && (
-                          <span className="mt-0.5 block text-[13.5px] leading-snug text-fg-subtle">
-                            {option.description}
-                          </span>
-                        )}
+                      <span className="min-w-0 flex-1 text-[15.5px] font-semibold">
+                        {option.label}
                       </span>
                       {input.kind === 'choice' && (
                         <ArrowRight
                           size={15}
                           strokeWidth={2}
                           aria-hidden
-                          className={`shrink-0 text-cyan opacity-0 transition-opacity duration-(--duration-ui) group-hover:opacity-100 group-focus-visible:opacity-100 max-sm:opacity-70 ${described ? 'mt-1' : ''}`}
+                          className="shrink-0 text-cyan opacity-0 transition-opacity duration-(--duration-ui) group-hover:opacity-100 group-focus-visible:opacity-100 max-sm:opacity-70"
                         />
-                      )}
-                      {multi && described && i < 9 && (
-                        <span className="absolute top-3 right-3.5 max-sm:hidden">
-                          <Kbd>{i + 1}</Kbd>
-                        </span>
                       )}
                     </button>
                   );
