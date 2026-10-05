@@ -19,7 +19,7 @@ Fluidcast is a set of SDKs for a voice-and-visual interface to existing agents, 
 
 Fluidcast has two kinds of users: people listening to and steering the conversation, and developers integrating the SDKs into their own server, transport, UI, and audio playback. Both are first-class.
 
-Fluidcast is Effect-native throughout, including application UI state; see [ADR 0005](../adrs/0005-effect-native-execution.md). Review whether appropriate Effect primitives solve the actual problem better than custom machinery; this guidance does not define adoption tiers or a mandatory service hierarchy.
+Fluidcast is Effect-native throughout, including application UI state; see [ADR 0003](../adrs/0003-effect-native-execution.md). Review whether appropriate Effect primitives solve the actual problem better than custom machinery; this guidance does not define adoption tiers or a mandatory service hierarchy.
 
 Favor clean internal evolution while the project is unlaunched: the reference applications are callers to migrate, not compatibility obligations. This does not erase obligations at real user, data, integration, or deployment boundaries once they exist.
 

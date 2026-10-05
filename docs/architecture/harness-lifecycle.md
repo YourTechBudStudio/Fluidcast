@@ -19,13 +19,13 @@ After generation and playback finish, with the user present and connected:
 
 Progress updates exist to fill silence. Each stands alone, so one arriving while anything is playing or generating is dropped rather than queued. While a tool call is pending, the user must interrupt before sending a message.
 
-Tool outcomes wait as session state until the harness submits them; only then do they enter the conversation log, so the log reads exactly as the model saw it ([ADR 0006](../adrs/0006-conversation-as-a-single-action-log.md)). A successful response-free tool can finish the turn without another iteration. The harness assembles input from user messages, tool responses, and queued key-value context. Context alone does not trigger continuation. A session can begin from starting input: an optional message and labeled context supplied by the application.
+Tool outcomes wait as session state until the harness submits them; only then do they enter the conversation log, so the log reads exactly as the model saw it ([ADR 0002](../adrs/0002-conversation-as-an-action-log.md)). A successful response-free tool can finish the turn without another iteration. The harness assembles input from user messages, tool responses, and queued key-value context. Context alone does not trigger continuation. A session can begin from starting input: an optional message and labeled context supplied by the application.
 
 ## Playback and history
 
 Disconnection freezes cursor advancement, not running tools; their results queue. Back moves presentation to the previous speak action without reverse execution or automatic visual restoration. The cursor stays at the execution frontier; a separate replay position moves back and walks forward to it, executing only replay-enabled tools. Next advances the cursor by one position, with intervening tools handled normally.
 
-Interruption stops current presentation and generation and trims history after the cursor, but running tools continue and their results remain eligible ([ADR 0008](../adrs/0008-presentation-controls-never-cancel-background-work.md)). The current speak action remains in history even if partially heard. Interrupts are ignored while a blocking tool is open.
+Interruption stops current presentation and generation and trims history after the cursor, but running tools continue and their results remain eligible ([ADR 0002](../adrs/0002-conversation-as-an-action-log.md)). The current speak action remains in history even if partially heard. Interrupts are ignored while a blocking tool is open.
 
 Rewinding and interrupting may intentionally erase generated actions that never took effect. No rollback or evidence-preservation mechanism is required initially.
 
