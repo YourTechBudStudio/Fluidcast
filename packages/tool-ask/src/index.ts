@@ -15,10 +15,7 @@ export const askTool = (): Tool<AskInput, AskResult, AskCommand> => ({
   name: askToolName,
   input: AskInput,
   guidelines: [
-    "Use `ask` for every question that needs the listener's answer, including a quick check such as whether to continue and the last question before you stop. A question you only speak gets no answer. Rhetorical questions in speech are fine.",
-    'Each `ask` holds exactly one question. Split a compound question into separate `ask`s.',
-    'Use `kind: "choice"` or `"multi"` when the likely answers are known, with short labels and optional one-line descriptions drawn from what you have said. The listener can always answer in their own words instead.',
-    'Make `ask` the last thing you say, with at most one `ask` per response. The answer arrives as a `<tool_result>` in the next input.',
+    "Use `ask` for one question that needs the listener's answer. `ask` blocks: the conversation waits for the answer, which arrives as a `<tool_result>`. The listener can always answer in their own words.",
   ],
   result: AskResult,
   renderResult: renderAnswer,

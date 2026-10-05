@@ -8,11 +8,9 @@ import { Schema } from 'effect';
 export const askToolName = 'ask';
 
 // No `identifier`: nested schemas render inline in the prompt.
+// Labels only: a description invites the model to invent trade-offs the worker never gave.
 const AskOption = Schema.Struct({
   label: Schema.String.annotate({ description: 'A short answer the listener can pick.' }),
-  description: Schema.optionalKey(
-    Schema.String.annotate({ description: 'One line shown under the label.' }),
-  ),
 });
 const Options = Schema.Array(AskOption).check(Schema.isMinLength(1));
 const Question = Schema.String.annotate({ description: 'Exactly one question.' });

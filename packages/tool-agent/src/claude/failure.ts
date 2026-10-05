@@ -6,7 +6,7 @@
  * established by AC10. Either the SDK waits for the reset and resumes the turn by itself, in which
  * case nothing special happens (the busy period stays open and the worker shows `working`), or it
  * ends the turn with an error result after a rejected `rate_limit_event`, in which case the turn
- * ends as `usage_limit` with the reset time when the event carried one, and the Agent tool's error
+ * ends as `usage_limit` with the reset time when the event carried one, and the Forward tool's error
  * names that time.
  */
 import type { SDKMessage, SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';

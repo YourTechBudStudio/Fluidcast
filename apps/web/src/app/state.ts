@@ -9,7 +9,7 @@ export const visualAtom = persistedAtom<VisualId>(
   DEFAULT_VISUAL,
 );
 
-/** Which layer the player column shows: the stage (visual and subtitle), the transcript or the Workers layer. */
+/** Which layer the player column shows: the stage (visual and subtitle), the transcript or the Worker layer. */
 export const layerAtom = persistedAtom<Layer>(
   'fluidcast.layer',
   (raw) => LAYERS.find((layer) => layer === raw),

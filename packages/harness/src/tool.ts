@@ -6,7 +6,10 @@ import type { ExecutionId, SessionState } from './session/protocol.ts';
 
 /** How the Harness treats a tool's executions. */
 export interface ToolPolicy {
-  /** Holds continuation, and every other result, until it completes. Interrupt is ignored while it is open. */
+  /**
+   * Holds continuation, and every other result, until it completes. An Interrupt while it is open
+   * cancels it without a result.
+   */
   readonly blocking: boolean;
   /** Which outcomes the model reads. Completion is tracked regardless. */
   readonly response: 'all' | 'error' | 'none';

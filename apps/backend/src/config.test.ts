@@ -17,8 +17,7 @@ providers:
   openai-compatible: { baseUrl: http://127.0.0.1:9/v1 }
 llm: { model: m, provider: { type: openai-compatible, reasoningEffort: low }, temperature: 0.7 }
 tts: { model: t, provider: { type: openai } }
-speakers:
-  - { id: host, name: Host, personality: warm, voice: { name: alloy } }
+preset: { voice: { name: alloy } }
 `;
 
 const keys = {
@@ -85,6 +84,34 @@ describe('loadConfig', () => {
     assert.deepEqual(config.server, { host: '127.0.0.1', port: 4700 });
   });
 
+  it('turns structured output on only when an openai-compatible provider asks for it', async () => {
+    const structuredOutput = (config: Config) => {
+      const { llm } = config.conversation;
+      return llm.type === 'openai-compatible' ? llm.structuredOutput : assert.fail(llm.type);
+    };
+    assert.equal(structuredOutput(await loaded(validYaml, keys)), false);
+    const on = validYaml.replace(
+      'reasoningEffort: low',
+      'reasoningEffort: low, structuredOutput: true',
+    );
+    assert.equal(structuredOutput(await loaded(on, keys)), true);
+  });
+
+  it('rejects structured output on a provider type other than openai-compatible', async () => {
+    const message = await failure(
+      `
+llm: { model: m, provider: { type: openai, structuredOutput: true } }
+tts: { model: t, provider: { type: openai } }
+preset: { voice: { name: alloy } }
+`,
+      keys,
+    );
+    assert.match(
+      message,
+      /llm\.provider\.structuredOutput is supported only by the openai-compatible provider type, not openai/,
+    );
+  });
+
   it('shares one connection between sections that use the same provider type', async () => {
     const config = await loaded(
       `
@@ -92,17 +119,45 @@ providers:
   openai: { baseUrl: http://127.0.0.1:9/v1, apiKeyEnv: SHARED_KEY }
 llm: { model: m, provider: { type: openai } }
 tts: { model: t, provider: { type: openai } }
-speakers:
-  - { id: host, name: Host, personality: warm, voice: { name: alloy, instructions: calm } }
+preset: { voice: { name: alloy, instructions: calm } }
 `,
       { SHARED_KEY: 'shared' },
     );
     assert.deepEqual(llmConnection(config), config.speech.connection);
     assert.equal(Redacted.value(config.speech.connection.apiKey), 'shared');
-    assert.deepEqual(config.conversation.speakers[0].voice, {
+    assert.deepEqual(config.conversation.preset.voice, {
       name: 'alloy',
       instructions: 'calm',
     });
+  });
+
+  it('reads the preset section: a profile (default detailed) and the voice', async () => {
+    const config = await loaded(validYaml, keys);
+    assert.deepEqual(config.conversation.preset, { voice: { name: 'alloy' } });
+    const compact = await loaded(
+      validYaml.replace('preset: { voice:', 'preset: { profile: compact, voice:'),
+      keys,
+    );
+    assert.equal(compact.conversation.preset.profile, 'compact');
+    assert.match(
+      await failure(validYaml.replace('preset: { voice:', 'preset: { profile: tiny, voice:'), keys),
+      /profile/,
+    );
+    // Behavior comes from the preset: instructions, examples and reminders are not settings.
+    for (const key of ['instructions: Be brief.', 'reminders: { userMessage: x }']) {
+      assert.match(await failure(`${validYaml}${key}\n`, keys), /is invalid/);
+    }
+  });
+
+  it('passes an optional reply limit, except with the ChatGPT sign-in', async () => {
+    assert.equal((await loaded(validYaml, keys)).conversation.llm.maxOutputTokens, undefined);
+    const limited = validYaml.replace(
+      'temperature: 0.7',
+      'temperature: 0.7, maxOutputTokens: 4096',
+    );
+    assert.equal((await loaded(limited, keys)).conversation.llm.maxOutputTokens, 4096);
+    const zero = validYaml.replace('temperature: 0.7', 'temperature: 0.7, maxOutputTokens: 0');
+    assert.match(await failure(zero, keys), /maxOutputTokens/);
   });
 
   it('keeps the generation log off by default, and resolves its path next to the config', async () => {
@@ -118,7 +173,7 @@ speakers:
     );
   });
 
-  it('runs workers next to the config with the real environment minus the provider keys', async () => {
+  it('runs the worker next to the config with the real environment minus the provider keys', async () => {
     const config = await loaded(
       validYaml.replace(
         'openai-compatible: { baseUrl',
@@ -133,20 +188,20 @@ speakers:
       },
       'FROM_DOTENV=dotenv-only\nFLUIDCAST_OPENAI_API_KEY=openai-from-file\n',
     );
-    const { workers } = config.conversation;
-    assert.equal(workers.cwd, directories.at(-1));
-    assert.deepEqual(workers.environment, {
+    const { worker } = config.conversation;
+    assert.equal(worker.cwd, directories.at(-1));
+    assert.deepEqual(worker.environment, {
       // Not a configured provider's key variable here (the llm uses `MY_COMPATIBLE_KEY`), so kept.
       FLUIDCAST_OPENAI_COMPATIBLE_API_KEY: 'compatible-key',
       PATH: '/usr/bin',
       HOME: '/home/listener',
     });
-    assert.ok(Object.isFrozen(workers.environment));
+    assert.ok(Object.isFrozen(worker.environment));
   });
 
   it('omits a default key variable that only the real environment holds', async () => {
     const config = await loaded(validYaml, { ...keys, PATH: '/usr/bin' }, 'OTHER=from-file\n');
-    assert.deepEqual(config.conversation.workers.environment, { PATH: '/usr/bin' });
+    assert.deepEqual(config.conversation.worker.environment, { PATH: '/usr/bin' });
   });
 
   it('names the missing key variable without leaking other values', async () => {
@@ -164,28 +219,12 @@ speakers:
       `
 llm: { model: m, provider: { type: anthropic } }
 tts: { model: t, format: flac, provider: { type: openai-compatible } }
-speakers:
-  - { id: host, name: Host, personality: warm, voice: alloy }
-  - { id: host, name: Again, personality: dry, voice: { name: echo } }
+preset: { voice: alloy }
 `,
       keys,
     );
     assert.match(message, /is invalid/);
     for (const path of ['llm', 'format', 'tts', 'voice']) assert.match(message, new RegExp(path));
-  });
-
-  it('rejects speakers with duplicate ids', async () => {
-    const message = await failure(
-      `
-llm: { model: m, provider: { type: openai } }
-tts: { model: t, provider: { type: openai } }
-speakers:
-  - { id: host, name: Host, personality: warm, voice: { name: alloy } }
-  - { id: host, name: Again, personality: dry, voice: { name: echo } }
-`,
-      keys,
-    );
-    assert.match(message, /unique ids/);
   });
 });
 
@@ -193,8 +232,7 @@ describe('loadConfig with the ChatGPT sign-in', () => {
   const chatGptYaml = `
 llm: { model: m, provider: { type: chatgpt, reasoningEffort: low } }
 tts: { model: t, provider: { type: openai } }
-speakers:
-  - { id: host, name: Host, personality: warm, voice: { name: alloy } }
+preset: { voice: { name: alloy } }
 `;
 
   /** A fresh home directory, with `credentials` as its ChatGPT sign-in when given. */
@@ -260,6 +298,29 @@ speakers:
     assert.doesNotMatch(message, /secret-access-token/);
   });
 
+  it('rejects structured output', async () => {
+    const message = await failure(
+      chatGptYaml.replace('reasoningEffort: low', 'reasoningEffort: low, structuredOutput: true'),
+      { FLUIDCAST_OPENAI_API_KEY: 'openai-key' },
+      undefined,
+      signedIn(),
+    );
+    assert.match(
+      message,
+      /structuredOutput is supported only by the openai-compatible provider type, not chatgpt/,
+    );
+  });
+
+  it('rejects a reply limit', async () => {
+    const message = await failure(
+      chatGptYaml.replace('} }\ntts', '} , maxOutputTokens: 100 }\ntts'),
+      { FLUIDCAST_OPENAI_API_KEY: 'openai-key' },
+      undefined,
+      signedIn(),
+    );
+    assert.match(message, /llm\.maxOutputTokens is not supported with the chatgpt provider type/);
+  });
+
   it('rejects a providers.chatgpt connection', async () => {
     const message = await failure(
       `providers:\n  chatgpt: { baseUrl: http://127.0.0.1:9/v1 }\n${chatGptYaml}`,
@@ -271,9 +332,9 @@ speakers:
     assert.match(message, /\["providers"\]\["chatgpt"\]/);
   });
 
-  it("strips only the API-key providers' variables from the workers' environment", async () => {
+  it("strips only the API-key providers' variables from the worker's environment", async () => {
     const config = await loaded(chatGptYaml, { ...keys, PATH: '/usr/bin' }, undefined, signedIn());
-    assert.deepEqual(config.conversation.workers.environment, {
+    assert.deepEqual(config.conversation.worker.environment, {
       // Not configured here: the LLM is the ChatGPT sign-in, which has no key variable.
       FLUIDCAST_OPENAI_COMPATIBLE_API_KEY: 'compatible-key',
       PATH: '/usr/bin',

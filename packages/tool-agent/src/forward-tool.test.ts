@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { Cause, Context, Effect, Exit, Layer, Queue, Ref, type Scope, Stream } from 'effect';
+import { Context, Effect, Layer, Queue, Ref, Schema, type Scope, Stream } from 'effect';
 import { LanguageModel, type Prompt, type Response } from 'effect/unstable/ai';
 
 import { checkTools } from '@yourtechbudstudio/fluidcast-core/generation';
@@ -14,7 +14,7 @@ import {
 } from '@yourtechbudstudio/fluidcast-harness/protocol';
 
 import { eventually, fakeModel, fakeWorkerType } from './fixtures.test.ts';
-import { agentTool, agentToolName, type WorkerType } from './index.ts';
+import { ForwardInput, forwardAgentTool, forwardToolName, type WorkerType } from './index.ts';
 
 /** A scripted interface model: each call takes the next reply the test queues, and records its prompt. */
 const scriptedModel = Effect.gen(function* () {
@@ -53,14 +53,14 @@ const flatten = (message: Prompt.Message) => ({
 const silence = SpeechSynthesizer.of({ synthesize: () => Stream.empty });
 
 /**
- * A real Harness session with the Agent tool over a fake worker type. The pool is acquired first,
- * in the same scope, so it outlives the session.
+ * A real Harness session with the Forward tool over a fake worker type. The worker session is
+ * acquired first, in the same scope, so it outlives the Harness session.
  */
-const setup = (type?: Partial<WorkerType>) =>
+const setup = (type?: Partial<WorkerType>, options: { readonly play?: boolean } = {}) =>
   Effect.gen(function* () {
     const fake = yield* fakeWorkerType();
     const progressModel = yield* fakeModel;
-    const agents = yield* agentTool({ types: { claude: { ...fake.type, ...type } } }).pipe(
+    const forward = yield* forwardAgentTool({ worker: { ...fake.type, ...type } }).pipe(
       Effect.provideService(LanguageModel.LanguageModel, progressModel),
     );
     const interfaceModel = yield* scriptedModel;
@@ -69,7 +69,7 @@ const setup = (type?: Partial<WorkerType>) =>
         instructions: 'Be brief.',
         speakers: [{ id: 'host', name: 'Host', personality: 'Warm.', voice: { name: 'alloy' } }],
         speechFormat: 'opus',
-        tools: [agents.tool],
+        tools: [forward.tool],
       }).pipe(
         Layer.provide(
           Layer.merge(
@@ -81,9 +81,20 @@ const setup = (type?: Partial<WorkerType>) =>
     );
     const session = Context.get(context, Session);
     const messages = yield* Ref.make<ReadonlyArray<SubscriptionMessage>>([]);
+    // Plays every line at once (the client's part), unless the test holds playback.
     yield* Effect.forkScoped(
       Stream.runForEach(session.subscribe(), (message) =>
-        Ref.update(messages, (all) => [...all, message]),
+        Ref.update(messages, (all) => [...all, message]).pipe(
+          Effect.andThen(
+            message._tag === 'PlaybackRequested' && options.play !== false
+              ? Effect.forkScoped(
+                  Effect.ignore(
+                    session.command({ _tag: 'PlaybackFinished', playbackId: message.playbackId }),
+                  ),
+                )
+              : Effect.void,
+          ),
+        ),
       ),
     );
     yield* eventually(Ref.get(messages), (all) => all.length > 0);
@@ -110,51 +121,73 @@ const setup = (type?: Partial<WorkerType>) =>
     };
   });
 
-const agentCall = (agent: string, message: string) => ({
-  type: agentToolName,
-  agentType: 'claude',
-  agent,
-  message,
-});
+const forward = { type: forwardToolName };
+const say = (text: string) => ({ type: 'speak', speaker: 'host', text });
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
   Effect.runPromise(Effect.scoped(effect));
 
-describe('agentTool in a Harness session', () => {
-  it('folds a steering call into the running worker and answers both calls with one result', () =>
+describe('forwardAgentTool in a Harness session', () => {
+  it("starts the worker on a forward written first, with the listener's own words, before the line after it plays", () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* setup(undefined, { play: false });
+        yield* ctx.interface.reply([forward, say('Let me think about that.')]);
+        yield* ctx.session.command({
+          _tag: 'SendMessage',
+          text: 'Why are the invoice totals off by a few cents?',
+        });
+        yield* ctx.waitFor((current) => current.executions.length === 1);
+        const [open] = yield* eventually(ctx.fake.connections, (all) => all.length === 1);
+        const [message] = yield* eventually(open!.received, (all) => all.length === 1);
+        // "Let me think about that." is still waiting to play.
+        assert.equal(derivePhase(yield* ctx.state), 'speaking');
+        assert.ok(
+          message!.text.includes(
+            '<conversation_so_far>\n**User:** Why are the invoice totals off by a few cents?\n</conversation_so_far>',
+          ),
+          message!.text,
+        );
+        // The output format declares it with no fields.
+        const prompts = yield* eventually(ctx.interface.prompts, (all) => all.length === 1);
+        assert.match(
+          prompts[0]![0]!.text,
+          /\*\/\ntype ForwardAgent = \{\n {2}type: "forward_agent";\n\};/,
+        );
+      }),
+    ));
+
+  it('folds a steering forward into the running work and answers both calls with one result', () =>
     run(
       Effect.gen(function* () {
         const ctx = yield* setup();
 
-        // The interface agent hands work to a new worker.
-        yield* ctx.interface.reply([agentCall('brainstorm', 'Propose retry designs.')]);
+        yield* ctx.interface.reply([forward, say('Let me look.')]);
         yield* ctx.session.command({ _tag: 'SendMessage', text: 'Help me design retries.' });
-        const started = yield* ctx.waitFor((current) => current.executions.length === 1);
-        assert.equal(derivePhase(started), 'working');
+        yield* ctx.waitFor((current) => current.executions.length === 1);
         const [open] = yield* eventually(ctx.fake.connections, (all) => all.length === 1);
         const [first] = yield* eventually(open!.received, (all) => all.length === 1);
-        assert.ok(first!.text.includes('**User:** Help me design retries.'));
 
-        // The user interrupts while it works and steers; the model sends to the same worker.
-        yield* ctx.waitFor((current) => current.generation === 'idle');
+        // The listener interrupts while it works (the line has played); the model forwards again,
+        // with a stray field.
+        yield* ctx.waitFor((current) => derivePhase(current) === 'working');
         yield* ctx.session.command({ _tag: 'Interrupt' });
-        yield* ctx.interface.reply([agentCall('brainstorm', 'The backend should own retries.')]);
+        yield* ctx.interface.reply([{ ...forward, task: 'stray' }, say('One moment.')]);
         yield* ctx.session.command({ _tag: 'SendMessage', text: 'Actually, the backend owns it.' });
         const joined = yield* ctx.waitFor((current) => current.executions[0]?.handles.length === 2);
         assert.equal(joined.executions.length, 1);
-        const handles = joined.executions[0]!.handles;
-        assert.deepEqual(handles, ['call_1', 'call_2']);
+        assert.deepEqual(joined.executions[0]!.handles, ['call_1', 'call_2']);
+        const [, second] = yield* eventually(open!.received, (all) => all.length === 2);
         assert.ok(
-          (yield* ctx.messages).some(
-            (message) => message._tag === 'ToolJoined' && message.handle === 'call_2',
+          second!.text.startsWith(
+            'Here is the voice conversation since the last message you received from it.',
           ),
         );
-        const [, second] = yield* eventually(open!.received, (all) => all.length === 2);
-        assert.ok(second!.text.startsWith('The user responded through the voice conversation'));
         assert.ok(
           second!.text.includes(
-            '*(The user interrupted to say something.)*\n\n**User:** Actually, the backend owns it.',
+            '**Voice:** Let me look.\n\n*(The user interrupted to say something.)*\n\n**User:** Actually, the backend owns it.',
           ),
+          second!.text,
         );
 
         // The worker takes both messages in and settles: one result for both calls.
@@ -164,7 +197,11 @@ describe('agentTool in a Harness session', () => {
           { _tag: 'Consumed', ids: [first!.id, second!.id] },
           {
             _tag: 'Entry',
-            entry: { _tag: 'text', parentToolUseId: null, text: 'Backend retries.' },
+            entry: {
+              _tag: 'text',
+              parentToolUseId: null,
+              text: 'Backend retries.\n\n**Questions for you**\n1. Keep the client timer?',
+            },
           },
           { _tag: 'Entry', entry: { _tag: 'turnEnd', parentToolUseId: null, outcome: 'success' } },
           { _tag: 'Settled' },
@@ -178,16 +215,28 @@ describe('agentTool in a Harness session', () => {
           [['call_1', 'call_2']],
         );
         const prompts = yield* eventually(ctx.interface.prompts, (all) => all.length === 3);
-        const last = prompts[2]!.findLast((message) => message.role === 'user')?.text ?? '';
+        const messages = prompts[2]!;
+        const last = messages.findLast((message) => message.role === 'user')?.text ?? '';
         assert.ok(
           last.includes(
-            '<tool_result calls="call_1 call_2" tool="agent">Backend retries.</tool_result>',
+            '<tool_result calls="call_1 call_2" tool="forward_agent">Backend retries.\n\n**Questions for you**\n1. Keep the client timer?</tool_result>',
           ),
           last,
         );
+        // Earlier forwards read back without the stray field.
         assert.ok(
-          last.endsWith('<context tool="agent">Workers:\n- brainstorm (claude): done</context>'),
-          last,
+          messages.some(
+            (message) =>
+              message.role === 'assistant' &&
+              message.text.startsWith('[{"type":"forward_agent","call":"call_2"},'),
+          ),
+        );
+        // The worker is idle again, so its context is cleared.
+        assert.ok(!last.includes('<context tool="forward_agent">'), last);
+        assert.ok(
+          prompts[1]!
+            .findLast((message) => message.role === 'user')
+            ?.text.endsWith('<context tool="forward_agent">The agent is working.</context>'),
         );
       }),
     ));
@@ -200,47 +249,36 @@ describe('agentTool in a Harness session', () => {
             throw new Error('seven modifiers');
           },
         });
-        yield* ctx.interface.reply([agentCall('brainstorm', 'Go.')]);
+        yield* ctx.interface.reply([forward]);
         yield* ctx.session.command({ _tag: 'SendMessage', text: 'Hi' });
         const halted = yield* ctx.waitFor((current) => derivePhase(current) === 'halted');
         const faulted = halted.actions.find((action) => action.type === 'tool_faulted');
-        assert.equal(faulted?.type === 'tool_faulted' && faulted.tool, 'agent');
+        assert.equal(faulted?.type === 'tool_faulted' && faulted.tool, 'forward_agent');
         assert.deepEqual(yield* ctx.fake.connections, []);
       }),
     ));
 });
 
-describe('agentTool', () => {
-  it('builds a tool that passes checkTools, with guidelines naming each worker type', () =>
+describe('forwardAgentTool', () => {
+  it('has an empty input: the model writes `{"type":"forward_agent"}`', () =>
     run(
       Effect.gen(function* () {
         const fake = yield* fakeWorkerType();
-        const { tool } = yield* agentTool({
-          types: { claude: fake.type, codex: { ...fake.type, description: 'Another.' } },
-        }).pipe(Effect.provideService(LanguageModel.LanguageModel, yield* fakeModel));
+        const { tool } = yield* forwardAgentTool({ worker: fake.type }).pipe(
+          Effect.provideService(LanguageModel.LanguageModel, yield* fakeModel),
+        );
         checkTools([tool]);
+        assert.equal(tool.name, 'forward_agent');
+        assert.equal(tool.input, ForwardInput);
+        assert.deepEqual(Schema.decodeUnknownSync(ForwardInput)({}), {});
+        assert.deepEqual(tool.renderCall?.({ task: 'stray' }), {});
         assert.deepEqual(tool.policy, { blocking: false, response: 'all', replay: false });
-        assert.equal(
-          tool.guidelines[0],
-          'Use `agent` to hand work to a worker agent that does the real thinking and returns a detailed response. Worker types: `claude`: A fake worker; `codex`: Another.',
+        assert.ok(
+          tool.guidelines[0]?.startsWith(
+            '`forward_agent` (just `{"type":"forward_agent"}`, no fields)',
+          ),
         );
-        assert.equal(tool.guidelines.length, 4);
-        assert.equal(
-          tool.renderResult({ agent: 'a', messages: [] }),
-          '(The worker wrote no text.)',
-        );
-        assert.equal(tool.renderResult({ agent: 'a', messages: ['One.', 'Two.'] }), 'One.\n\nTwo.');
+        assert.ok(tool.guidelines.every((guideline) => guideline.includes('`forward_agent`')));
       }),
     ));
-
-  it('dies without worker types', async () => {
-    const exit = await Effect.runPromiseExit(
-      Effect.scoped(
-        Effect.flatMap(fakeModel, (model) =>
-          agentTool({ types: {} }).pipe(Effect.provideService(LanguageModel.LanguageModel, model)),
-        ),
-      ),
-    );
-    assert.ok(Exit.isFailure(exit) && Cause.hasDies(exit.cause));
-  });
 });

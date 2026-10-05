@@ -1,6 +1,7 @@
 import { Result, Schema } from 'effect';
 
 import type { ToolCall } from '../actions/index.ts';
+import type { Example } from './examples.ts';
 
 /**
  * A tool's model-facing input: a struct, or a union of structs, whose encoding is JSON. It never
@@ -19,11 +20,20 @@ export interface ToolDefinition<Input = any, Result = any> {
   /** The model-facing action `type`: lowercase `[a-z][a-z0-9_]*`, unique, not `speak` or `action`. */
   readonly name: string;
   readonly input: ToolInput<Input>;
-  /** Bullets for the tool-rules section. Each names its tool ("Use `show` when…"). */
+  /**
+   * Bullets for the tool-rules section: the tool's mechanics, each naming its tool ("Use `show`
+   * to…"). How the voice should use a tool in an experience is the configuration's, not the tool's.
+   */
   readonly guidelines: ReadonlyArray<string>;
   readonly result: Schema.Codec<Result, Schema.Json>;
   /** What the model reads inside `<tool_result>`. Must be pure: history renders it again on every iteration. */
   readonly renderResult: (result: Result) => string;
+  /**
+   * What the model reads back for one of its own earlier calls to this tool: the input as it wrote
+   * it (which may not decode), reshaped. Must be pure. Absent: the input as written. The model copies
+   * its earlier calls, so this sets the precedent for its next ones.
+   */
+  readonly renderCall?: (input: ToolCall['input']) => ToolCall['input'];
 }
 
 /** A parsed tool call before the Harness assigns its handle. */
@@ -39,11 +49,16 @@ const inputStructs = (tool: ToolDefinition): ReadonlyArray<Schema.Struct<Schema.
   'members' in tool.input ? tool.input.members : [tool.input];
 
 /**
- * Checks a tool list and throws on a configuration defect, like the "at least one speaker" check:
- * a bad or reserved name, a duplicate, an input that is not a struct or a union of structs, or an
- * input that declares `type` or `call`.
+ * Checks a tool list, and the application's examples against it, and throws on a configuration
+ * defect, like the "at least one speaker" check: a bad or reserved name, a duplicate, an input that
+ * is not a struct or a union of structs, an input that declares `type` or `call`, or an example
+ * that names a tool not configured, writes a call that does not decode, or holds a result that
+ * does not decode with its tool's `result` schema.
  */
-export const checkTools = (tools: ReadonlyArray<ToolDefinition>): void => {
+export const checkTools = (
+  tools: ReadonlyArray<ToolDefinition>,
+  examples: ReadonlyArray<Example> = [],
+): void => {
   const seen = new Set<string>();
   for (const tool of tools) {
     if (!namePattern.test(tool.name)) {
@@ -73,6 +88,25 @@ export const checkTools = (tools: ReadonlyArray<ToolDefinition>): void => {
       }
     }
   }
+  examples.forEach((example, index) => {
+    for (const step of example) {
+      if (step.type !== 'tool_call' && step.type !== 'tool_result') continue;
+      const tool = tools.find((candidate) => candidate.name === step.tool);
+      if (tool === undefined) {
+        throw new Error(
+          `Example ${index + 1} uses the tool "${step.tool}", which is not configured`,
+        );
+      }
+      if (step.type === 'tool_call') {
+        const decoded = decodeToolCall(tools, step);
+        if (Result.isFailure(decoded)) {
+          throw new Error(`Example ${index + 1} has an invalid call: ${decoded.failure}`);
+        }
+      } else if (Result.isFailure(Schema.decodeUnknownResult(tool.result)(step.result))) {
+        throw new Error(`Example ${index + 1} has a \`${tool.name}\` result that does not decode`);
+      }
+    }
+  });
 };
 
 /** Finds the call's tool and decodes its input. The failure is short model-facing text. */

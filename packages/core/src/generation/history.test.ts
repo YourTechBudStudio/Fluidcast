@@ -11,6 +11,7 @@ import {
   interruptedToSpeakNotice,
   renderHistory,
 } from './history.ts';
+import type { ReminderEvent } from './reminders.ts';
 import type { ToolDefinition } from './tools.ts';
 
 const note: ToolDefinition<{ readonly body: string }, { readonly count: number }> = {
@@ -24,6 +25,27 @@ const note: ToolDefinition<{ readonly body: string }, { readonly count: number }
 const id = makeActionId;
 
 describe('renderHistory', () => {
+  it("reads a tool's earlier calls back through its `renderCall`", () => {
+    const reshaped: ToolDefinition = {
+      ...note,
+      renderCall: (input) => ({ ...input, body: 'short' }),
+    };
+    const history: ReadonlyArray<Action> = [
+      { type: 'user_message', id: id(), text: 'Hi' },
+      {
+        type: 'tool_call',
+        id: id(),
+        handle: 'call_1',
+        tool: 'note',
+        input: { body: 'A long body' },
+      },
+    ];
+    assert.deepEqual(renderHistory(history, [reshaped])[1], {
+      role: 'assistant',
+      content: JSON.stringify([{ type: 'note', call: 'call_1', body: 'short' }]),
+    });
+  });
+
   it('renders a tool call with its handle after `type`, then its input', () => {
     const history: ReadonlyArray<Action> = [
       { type: 'user_message', id: id(), text: 'Hi' },
@@ -239,5 +261,193 @@ describe('renderHistory', () => {
         ].join('\n'),
       },
     ]);
+  });
+});
+
+describe('renderHistory reminders', () => {
+  const other: ToolDefinition = { ...note, name: 'other' };
+  /** A configuration's reminders: per tool result, none for listener messages. */
+  const configured = (event: ReminderEvent): string | undefined => {
+    if (event._tag === 'UserMessage') return undefined;
+    if (event.tool === 'other') return 'Other first.';
+    const { count } = event.result as { readonly count: number };
+    return count > 1 ? `Several <${count}>.` : undefined;
+  };
+  const result = (tool: string, count: number, handle = 'call_1'): Action => ({
+    type: 'tool_result',
+    id: id(),
+    handles: [handle],
+    tool,
+    result: { count },
+  });
+  const lastInput = (messages: ReadonlyArray<{ readonly content: string }>) =>
+    messages.at(-1)?.content;
+
+  it('follows the newest tool result with its reminder, escaped, before the context', () => {
+    const history: ReadonlyArray<Action> = [
+      { type: 'tool_call', id: id(), handle: 'call_1', tool: 'note', input: { body: 'A' } },
+      result('note', 2),
+      { type: 'tool_context', id: id(), tool: 'note', text: 'busy' },
+    ];
+    assert.equal(
+      lastInput(renderHistory(history, [note], { reminders: configured })),
+      [
+        '<tool_result call="call_1" tool="note">Pinned &lt;2&gt; &amp; done.</tool_result>',
+        '<reminder>Several &lt;2&gt;.</reminder>',
+        '<context tool="note">busy</context>',
+      ].join('\n'),
+    );
+  });
+
+  it('shows nothing for older inputs, so earlier messages never change', () => {
+    const history: ReadonlyArray<Action> = [
+      { type: 'user_message', id: id(), text: 'Hi' },
+      { type: 'tool_call', id: id(), handle: 'call_1', tool: 'note', input: { body: 'A' } },
+      result('note', 2),
+      { type: 'speak', id: id(), speaker: 'host', text: 'Done.' },
+      { type: 'user_message', id: id(), text: 'Next' },
+    ];
+    const reminders = (event: ReminderEvent) =>
+      event._tag === 'UserMessage' ? `About "${event.text}".` : configured(event);
+    const messages = renderHistory(history, [note], { reminders });
+    assert.deepEqual(
+      messages.map((message) => message.content),
+      [
+        '<user_message>Hi</user_message>',
+        '[{"type":"note","call":"call_1","body":"A"}]',
+        '<tool_result call="call_1" tool="note">Pinned &lt;2&gt; &amp; done.</tool_result>',
+        '[{"type":"speak","speaker":"host","text":"Done."}]',
+        '<user_message>Next</user_message>\n<reminder>About "Next".</reminder>',
+      ],
+    );
+  });
+
+  it('reminds about the newest of a user message and a tool result in the final run', () => {
+    const reminders = (event: ReminderEvent) =>
+      event._tag === 'UserMessage' ? 'Message.' : 'Result.';
+    const resultLast: ReadonlyArray<Action> = [
+      { type: 'tool_call', id: id(), handle: 'call_1', tool: 'note', input: { body: 'A' } },
+      { type: 'user_message', id: id(), text: 'Hi' },
+      result('note', 1),
+      { type: 'tool_progress', id: id(), handles: ['call_2'], tool: 'note', text: 'Later.' },
+    ];
+    assert.equal(
+      lastInput(renderHistory(resultLast, [note], { reminders })),
+      [
+        '<user_message>Hi</user_message>',
+        '<tool_result call="call_1" tool="note">Pinned &lt;1&gt; &amp; done.</tool_result>',
+        '<reminder>Result.</reminder>',
+        '<tool_progress call="call_2" tool="note">Later.</tool_progress>',
+      ].join('\n'),
+    );
+    const messageLast: ReadonlyArray<Action> = [
+      { type: 'tool_call', id: id(), handle: 'call_1', tool: 'note', input: { body: 'A' } },
+      result('note', 1),
+      { type: 'user_message', id: id(), text: 'Hi' },
+    ];
+    assert.equal(
+      lastInput(renderHistory(messageLast, [note], { reminders })),
+      [
+        '<tool_result call="call_1" tool="note">Pinned &lt;1&gt; &amp; done.</tool_result>',
+        '<user_message>Hi</user_message>',
+        '<reminder>Message.</reminder>',
+      ].join('\n'),
+    );
+  });
+
+  it('marks a user message that follows an interruption notice', () => {
+    const seen: Array<ReminderEvent> = [];
+    const reminders = (event: ReminderEvent) => {
+      seen.push(event);
+      return undefined;
+    };
+    const plain: ReadonlyArray<Action> = [
+      { type: 'speak', id: id(), speaker: 'host', text: 'Look.' },
+      { type: 'user_message', id: id(), text: 'Plain' },
+    ];
+    const cut: ReadonlyArray<Action> = [
+      { type: 'speak', id: id(), speaker: 'host', text: 'Look.' },
+      { type: 'interrupted', id: id(), during: 'speech' },
+      result('note', 1),
+      { type: 'user_message', id: id(), text: 'Wait' },
+    ];
+    const retried: ReadonlyArray<Action> = [
+      { type: 'interrupted', id: id(), during: 'wait' },
+      { type: 'user_message', id: id(), text: 'First' },
+      { type: 'generation_failed', id: id(), error: { tag: 'ProviderError', message: 'x' } },
+      { type: 'user_message', id: id(), text: 'Again' },
+    ];
+    for (const history of [plain, cut, retried]) {
+      assert.ok(!lastInput(renderHistory(history, [note], { reminders }))?.includes('<reminder>'));
+    }
+    assert.deepEqual(seen, [
+      { _tag: 'UserMessage', text: 'Plain', interrupted: false },
+      { _tag: 'UserMessage', text: 'Wait', interrupted: true },
+      { _tag: 'UserMessage', text: 'Again', interrupted: false },
+    ]);
+  });
+
+  it('passes each tool result, decoded, to the reminders, and drops blank text', () => {
+    const seen: Array<ReminderEvent> = [];
+    const history: ReadonlyArray<Action> = [result('note', 3)];
+    const reminder = (reminders: (event: ReminderEvent) => string | undefined) =>
+      lastInput(renderHistory(history, [note], { reminders }))?.split('\n')[1];
+    assert.equal(
+      reminder((event) => {
+        seen.push(event);
+        return configured(event);
+      }),
+      '<reminder>Several &lt;3&gt;.</reminder>',
+    );
+    assert.deepEqual(seen, [{ _tag: 'ToolResult', tool: 'note', result: { count: 3 } }]);
+    assert.equal(
+      reminder(() => undefined),
+      undefined,
+    );
+    assert.equal(
+      reminder(() => '  '),
+      undefined,
+    );
+  });
+
+  it('combines the reminders of results that arrive together, in tool order, once each', () => {
+    const history: ReadonlyArray<Action> = [
+      { type: 'user_message', id: id(), text: 'Hi' },
+      result('note', 2, 'call_1'),
+      result('other', 1, 'call_2'),
+      result('note', 2, 'call_3'),
+    ];
+    assert.equal(
+      lastInput(renderHistory(history, [other, note], { reminders: configured })),
+      [
+        '<user_message>Hi</user_message>',
+        '<tool_result call="call_1" tool="note">Pinned &lt;2&gt; &amp; done.</tool_result>',
+        '<tool_result call="call_2" tool="other">Pinned &lt;1&gt; &amp; done.</tool_result>',
+        '<tool_result call="call_3" tool="note">Pinned &lt;2&gt; &amp; done.</tool_result>',
+        '<reminder>Other first.\nSeveral &lt;2&gt;.</reminder>',
+      ].join('\n'),
+    );
+  });
+
+  it('renders no reminder without reminders, when they give none, or after the assistant', () => {
+    const quiet: ReadonlyArray<Action> = [result('note', 1)];
+    assert.deepEqual(
+      renderHistory(quiet, [note]),
+      renderHistory(quiet, [note], { reminders: configured }),
+    );
+    assert.deepEqual(renderHistory(quiet, [note]), [
+      {
+        role: 'user',
+        content:
+          '<tool_result call="call_1" tool="note">Pinned &lt;1&gt; &amp; done.</tool_result>',
+      },
+    ]);
+    const answered: ReadonlyArray<Action> = [
+      result('note', 2),
+      { type: 'speak', id: id(), speaker: 'host', text: 'Done.' },
+      { type: 'generation_failed', id: id(), error: { tag: 'ProviderError', message: 'x' } },
+    ];
+    const messages = renderHistory(answered, [note], { reminders: () => 'Never.' });
+    assert.ok(messages.every((message) => !message.content.includes('<reminder>')));
   });
 });

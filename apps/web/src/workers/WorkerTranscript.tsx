@@ -63,28 +63,22 @@ interface Item {
 }
 
 interface Speaker {
-  readonly agent: string;
-  readonly agentType: string;
   readonly working: boolean;
 }
 
 /**
- * A worker's transcript on the main transcript's rail: 30 px markers on a vertical line, the raw entry type on the
+ * The worker's transcript on the main transcript's rail: 30 px markers on a vertical line, the raw entry type on the
  * right. A tool call is one row with its result folded in, shown on click.
  */
 export function WorkerTranscript({
   entries,
-  agent,
-  agentType,
   working,
 }: {
   readonly entries: ReadonlyArray<TranscriptEntry>;
-  readonly agent: string;
-  readonly agentType: string;
   readonly working: boolean;
 }) {
   const all = useMemo(() => turns(transcriptTree(entries)), [entries]);
-  const speaker: Speaker = { agent, agentType, working };
+  const speaker: Speaker = { working };
   const items: Item[] = [];
   all.forEach((turn, t) => {
     let afterText = false;
@@ -141,19 +135,12 @@ function itemOf(node: TranscriptNode, speaker: Speaker, afterText: boolean, gap:
       return {
         key: node.key,
         gap,
-        marker: afterText ? (
-          <Marker tone="dot" />
-        ) : (
-          <Marker tone="worker">{speaker.agentType[0]?.toUpperCase()}</Marker>
-        ),
+        marker: afterText ? <Marker tone="dot" /> : <Marker tone="worker">W</Marker>,
         body: (
           <>
             {!afterText && (
               <Head type="text">
-                <span className="font-semibold text-fg">{speaker.agent}</span>
-                <span className="font-mono text-[11.5px] tracking-[0.03em] text-fg-subtle">
-                  {speaker.agentType}
-                </span>
+                <span className="font-semibold text-fg">Worker</span>
               </Head>
             )}
             <Prose source={node.text} compact className={afterText ? 'pt-1' : ''} />

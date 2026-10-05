@@ -1,4 +1,10 @@
-export { agentTool, type AgentTool, type AgentToolOptions, type Workers } from './agent-tool.ts';
+export {
+  forwardAgentDefinition,
+  forwardAgentTool,
+  type ForwardAgentTool,
+  type ForwardAgentToolOptions,
+  type WorkerHandle,
+} from './forward-tool.ts';
 export {
   renderConversation,
   renderEntry,
@@ -8,9 +14,9 @@ export {
   type HandoffPrompt,
   type Modifier,
 } from './handoff.ts';
-export { defaultProgressSchedule } from './progress.ts';
+export { defaultProgressPrompt, defaultProgressSchedule } from './progress.ts';
 export {
-  AgentSetupError,
+  WorkerSetupError,
   type WorkerEvent,
   type WorkerMessage,
   type WorkerType,

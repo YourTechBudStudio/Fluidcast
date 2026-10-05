@@ -1,4 +1,4 @@
-/** The adapter contract between the SDK-neutral pool and one kind of worker (an agent SDK). */
+/** The adapter contract between the SDK-neutral Forward tool and one kind of worker (an agent SDK). */
 import { Schema, type Effect, type Stream } from 'effect';
 
 import type { ToolFault } from '@yourtechbudstudio/fluidcast-harness';
@@ -6,7 +6,7 @@ import type { ToolFault } from '@yourtechbudstudio/fluidcast-harness';
 import type { Modifier } from './handoff.ts';
 import type { TranscriptEntry } from './schema.ts';
 
-/** One message for a worker. `id` is a UUID the worker reports back in `Consumed`. */
+/** One message for the worker. `id` is a UUID the worker reports back in `Consumed`. */
 export interface WorkerMessage {
   readonly id: string;
   readonly text: string;
@@ -23,9 +23,7 @@ export type WorkerEvent =
 
 /** One kind of worker, such as Claude Code. */
 export interface WorkerType {
-  /** The line the tool rules give this type. */
-  readonly description: string;
-  /** Where new workers of this type run. */
+  /** Where a new worker runs. */
   readonly cwd: string;
   /**
    * The exact message text for a prompt and the hook's modifiers, in this worker type's syntax.
@@ -37,7 +35,7 @@ export interface WorkerType {
     sessionId: string,
   ) => Effect.Effect<
     { readonly cwd: string; readonly history: ReadonlyArray<TranscriptEntry> },
-    AgentSetupError
+    WorkerSetupError
   >;
   /**
    * Runs one worker process for as long as the stream is consumed: it reads `input`, and its
@@ -50,13 +48,8 @@ export interface WorkerType {
   ) => Stream.Stream<WorkerEvent, ToolFault>;
 }
 
-/** The pool could not be set up: a preloaded worker is invalid or cannot be attached. */
-export class AgentSetupError extends Schema.TaggedError<AgentSetupError>()('AgentSetupError', {
-  agent: Schema.String,
-  reason: Schema.Literals([
-    'InvalidAgentId',
-    'SessionNotFound',
-    'SessionUnreadable',
-    'DuplicateAgent',
-  ]),
+/** The worker could not be set up: the session to preload cannot be attached. */
+export class WorkerSetupError extends Schema.TaggedError<WorkerSetupError>()('WorkerSetupError', {
+  sessionId: Schema.String,
+  reason: Schema.Literals(['SessionNotFound', 'SessionUnreadable']),
 }) {}

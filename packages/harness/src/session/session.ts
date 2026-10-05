@@ -5,6 +5,7 @@ import {
   Duration,
   Effect,
   Exit,
+  Fiber,
   FiberHandle,
   FiberSet,
   Layer,
@@ -62,7 +63,7 @@ import {
 } from './protocol.ts';
 
 /**
- * The single-session conversation authority (ADRs 0003, 0006): the action log, the cursor,
+ * The single-session conversation authority (ADRs 0001, 0002): the action log, the cursor,
  * playback identity, generation, tool execution, and the one subscription.
  */
 export class Session extends Context.Service<
@@ -92,6 +93,8 @@ interface Running {
   /** `tool.command?.(input)`, resolved once when the execution started; absent after a failed setup. */
   readonly accepts: Schema.Codec<unknown, Schema.Json> | undefined;
   readonly commands: Queue.Queue<unknown>;
+  /** The execution's fiber, once forked: interrupted when an Interrupt cancels a blocking execution. */
+  fiber?: Fiber.Fiber<void, never>;
 }
 
 /** How long continuation waits for more outcomes before submitting them together. */
@@ -133,7 +136,7 @@ const progressAllowed = (state: SessionState, subscribed: boolean): boolean =>
  */
 export const make = (config: SessionConfig) =>
   Effect.gen(function* () {
-    checkTools(config.tools);
+    checkTools(config.tools, config.examples);
     for (const tool of config.tools) {
       // A replayed call would be assigned again under a new execution that no outcome can join.
       if (tool.assign !== undefined && tool.policy.replay) {
@@ -160,7 +163,7 @@ export const make = (config: SessionConfig) =>
     });
     const subscriber = yield* Ref.make<Subscriber | undefined>(undefined);
     const generation = yield* FiberHandle.make<void, never>();
-    // Executions end on their own or with the session scope; nothing cancels one by key.
+    // Executions end on their own, with the session scope, or (blocking ones) by an Interrupt.
     const executions = yield* FiberSet.make<void, never>();
     // Set when the session scope starts closing. Finalizers run in reverse order, so this is set
     // before the execution set interrupts its fibers: only then is an interrupted execution teardown.
@@ -347,7 +350,8 @@ export const make = (config: SessionConfig) =>
           accepts = undefined;
           body = Effect.die(defect);
         }
-        running.set(executionId, { tool, accepts, commands });
+        const entry: Running = { tool, accepts, commands };
+        running.set(executionId, entry);
         yield* emit({
           _tag: 'ToolStarted',
           executionId,
@@ -359,7 +363,7 @@ export const make = (config: SessionConfig) =>
         yield* Effect.logInfo('tool started').pipe(
           Effect.annotateLogs({ tool: tool.name, handle }),
         );
-        yield* FiberSet.run(
+        entry.fiber = yield* FiberSet.run(
           executions,
           body.pipe(
             Effect.exit,
@@ -453,9 +457,30 @@ export const make = (config: SessionConfig) =>
     // Stopping
 
     /**
+     * Cancels the open blocking executions for an Interrupt: the user declines to answer. Each
+     * leaves the state with no outcome (none is invented) and its fiber is interrupted without
+     * waiting, so a late outcome finds no entry in `finish` and changes nothing. An expected end,
+     * not a fault. Non-blocking executions, such as a running worker, continue.
+     */
+    const cancelBlocking = Effect.gen(function* () {
+      const current = yield* Ref.get(state);
+      for (const execution of current.executions.filter((candidate) => candidate.blocking)) {
+        const entry = running.get(execution.executionId);
+        running.delete(execution.executionId);
+        yield* emit({ _tag: 'ToolCompleted', executionId: execution.executionId });
+        // Forked: the fiber may be waiting for the lock this command holds.
+        if (entry?.fiber !== undefined)
+          yield* FiberSet.run(executions, Fiber.interrupt(entry.fiber));
+        yield* Effect.logInfo('tool cancelled').pipe(
+          Effect.annotateLogs({ tool: execution.tool, handles: execution.handles.join(' ') }),
+        );
+      }
+    });
+
+    /**
      * Stops presentation and generation, shared by Interrupt and halt so the two cannot drift:
      * ends a replay, trims what never took effect, appends `action` and moves the cursor to the end,
-     * which clears playback. Running executions continue (ADR 0008). An unreached tool call at the
+     * which clears playback. Running executions continue (ADR 0002). An unreached tool call at the
      * cursor (appended there during a replay) never took effect, so it is trimmed too.
      */
     const stop = (action: Action) =>
@@ -540,9 +565,11 @@ export const make = (config: SessionConfig) =>
     const iterate = (history: ReadonlyArray<Action>) =>
       generate({
         instructions: config.instructions,
+        ...(config.examples === undefined ? {} : { examples: config.examples }),
         speakers: profiles,
         history,
         tools: config.tools,
+        ...(config.reminders === undefined ? {} : { reminders: config.reminders }),
       }).pipe(
         Stream.runForEach((element) =>
           transact(
@@ -701,21 +728,23 @@ export const make = (config: SessionConfig) =>
             return yield* beginIteration();
           }
           case 'PlaybackFinished': {
-            // Stale by identity, or nobody is subscribed: the cursor stays frozen (ADR 0003).
+            // Stale by identity, or nobody is subscribed: the cursor stays frozen (ADR 0001).
             if (current.playback?.playbackId !== command.playbackId) return;
             if (!(yield* subscribed)) return;
             if (current.replay !== null) return yield* advanceReplay(current.replay);
             return yield* settleFrom(current.cursor + 1);
           }
           case 'Interrupt': {
-            // Ignored, not rejected: the listener must answer a blocking tool.
-            if (blockingExecution(current) !== undefined) return;
+            // The user declines an open blocking tool (a question) to say something else: it is
+            // cancelled, and the interruption always stands, whatever else was going on.
+            const declined = phase !== 'halted' && blockingExecution(current) !== undefined;
+            if (declined) yield* cancelBlocking;
             // Stops listening to an old line first; the frontier's own phase decides the rest.
             const endedReplay = current.replay !== null;
             if (endedReplay) yield* emit({ _tag: 'ReplayMoved', replay: null });
             const frontier = yield* Ref.get(state);
             const frontierPhase = derivePhase(frontier);
-            if (frontierPhase !== 'speaking' && frontierPhase !== 'working') {
+            if (!declined && frontierPhase !== 'speaking' && frontierPhase !== 'working') {
               if (endedReplay) return;
               return yield* reject(command._tag, frontier);
             }

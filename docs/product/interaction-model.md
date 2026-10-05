@@ -13,7 +13,7 @@ A quiet player does not necessarily mean work is complete: the worker may still 
 
 The listener drives. Each worker reply is walked through one segment at a time, and the walkthrough moves on only when the listener continues: a Continue, a plain agreement or an answer all mean go on. Interrupt is for breaking the flow to redirect the worker now; it is not needed to agree or to answer.
 
-The voice has no questions of its own: the worker's questions become the voice's, asked in the first person, one at a time through Ask, where they come up in the reply. An Ask question stays visible until answered, with free text always available alongside any choices. Answers are kept, not judged, and go back to the worker together in one forward when the walkthrough ends. While a question is open, interrupting playback is unavailable, but the question has its own Interrupt action: it sends what the user typed as an interrupted answer (pushback, a redirect, or a question for the work), which the voice forwards at once. The user can still step away and return to it.
+The voice has no questions of its own: the worker's questions become the voice's, asked in the first person, one at a time through Ask, where they come up in the reply. An Ask question stays visible until answered, with free text always available alongside any choices. Answers are kept, not judged, and go back to the worker together in one forward when the walkthrough ends. The question's own Interrupt action declines it instead: the question closes unanswered, narration stops, and the user says what they want in its place, which the voice forwards at once. The user can still step away and return to it.
 
 ## Attention
 

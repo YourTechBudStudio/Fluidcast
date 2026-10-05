@@ -1,31 +1,25 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { Effect, Layer, Schema, Stream } from 'effect';
+import { Layer, Schema, Stream } from 'effect';
 import { HttpRouter } from 'effect/unstable/http';
 
-import { routes, workerStatus, workerTranscriptPath } from '@fluidcast/app-contract';
+import { routes, workerStatus } from '@fluidcast/app-contract';
 import {
   TranscriptMessageJson,
-  WorkerListJson,
-  WorkerNotFound,
+  WorkerSummaryJson,
   type TranscriptMessage,
   type WorkerSummary,
 } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 
-import { workersRoutes } from './workers-routes.ts';
-import { AgentWorkers } from './workers.ts';
+import { workerRoutes } from './worker-routes.ts';
+import { ConversationWorker } from './worker.ts';
 
-const summary: WorkerSummary = {
-  agent: 'brainstorm',
-  agentType: 'claude',
-  status: 'working',
-  sessionId: 'session-1',
-};
+const idle: WorkerSummary = { _tag: 'WorkerSummary', status: 'idle', sessionId: 'session-1' };
+const working: WorkerSummary = { ...idle, status: 'working' };
 
 const snapshot: TranscriptMessage = {
   _tag: 'TranscriptSnapshot',
-  agent: 'brainstorm',
   sessionId: 'session-1',
   entries: [{ _tag: 'prompt', parentToolUseId: null, source: 'fluidcast', text: 'Go.' }],
 };
@@ -35,17 +29,15 @@ const appended: TranscriptMessage = {
   entries: [{ _tag: 'text', parentToolUseId: null, text: 'Looking.' }],
 };
 
-/** The Workers routes over a fake pool with one worker, `brainstorm`. */
-const app = workersRoutes.pipe(
+/** The Worker routes over a fake worker. */
+const app = workerRoutes.pipe(
   Layer.provideMerge(
     Layer.succeed(
-      AgentWorkers,
-      AgentWorkers.of({
-        list: Stream.make([], [summary]),
-        transcript: (agent) =>
-          agent === 'brainstorm'
-            ? Effect.succeed(Stream.make(snapshot, appended))
-            : Effect.fail(new WorkerNotFound({ agent })),
+      ConversationWorker,
+      ConversationWorker.of({
+        sessionId: 'session-1',
+        status: Stream.make(idle, working),
+        transcript: Stream.make(snapshot, appended),
       }),
     ),
   ),
@@ -72,32 +64,26 @@ const dataOf = (body: string) =>
     .filter((event) => event.startsWith('data: '))
     .map((event) => event.slice('data: '.length));
 
-describe('GET /api/workers', () => {
-  it('streams each worker list as one SSE message', async () => {
-    const response = await get(routes.workers);
+describe('GET /api/worker', () => {
+  it('streams each status change as one SSE message', async () => {
+    const response = await get(routes.worker);
     assert.equal(response.status, workerStatus.ok);
     assert.equal(response.type, 'text/event-stream');
-    assert.deepEqual(dataOf(response.text).map(Schema.decodeSync(WorkerListJson)), [
-      { _tag: 'WorkerList', workers: [] },
-      { _tag: 'WorkerList', workers: [summary] },
+    assert.deepEqual(dataOf(response.text).map(Schema.decodeSync(WorkerSummaryJson)), [
+      idle,
+      working,
     ]);
   });
 });
 
-describe('GET /api/workers/:agent/transcript', () => {
+describe('GET /api/worker/transcript', () => {
   it('streams the snapshot, then appended entries', async () => {
-    const response = await get(workerTranscriptPath('brainstorm'));
+    const response = await get(routes.workerTranscript);
     assert.equal(response.status, workerStatus.ok);
     assert.equal(response.type, 'text/event-stream');
     assert.deepEqual(dataOf(response.text).map(Schema.decodeSync(TranscriptMessageJson)), [
       snapshot,
       appended,
     ]);
-  });
-
-  it('answers an unknown worker with 404 and WorkerNotFound, without a stream', async () => {
-    const response = await get(workerTranscriptPath('nobody'));
-    assert.equal(response.status, workerStatus.notFound);
-    assert.deepEqual(JSON.parse(response.text), { _tag: 'WorkerNotFound', agent: 'nobody' });
   });
 });

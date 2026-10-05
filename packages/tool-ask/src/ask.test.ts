@@ -8,7 +8,7 @@ import { checkTools, generate } from '@yourtechbudstudio/fluidcast-core/generati
 
 import { askAnswerSchema, askTool, type AskCommand, type AskInput } from './index.ts';
 
-const options = [{ label: 'Client' }, { label: 'Server', description: 'Answers requests.' }];
+const options = [{ label: 'Client' }, { label: 'Server' }];
 const text: AskInput = { kind: 'text', question: 'Which client do you use?' };
 const choice: AskInput = { kind: 'choice', question: 'Who sends the request?', options };
 const multi: AskInput = { kind: 'multi', question: 'Which hold state?', options };
@@ -104,6 +104,10 @@ describe('askTool', () => {
     );
   });
 
+  it("supplies no reminder: reminders are the configuration's", () => {
+    assert.ok(!('reminder' in askTool()));
+  });
+
   it('blocks, reports every outcome, and does not replay', () => {
     assert.deepEqual(askTool().policy, { blocking: true, response: 'all', replay: false });
   });
@@ -129,8 +133,6 @@ describe('askTool', () => {
         '  options: {',
         '    /** A short answer the listener can pick. */',
         '    label: string;',
-        '    /** One line shown under the label. */',
-        '    description?: string;',
         '  }[];',
         '} | {',
         '  type: "ask";',
@@ -140,12 +142,14 @@ describe('askTool', () => {
         '  options: {',
         '    /** A short answer the listener can pick. */',
         '    label: string;',
-        '    /** One line shown under the label. */',
-        '    description?: string;',
         '  }[];',
         '};',
       ].join('\n'),
     );
     assert.match(prompt, /type Action = Speak \| Ask;/);
+    assert.match(
+      prompt,
+      /\n- Use `ask` for one question that needs the listener's answer\. .*\n\n## Output format/,
+    );
   });
 });

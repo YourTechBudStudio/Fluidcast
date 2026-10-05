@@ -1,7 +1,8 @@
-import { ArrowRight, ArrowUp, Check, Clock } from 'lucide-react';
+import { ArrowRight, ArrowUp, Check, Clock, Hand } from 'lucide-react';
 import {
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -25,6 +26,8 @@ export interface AskFormProps {
   readonly disabled: boolean;
   /** Resolves `true` once the answer was accepted. The draft is kept otherwise. */
   readonly onSubmit: (answer: AskCommand) => Promise<boolean>;
+  /** Declines the question to say something else: the session's ordinary Interrupt. */
+  readonly onInterrupt: () => void;
   /** A control the moment calls for: Retry clip while open, or Interrupt once sent. */
   readonly extra?: ReactNode;
 }
@@ -37,7 +40,9 @@ const HINT: Record<AskInput['kind'], string> = {
 
 /**
  * One question in place of the composer, without chrome: the dock around it owns the surface. The question stays
- * put while the body below it swaps between the open form and the answer as sent. Free text is always available.
+ * put while the body below it swaps between the open form and the answer as sent. Free text is always available, and
+ * so is Interrupt: it declines the question without answering it, stops the narration, and hands back the composer
+ * for what the listener wants to say instead.
  */
 export function AskForm({
   input,
@@ -46,10 +51,12 @@ export function AskForm({
   narrating,
   disabled,
   onSubmit,
+  onInterrupt,
   extra,
 }: AskFormProps) {
   const [draft, setDraft] = useState<AskDraft>({ text: '', picked: [] });
   const [sending, setSending] = useState(false);
+  const box = useRef<HTMLTextAreaElement>(null);
   const blocked = disabled || sending || mode !== 'open';
   const options = input.kind === 'text' ? [] : input.options;
   const described = options.some((option) => option.description);
@@ -60,6 +67,9 @@ export function AskForm({
     if (blocked || !next) return;
     setSending(true);
     void onSubmit(next).finally(() => setSending(false));
+  };
+  const interrupt = () => {
+    if (!blocked) onInterrupt();
   };
   const choose = (index: number) => {
     if (blocked) return;
@@ -187,6 +197,7 @@ export function AskForm({
               </div>
             )}
             <FreeText
+              box={box}
               input={input}
               text={draft.text}
               disabled={disabled}
@@ -195,7 +206,18 @@ export function AskForm({
               onText={(text) => setDraft((current) => ({ ...current, text }))}
               onSend={() => submit(sendable)}
             />
-            {extra && <div className="mt-2.5 flex flex-wrap justify-end gap-1.5">{extra}</div>}
+            <div className="mt-2.5 flex flex-wrap items-center justify-end gap-1.5">
+              <Button
+                tone="ghost"
+                unavailable={blocked}
+                title="Skip this question and say something else instead"
+                icon={<Hand size={14} strokeWidth={1.9} aria-hidden />}
+                onClick={interrupt}
+              >
+                Interrupt
+              </Button>
+              {extra}
+            </div>
           </div>
         )}
       </Swap>
@@ -218,6 +240,7 @@ function AskingLabel({ mode }: { readonly mode: 'open' | 'sent' }) {
 
 /** The auto-growing text field and its send button: the Ask's always-present escape hatch. */
 function FreeText({
+  box,
   input,
   text,
   disabled,
@@ -226,6 +249,7 @@ function FreeText({
   onText,
   onSend,
 }: {
+  readonly box: RefObject<HTMLTextAreaElement | null>;
   readonly input: AskInput;
   readonly text: string;
   readonly disabled: boolean;
@@ -234,13 +258,12 @@ function FreeText({
   readonly onText: (text: string) => void;
   readonly onSend: () => void;
 }) {
-  const box = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-  }, [text]);
+  }, [box, text]);
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();

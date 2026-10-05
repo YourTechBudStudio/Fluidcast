@@ -12,7 +12,7 @@ const files = readdirSync(root, { recursive: true }).filter((file) => /\.tsx?$/.
 /**
  * Which modules each module may import, always through the target's `index.ts`.
  * `client` owns the page's Client SDK instance and transport; `tools` renders and presents tools without knowing the
- * conversation; `workers` presents the Agent tool's workers without knowing the conversation; `ui` and `visuals` stay
+ * conversation; `workers` presents the Forward tool's worker without knowing the conversation; `ui` and `visuals` stay
  * product-agnostic.
  */
 const ALLOWED = {

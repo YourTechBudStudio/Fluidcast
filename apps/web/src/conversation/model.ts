@@ -3,7 +3,7 @@ import type { Action as ProtocolAction } from '@yourtechbudstudio/fluidcast-core
 import type { Execution, Phase, SpeakerLabel } from '@yourtechbudstudio/fluidcast-harness/protocol';
 import type { AskCommand } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 
-/** The player renders the protocol's own types (ADR 0007): no local mirror. */
+/** The player renders the protocol's own types (ADR 0001): no local mirror. */
 export type Action = ProtocolAction;
 export type { Connection, ConversationView, Phase };
 

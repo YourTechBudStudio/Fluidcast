@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { focusTargetOnSwitch, nextLayer, selectionOnOpen, selectionOnRestore } from './layers';
+import { focusTargetOnSwitch, nextLayer } from './layers';
 
 describe('nextLayer', () => {
   it('toggles each layer with the stage, and switches straight between the two', () => {
@@ -24,40 +24,11 @@ describe('focusTargetOnSwitch', () => {
     expect(focusTargetOnSwitch('workers', 'transcript', false)).toBeNull();
   });
 
-  it('returns focus to the Workers button when the layer closes from its own close button', () => {
+  it('returns focus to the Worker button when the layer closes from its own close button', () => {
     expect(focusTargetOnSwitch('workers', 'stage', true, true)).toBe('workersButton');
   });
 
   it('does nothing when the layer does not change', () => {
     expect(focusTargetOnSwitch('workers', 'workers', true)).toBeNull();
-  });
-});
-
-describe('selectionOnOpen', () => {
-  it('selects the requested worker when opened from a link, else the latest', () => {
-    expect(selectionOnOpen('transcript', 'workers', 'review', 'brainstorm')).toBe('review');
-    expect(selectionOnOpen('stage', 'workers', null, 'brainstorm')).toBe('brainstorm');
-    // No agent call yet: `null` resolves to the most recently created worker.
-    expect(selectionOnOpen('stage', 'workers', null, null)).toBeNull();
-  });
-
-  it('leaves the selection alone unless the switch opens the Workers layer', () => {
-    // A newer call while the layer is open changes `latestAgent`, but nothing opens, so nothing is written.
-    expect(selectionOnOpen('workers', 'workers', null, 'newer')).toBeUndefined();
-    expect(selectionOnOpen('workers', 'stage', null, 'newer')).toBeUndefined();
-    expect(selectionOnOpen('stage', 'transcript', null, 'newer')).toBeUndefined();
-  });
-});
-
-describe('selectionOnRestore', () => {
-  it('selects the latest agent call’s worker once the restored layer’s conversation arrives', () => {
-    expect(selectionOnRestore(true, true, 'workers', null, 'brainstorm')).toBe('brainstorm');
-  });
-
-  it('waits for the conversation, and leaves a finished restore, another layer or a chosen worker alone', () => {
-    expect(selectionOnRestore(true, false, 'workers', null, null)).toBeUndefined();
-    expect(selectionOnRestore(false, true, 'workers', null, 'brainstorm')).toBeUndefined();
-    expect(selectionOnRestore(true, true, 'stage', null, 'brainstorm')).toBeUndefined();
-    expect(selectionOnRestore(true, true, 'workers', 'review', 'brainstorm')).toBeUndefined();
   });
 });

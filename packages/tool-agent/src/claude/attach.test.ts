@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import type { SDKSessionInfo, SessionMessage } from '@anthropic-ai/claude-agent-sdk';
 import { Effect, Exit } from 'effect';
 
-import { AgentSetupError } from '../worker.ts';
+import { WorkerSetupError } from '../worker.ts';
 import { attachWith, type SessionStore } from './attach.ts';
 import { stored, toolUse } from './frames.test.ts';
 
@@ -74,7 +74,7 @@ describe('attach', () => {
       await Effect.runPromise(
         Effect.exit(attachWith(store({ info: undefined }).sessions, '/c')('session')),
       ),
-      Exit.fail(new AgentSetupError({ agent: 'session', reason: 'SessionNotFound' })),
+      Exit.fail(new WorkerSetupError({ sessionId: 'session', reason: 'SessionNotFound' })),
     );
     assert.deepEqual(
       await Effect.runPromise(
@@ -82,7 +82,7 @@ describe('attach', () => {
           attachWith(store({ info: info(), failMessages: true }).sessions, '/c')('session'),
         ),
       ),
-      Exit.fail(new AgentSetupError({ agent: 'session', reason: 'SessionUnreadable' })),
+      Exit.fail(new WorkerSetupError({ sessionId: 'session', reason: 'SessionUnreadable' })),
     );
   });
 });

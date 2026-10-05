@@ -102,9 +102,9 @@ export const loadConfig = (
 
     const directory = paths.dirname(file);
     const relativeToConfig = (target: string) => paths.resolve(directory, target);
-    const workers = workersConfig(parsed, options.environment ?? process.env, directory);
+    const worker = workerConfig(parsed, options.environment ?? process.env, directory);
     const home = options.homeDirectory ?? homedir();
-    return yield* resolve(parsed, environment, relativeToConfig, workers, home).pipe(
+    return yield* resolve(parsed, environment, relativeToConfig, worker, home).pipe(
       Effect.catch((message) => fail(message)),
     );
   });
@@ -143,14 +143,14 @@ const apiKeyEnvFor = (file: ConfigFile, type: ProviderType): string =>
   file.providers?.[type]?.apiKeyEnv ?? defaultApiKeyEnv[type];
 
 /**
- * Where workers run and the environment they get: the real environment (never `.env` values) minus
- * the variables holding the configured providers' keys. Credential hygiene, not isolation.
+ * Where the worker runs and the environment it gets: the real environment (never `.env` values)
+ * minus the variables holding the configured providers' keys. Credential hygiene, not isolation.
  */
-const workersConfig = (
+const workerConfig = (
   file: ConfigFile,
   real: Environment,
   directory: string,
-): ConversationConfig['workers'] => {
+): ConversationConfig['worker'] => {
   const providerKeyNames = new Set(
     [file.llm.provider.type, file.tts.provider.type]
       .filter(isApiKeyProvider)
@@ -200,11 +200,32 @@ const llmConfig = (
     const settings = {
       model: file.llm.model,
       ...(file.llm.temperature === undefined ? {} : { temperature: file.llm.temperature }),
+      ...(file.llm.maxOutputTokens === undefined
+        ? {}
+        : { maxOutputTokens: file.llm.maxOutputTokens }),
       ...(provider.reasoningEffort === undefined
         ? {}
         : { reasoningEffort: provider.reasoningEffort }),
     };
-    if (provider.type !== 'chatgpt') {
+    if (provider.structuredOutput === true && provider.type !== 'openai-compatible') {
+      return yield* Effect.fail(
+        `llm.provider.structuredOutput is supported only by the openai-compatible provider type, not ${provider.type}: it sends Chat Completions' response_format with a JSON Schema whose root is an array. Remove it.`,
+      );
+    }
+    if (file.llm.maxOutputTokens !== undefined && provider.type === 'chatgpt') {
+      return yield* Effect.fail(
+        'llm.maxOutputTokens is not supported with the chatgpt provider type. Remove it.',
+      );
+    }
+    if (provider.type === 'openai-compatible') {
+      return {
+        ...settings,
+        type: provider.type,
+        connection: yield* connection(file, environment, provider.type),
+        structuredOutput: provider.structuredOutput ?? false,
+      };
+    }
+    if (provider.type === 'openai') {
       return {
         ...settings,
         type: provider.type,
@@ -227,7 +248,7 @@ const resolve = (
   file: ConfigFile,
   environment: Environment,
   relativeToConfig: (path: string) => string,
-  workers: ConversationConfig['workers'],
+  worker: ConversationConfig['worker'],
   homeDirectory: string,
 ): Effect.Effect<Config, string, FileSystem.FileSystem> =>
   Effect.gen(function* () {
@@ -238,9 +259,8 @@ const resolve = (
       server: { host: file.server?.host ?? '127.0.0.1', port: file.server?.port ?? 4700 },
       conversation: {
         llm,
-        instructions: file.instructions ?? '',
-        speakers: file.speakers,
-        workers,
+        preset: file.preset,
+        worker,
         ...(file.debug?.generationLog === undefined
           ? {}
           : { generationLog: relativeToConfig(file.debug.generationLog) }),

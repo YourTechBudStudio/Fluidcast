@@ -1,66 +1,42 @@
 /**
- * The Agent tool's contract: the model-facing input, results, worker statuses, transcript entries
- * and the Workers stream messages, everything a client needs to recognise agent calls and present
- * workers. A pure export: it imports only `effect`.
+ * The Forward Agent tool's contract: the model-facing input, results, the worker's status,
+ * transcript entries and the Worker stream messages, everything a client needs to recognise
+ * forward calls and present the worker. A pure export: it imports only `effect`.
  */
 import { Schema } from 'effect';
 
-/** The model-facing action `type` of an agent call. */
-export const agentToolName = 'agent';
-
-/** Agent IDs: short and lowercase, so one worker cannot become two by a change of case. */
-export const AgentId = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,39}$/));
-
-/** The model-facing input for the configured worker types (flat; `agentType`, never `type`). */
-export const agentInput = (types: readonly [string, ...Array<string>]) =>
-  Schema.Struct({
-    agentType: Schema.Literals(types).annotate({
-      description: 'Which kind of worker, from the tool rules.',
-    }),
-    agent: AgentId.annotate({
-      description:
-        'The worker id, a short lowercase name such as `brainstorm`. Reuse it to continue with the same worker; a new id starts a new worker.',
-    }),
-    message: Schema.NonEmptyString.annotate({
-      description:
-        'Only your instruction to the worker. It already sees the conversation, so never retell it.',
-    }),
-  });
-
-/** What the model writes to the Agent tool. */
-export type AgentInput = ReturnType<typeof agentInput>['Type'];
+/** The model-facing action `type` of a forward call: it hands the conversation to the agent. */
+export const forwardToolName = 'forward_agent';
 
 /**
- * Any agent call as clients read it, whatever types a backend configured: the ID and message are
- * checked as the tool checks them, the type is not (clients cannot know the configured types).
+ * The model-facing input: nothing. The model writes `{"type":"forward_agent"}`; the worker receives the
+ * listener's own words and the conversation since its last reply, built from the session. Extra
+ * fields the model may add are ignored.
  */
-export const AgentCall = Schema.Struct({
-  agentType: Schema.String,
-  agent: AgentId,
-  message: Schema.NonEmptyString,
+export const ForwardInput = Schema.Struct({}).annotate({
+  description:
+    "Starts your work on the listener's latest words: it carries them, with what you said and showed since the last forward. It has no fields.",
 });
-export type AgentCall = typeof AgentCall.Type;
+export type ForwardInput = typeof ForwardInput.Type;
 
 /** What the model reads for one busy period: the worker's top-level text messages, in order. */
-export const AgentResult = Schema.Struct({
-  agent: Schema.String,
+export const ForwardResult = Schema.Struct({
   messages: Schema.Array(Schema.String),
 });
-export type AgentResult = typeof AgentResult.Type;
+export type ForwardResult = typeof ForwardResult.Type;
 
 /** The line in a failed busy period's text that separates the error from what the worker wrote. */
-export const agentErrorMarker = 'What it wrote before stopping:';
+export const forwardErrorMarker = 'What was written before stopping:';
 
-const markerLine = `\n\n${agentErrorMarker}\n\n`;
+const markerLine = `\n\n${forwardErrorMarker}\n\n`;
 
 /**
  * The model-facing text of a failed busy period, with one owner for building and splitting it:
- * `The worker "<id>" stopped with an error (<outcome>).`, plus ` The usage limit resets at <ISO
- * time>.` when `resetsAt` (epoch seconds, as on `turnEnd`) is known, then, when the worker wrote
- * anything, a blank line, the marker line, a blank line and its messages joined by blank lines.
+ * `The work stopped with an error (<outcome>).`, plus ` The usage limit resets at <ISO time>.` when
+ * `resetsAt` (epoch seconds, as on `turnEnd`) is known, then, when the worker wrote anything, a
+ * blank line, the marker line, a blank line and its messages joined by blank lines.
  */
-export const agentErrorMessage = (failure: {
-  readonly agent: string;
+export const forwardErrorMessage = (failure: {
   readonly outcome: string;
   readonly resetsAt?: number | undefined;
   readonly messages: ReadonlyArray<string>;
@@ -69,17 +45,17 @@ export const agentErrorMessage = (failure: {
     failure.resetsAt === undefined
       ? ''
       : ` The usage limit resets at ${new Date(failure.resetsAt * 1000).toISOString()}.`;
-  const error = `The worker "${failure.agent}" stopped with an error (${failure.outcome}).${resets}`;
+  const error = `The work stopped with an error (${failure.outcome}).${resets}`;
   return failure.messages.length === 0
     ? error
     : `${error}${markerLine}${failure.messages.join('\n\n')}`;
 };
 
 /**
- * Splits `agentErrorMessage` text at the first marker line. `written` is the joined text (not
+ * Splits `forwardErrorMessage` text at the first marker line. `written` is the joined text (not
  * separable into messages again), or `null` when the worker wrote nothing.
  */
-export const agentErrorParts = (
+export const forwardErrorParts = (
   message: string,
 ): { readonly error: string; readonly written: string | null } => {
   const at = message.indexOf(markerLine);
@@ -88,13 +64,16 @@ export const agentErrorParts = (
     : { error: message.slice(0, at), written: message.slice(at + markerLine.length) };
 };
 
-export const WorkerStatus = Schema.Literals(['working', 'done', 'failed']);
+/**
+ * - `idle`: nothing to do (never sent anything, or its last busy period succeeded);
+ * - `working`: a busy period or an automatic turn runs;
+ * - `failed`: its last busy period ended in an error, or its connection faulted.
+ */
+export const WorkerStatus = Schema.Literals(['idle', 'working', 'failed']);
 export type WorkerStatus = typeof WorkerStatus.Type;
 
-/** One worker as the Workers list shows it. */
-export const WorkerSummary = Schema.Struct({
-  agent: Schema.String,
-  agentType: Schema.String,
+/** The worker as the Worker view shows it, sent whenever its status changes. */
+export const WorkerSummary = Schema.TaggedStruct('WorkerSummary', {
   status: WorkerStatus,
   sessionId: Schema.String,
 });
@@ -103,9 +82,9 @@ export type WorkerSummary = typeof WorkerSummary.Type;
 /** The tool call an entry is nested under (a subagent's), or `null` at the top level. */
 const Parent = { parentToolUseId: Schema.NullOr(Schema.String) };
 
-/** One normalised item of a worker's transcript. */
+/** One normalised item of the worker's transcript. */
 export const TranscriptEntry = Schema.Union([
-  /** Exactly what a worker was sent: by this Fluidcast session, or before it attached. */
+  /** Exactly what the worker was sent: by this Fluidcast session, or before it attached. */
   Schema.TaggedStruct('prompt', {
     ...Parent,
     source: Schema.Literals(['fluidcast', 'earlier']),
@@ -140,15 +119,8 @@ export const TranscriptEntry = Schema.Union([
 ]);
 export type TranscriptEntry = typeof TranscriptEntry.Type;
 
-/** The whole worker list, sent whenever it changes. */
-export const WorkerList = Schema.TaggedStruct('WorkerList', {
-  workers: Schema.Array(WorkerSummary),
-});
-export type WorkerList = typeof WorkerList.Type;
-
 /** The first message of a transcript stream: every entry so far. */
 export const TranscriptSnapshot = Schema.TaggedStruct('TranscriptSnapshot', {
-  agent: Schema.String,
   sessionId: Schema.String,
   entries: Schema.Array(TranscriptEntry),
 });
@@ -159,11 +131,6 @@ export const TranscriptAppended = Schema.TaggedStruct('TranscriptAppended', {
 export const TranscriptMessage = Schema.Union([TranscriptSnapshot, TranscriptAppended]);
 export type TranscriptMessage = typeof TranscriptMessage.Type;
 
-/** The Workers stream messages as JSON text, for any transport that carries them (the reference apps use SSE). */
-export const WorkerListJson = Schema.fromJsonString(WorkerList);
+/** The Worker stream messages as JSON text, for any transport that carries them (the reference apps use SSE). */
+export const WorkerSummaryJson = Schema.fromJsonString(WorkerSummary);
 export const TranscriptMessageJson = Schema.fromJsonString(TranscriptMessage);
-
-/** No worker has this agent ID. */
-export class WorkerNotFound extends Schema.TaggedError<WorkerNotFound>()('WorkerNotFound', {
-  agent: Schema.String,
-}) {}

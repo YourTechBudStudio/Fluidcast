@@ -24,11 +24,11 @@ export interface TopBarProps {
     readonly available: boolean;
     readonly onToggle: () => void;
   };
-  /** The transcript and Workers buttons: pressed while their layer shows; each toggles it with the stage. */
+  /** The transcript and Worker buttons: pressed while their layer shows; each toggles it with the stage. */
   readonly layers: {
     readonly current: Layer;
     readonly onToggle: (layer: 'transcript' | 'workers') => void;
-    /** The Workers button, where focus returns when the layer closes from its own close button. */
+    /** The Worker button, where focus returns when the layer closes from its own close button. */
     readonly workersRef: Ref<HTMLButtonElement>;
   };
 }
@@ -103,14 +103,14 @@ export function TopBar({ back, show, layers }: TopBarProps) {
         <Button
           ref={layers.workersRef}
           tone="ghost"
-          aria-label="Workers"
+          aria-label="Worker"
           aria-pressed={layers.current === 'workers'}
           aria-keyshortcuts="W"
           className="text-sm"
           icon={<SquareTerminal {...icon} />}
           onClick={() => layers.onToggle('workers')}
         >
-          <span className="max-sm:hidden">Workers</span>
+          <span className="max-sm:hidden">Worker</span>
           <span className="max-sm:hidden">
             <Kbd>W</Kbd>
           </span>

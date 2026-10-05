@@ -4,120 +4,81 @@ import { describe, it } from 'node:test';
 import { Schema } from 'effect';
 
 import {
-  AgentCall,
-  agentErrorMarker,
-  agentErrorMessage,
-  agentErrorParts,
-  AgentId,
-  agentInput,
+  forwardErrorMarker,
+  forwardErrorMessage,
+  forwardErrorParts,
+  ForwardInput,
   TranscriptMessageJson,
-  WorkerListJson,
+  WorkerSummaryJson,
 } from './schema.ts';
 
-describe('agent error text', () => {
+describe('forward error text', () => {
   it('builds the error line, the marker and the messages, and splits them back', () => {
-    const message = agentErrorMessage({
-      agent: 'brainstorm',
+    const message = forwardErrorMessage({
       outcome: 'error_max_turns',
       messages: ['First.', 'Second.'],
     });
     assert.equal(
       message,
-      `The worker "brainstorm" stopped with an error (error_max_turns).\n\n${agentErrorMarker}\n\nFirst.\n\nSecond.`,
+      `The work stopped with an error (error_max_turns).\n\n${forwardErrorMarker}\n\nFirst.\n\nSecond.`,
     );
-    assert.deepEqual(agentErrorParts(message), {
-      error: 'The worker "brainstorm" stopped with an error (error_max_turns).',
+    assert.deepEqual(forwardErrorParts(message), {
+      error: 'The work stopped with an error (error_max_turns).',
       written: 'First.\n\nSecond.',
     });
   });
 
   it('has no marker and no written text when the worker wrote nothing', () => {
-    const message = agentErrorMessage({
-      agent: 'a',
+    const message = forwardErrorMessage({
       outcome: 'error_during_execution',
       messages: [],
     });
-    assert.equal(message, 'The worker "a" stopped with an error (error_during_execution).');
-    assert.deepEqual(agentErrorParts(message), { error: message, written: null });
+    assert.equal(message, 'The work stopped with an error (error_during_execution).');
+    assert.deepEqual(forwardErrorParts(message), { error: message, written: null });
   });
 
   it('puts the usage limit reset time on the error line, before the marker', () => {
-    const message = agentErrorMessage({
-      agent: 'a',
+    const message = forwardErrorMessage({
       outcome: 'usage_limit',
       resetsAt: 1_790_000_000,
       messages: ['Partial.'],
     });
-    assert.deepEqual(agentErrorParts(message), {
+    assert.deepEqual(forwardErrorParts(message), {
       error:
-        'The worker "a" stopped with an error (usage_limit). The usage limit resets at 2026-09-21T14:13:20.000Z.',
+        'The work stopped with an error (usage_limit). The usage limit resets at 2026-09-21T14:13:20.000Z.',
       written: 'Partial.',
     });
   });
 
   it('splits at the first marker line even when the worker wrote the marker phrase', () => {
-    const written = `Notes.\n\n${agentErrorMarker}\n\nQuoted.`;
-    const message = agentErrorMessage({ agent: 'a', outcome: 'x', messages: [written] });
-    assert.deepEqual(agentErrorParts(message), {
-      error: 'The worker "a" stopped with an error (x).',
+    const written = `Notes.\n\n${forwardErrorMarker}\n\nQuoted.`;
+    const message = forwardErrorMessage({ outcome: 'x', messages: [written] });
+    assert.deepEqual(forwardErrorParts(message), {
+      error: 'The work stopped with an error (x).',
       written,
     });
   });
 });
 
-describe('agent input', () => {
-  const decode = Schema.decodeUnknownSync(agentInput(['claude']));
+describe('forward input', () => {
+  const decode = Schema.decodeUnknownSync(ForwardInput);
 
-  it('accepts short lowercase ids and a configured type', () => {
-    assert.deepEqual(decode({ agentType: 'claude', agent: 'brainstorm-2', message: 'Go.' }), {
-      agentType: 'claude',
-      agent: 'brainstorm-2',
-      message: 'Go.',
-    });
-  });
-
-  it('rejects other types, ids that differ only by case, long ids and empty messages', () => {
-    assert.throws(() => decode({ agentType: 'codex', agent: 'a', message: 'Go.' }));
-    assert.throws(() => decode({ agentType: 'claude', agent: 'Brainstorm', message: 'Go.' }));
-    assert.throws(() => decode({ agentType: 'claude', agent: '-a', message: 'Go.' }));
-    assert.throws(() => decode({ agentType: 'claude', agent: 'a'.repeat(41), message: 'Go.' }));
-    assert.throws(() => decode({ agentType: 'claude', agent: 'a', message: '' }));
-    assert.ok(Schema.is(AgentId)('a'.repeat(40)));
+  it('is empty, and accepts fields the model adds', () => {
+    assert.deepEqual(decode({}), {});
+    assert.doesNotThrow(() => decode({ task: 'stray' }));
+    assert.deepEqual(Object.keys(ForwardInput.fields), []);
   });
 });
 
-describe('agent calls as clients read them', () => {
-  const decode = Schema.decodeUnknownSync(AgentCall);
-
-  it('accepts any type, since clients cannot know the configured ones', () => {
-    assert.deepEqual(decode({ agentType: 'codex', agent: 'review', message: 'Go.' }), {
-      agentType: 'codex',
-      agent: 'review',
-      message: 'Go.',
-    });
-  });
-
-  it('rejects ids the tool rejects and empty messages', () => {
-    assert.throws(() => decode({ agentType: 'claude', agent: 'Brainstorm', message: 'Go.' }));
-    assert.throws(() => decode({ agentType: 'claude', agent: 'a b', message: 'Go.' }));
-    assert.throws(() => decode({ agentType: 'claude', agent: 'a'.repeat(41), message: 'Go.' }));
-    assert.throws(() => decode({ agentType: 'claude', agent: 'a', message: '' }));
-  });
-});
-
-describe('Workers stream messages', () => {
+describe('Worker stream messages', () => {
   it('round-trip as JSON text', () => {
-    const list = {
-      _tag: 'WorkerList' as const,
-      workers: [{ agent: 'a', agentType: 'claude', status: 'working' as const, sessionId: 's' }],
-    };
+    const summary = { _tag: 'WorkerSummary' as const, status: 'working' as const, sessionId: 's' };
     assert.deepEqual(
-      Schema.decodeSync(WorkerListJson)(Schema.encodeSync(WorkerListJson)(list)),
-      list,
+      Schema.decodeSync(WorkerSummaryJson)(Schema.encodeSync(WorkerSummaryJson)(summary)),
+      summary,
     );
     const snapshot = {
       _tag: 'TranscriptSnapshot' as const,
-      agent: 'a',
       sessionId: 's',
       entries: [
         {

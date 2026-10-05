@@ -10,11 +10,11 @@ import { SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';
 import { layer as harnessLayer } from '@yourtechbudstudio/fluidcast-harness';
 
 import { conversationRoutes } from './routes.ts';
-import { AgentWorkers } from './workers.ts';
+import { ConversationWorker } from './worker.ts';
 
 /**
  * The command routes over a real speech-only session whose providers are never called, with an
- * empty worker pool.
+ * idle fake worker.
  */
 const app = conversationRoutes.pipe(
   Layer.provideMerge(
@@ -27,8 +27,8 @@ const app = conversationRoutes.pipe(
   ),
   Layer.provideMerge(
     Layer.succeed(
-      AgentWorkers,
-      AgentWorkers.of({ list: Stream.make([]), transcript: () => Effect.die('unused') }),
+      ConversationWorker,
+      ConversationWorker.of({ sessionId: 's', status: Stream.empty, transcript: Stream.empty }),
     ),
   ),
   Layer.provide(

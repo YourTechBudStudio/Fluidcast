@@ -83,6 +83,6 @@ describe('showTool', () => {
         ].join('\n'),
       ),
     );
-    assert.match(prompt, /## Tool rules\n- Use `show` to put the material you are presenting/);
+    assert.match(prompt, /\n- Use `show` to put material on screen: .*\n\n## Output format/);
   });
 });

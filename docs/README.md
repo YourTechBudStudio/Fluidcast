@@ -19,7 +19,7 @@ These documents capture product intent, architectural scope, and consequential d
 ## Research: what has been measured
 
 - [Guided walkthrough prompting](research/guided-walkthrough-prompting.md): What worked and what didn't when tuning a small voice model for the Guided Walkthrough, with compressed results.
-- [Evaluating voice behavior](evals/README.md): How presets are measured and improved: the runner, judges, scoring, and the unattended tuning loop.
+- [Evaluating voice behavior](evals/README.md): How presets are measured and improved: the method, scoring, the unattended tuning loop, and what worked, as a specification to rebuild the harness from.
 
 ## ADRs: durable rationale
 

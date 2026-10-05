@@ -14,11 +14,20 @@ export type LlmConfig = {
   readonly model: string;
   readonly temperature?: number;
   readonly reasoningEffort?: ReasoningEffort;
+  /** The most tokens one reply may use. Not supported with the ChatGPT sign-in. */
+  readonly maxOutputTokens?: number;
 } & (
   | {
-      /** An API-key provider, reached through its connection. */
-      readonly type: 'openai' | 'openai-compatible';
+      /** OpenAI's API, reached through its connection. */
+      readonly type: 'openai';
       readonly connection: Connection;
+    }
+  | {
+      /** A Chat Completions server, reached through its connection. */
+      readonly type: 'openai-compatible';
+      readonly connection: Connection;
+      /** Whether the voice's replies are constrained to the output's JSON Schema. */
+      readonly structuredOutput: boolean;
     }
   | {
       /** The ChatGPT sign-in, read from (and refreshed into) this file. */
@@ -40,7 +49,11 @@ export const languageModelLayer = (
   HttpClient.HttpClient | FileSystem.FileSystem
 > => {
   const effort = config.reasoningEffort;
-  const sampling = config.temperature === undefined ? {} : { temperature: config.temperature };
+  const sampling = {
+    ...(config.temperature === undefined ? {} : { temperature: config.temperature }),
+    // Both adapters take the Responses name; the compat one sends it as Chat Completions' `max_tokens`.
+    ...(config.maxOutputTokens === undefined ? {} : { max_output_tokens: config.maxOutputTokens }),
+  };
   const reasoning = effort === undefined ? {} : { reasoning: { effort } };
   switch (config.type) {
     case 'openai':

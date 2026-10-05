@@ -1,6 +1,0 @@
-# Private data and per-campaign output: never commit.
-cases/*.jsonl
-out/
-judging/
-state/
-node_modules

@@ -1,5 +1,5 @@
 /**
- * The hand-off: which part of the conversation a worker has not seen yet, as ordered entries, and
+ * The hand-off: which part of the conversation the worker has not seen yet, as ordered entries, and
  * the default Markdown it receives. Built by code from session state, never summarised.
  */
 import { Schema } from 'effect';
@@ -18,12 +18,13 @@ import {
 } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 import { ShowInput, showToolName } from '@yourtechbudstudio/fluidcast-tool-show/schema';
 
-import { AgentCall, AgentResult, agentToolName } from './schema.ts';
+import { forwardToolName } from './schema.ts';
 
-/** One item of the conversation a worker is handed, in log order. */
+/** One item of the conversation the worker is handed, in log order. */
 export type ConversationEntry =
   | {
-      readonly kind: 'interfaceAgent';
+      /** What the voice said, as the worker. */
+      readonly kind: 'voice';
       /** The speaker's name, when several speakers are configured. */
       readonly speaker: string | undefined;
       readonly text: string;
@@ -39,35 +40,31 @@ export type ConversationEntry =
   | { readonly kind: 'user'; readonly text: string }
   | { readonly kind: 'interruption'; readonly during: 'speech' | 'wait' }
   | {
+      /** Another tool's outcome (not Show, Ask or Forward). */
       readonly kind: 'toolOutcome';
       readonly tool: string;
-      /** The worker, for another worker's outcome. */
-      readonly agent?: string;
       readonly outcome: 'result' | 'error';
       readonly text: string;
     };
 
 /**
  * A skill or command token, such as `brainstorm`. The prompt itself is what it receives as arguments.
- * Several modifiers chain only when all are skills; a built-in or custom command is valid only as
- * the sole modifier. A worker type cannot tell the two apart, so a hook that chains a command gets
- * whatever the worker does with it.
+ * A worker type decides how many one message takes; Claude Code takes one.
  */
 export interface Modifier {
   readonly name: string;
 }
 
-/** Everything the hook receives about one message to a worker. */
+/** Everything the hook receives about one message to the worker. */
 export interface Handoff {
-  readonly agentType: string;
-  readonly agent: string;
-  /** The interface agent's `message`. */
-  readonly instruction: string;
-  /** The conversation since the last message to this worker, or all of it for its first message. */
+  /**
+   * The conversation since the last forward, or all of it for the worker's first message: what the
+   * voice said and showed, and the listener's own words.
+   */
   readonly conversation: ReadonlyArray<ConversationEntry>;
   /** The default text (`renderHandoff`). */
   readonly rendered: string;
-  /** No earlier message was sent to this worker in this session (a new or preloaded worker). */
+  /** No earlier message was sent to the worker in this session (a new or preloaded worker). */
   readonly isFirstMessage: boolean;
 }
 
@@ -77,15 +74,9 @@ export interface HandoffPrompt {
   readonly modifiers?: ReadonlyArray<Modifier>;
 }
 
-/** What the model and other workers read for an agent result: its messages joined by blank lines. */
-export const renderAgentResult = ({ messages }: AgentResult): string =>
-  messages.length === 0 ? '(The worker wrote no text.)' : messages.join('\n\n');
-
 const decodeShow = Schema.decodeUnknownOption(ShowInput);
 const decodeAsk = Schema.decodeUnknownOption(AskInput);
 const decodeAskResult = Schema.decodeUnknownOption(AskResult);
-const decodeAgentCall = Schema.decodeUnknownOption(AgentCall);
-const decodeAgentResult = Schema.decodeUnknownOption(AgentResult);
 
 type Outcome = Extract<Action, { readonly type: 'tool_result' | 'tool_errored' }>;
 
@@ -93,24 +84,19 @@ const isOutcome = (action: Action | PendingResult): action is Outcome =>
   action.type === 'tool_result' || action.type === 'tool_errored';
 
 /**
- * Pure: the entries after the call `since` (or the whole conversation when `undefined`) up to, not
- * including, the call `handle`. `own` is the worker being handed the conversation: its own results
- * are left out. `agentInput` is the Agent tool's real input schema, so agent calls the Harness
- * rejected count as invalid.
+ * Pure: the entries after the forward call `since` (or the whole conversation when `undefined`) up
+ * to, not including, the forward call `handle`. Forward's own results are left out: the worker wrote
+ * them.
  */
 export const conversationSince = (
   state: SessionState,
   since: string | undefined,
   handle: string,
-  own: string,
-  agentInput: Schema.Decoder<unknown>,
 ): ReadonlyArray<ConversationEntry> => {
   const actions = effectiveActions(state);
-  const decodeAgentInput = Schema.decodeUnknownOption(agentInput);
 
   // Calls anywhere in the log: a result in the window may answer a call before it.
   const calls = new Map<string, ToolCall>();
-  const ownHandles = new Set<string>();
   const invalid = new Set<string>();
   for (const action of state.actions) {
     if (action.type !== 'tool_call') continue;
@@ -120,12 +106,8 @@ export const conversationSince = (
         ? decodeShow(action.input)._tag === 'Some'
         : action.tool === askToolName
           ? decodeAsk(action.input)._tag === 'Some'
-          : action.tool === agentToolName
-            ? decodeAgentInput(action.input)._tag === 'Some'
-            : true;
+          : true;
     if (!valid) invalid.add(action.handle);
-    else if (action.tool === agentToolName && agentOf(action) === own)
-      ownHandles.add(action.handle);
   }
   const outcomes = [...state.actions, ...state.pendingResults].filter(isOutcome);
   const outcomeOf = (call: string) => outcomes.find((outcome) => outcome.handles.includes(call));
@@ -150,10 +132,10 @@ export const conversationSince = (
     switch (action.type) {
       case 'speak': {
         const last = entries.at(-1);
-        if (last?.kind === 'interfaceAgent' && paragraphSpeaker === action.speaker) {
+        if (last?.kind === 'voice' && paragraphSpeaker === action.speaker) {
           entries[entries.length - 1] = { ...last, text: `${last.text} ${action.text}` };
         } else {
-          push({ kind: 'interfaceAgent', speaker: speakerName(action.speaker), text: action.text });
+          push({ kind: 'voice', speaker: speakerName(action.speaker), text: action.text });
           paragraphSpeaker = action.speaker;
         }
         break;
@@ -197,11 +179,11 @@ export const conversationSince = (
         const folded = action.handles.some(
           (call) =>
             invalid.has(call) ||
-            ownHandles.has(call) ||
+            calls.get(call)?.tool === forwardToolName ||
             calls.get(call)?.tool === showToolName ||
             calls.get(call)?.tool === askToolName,
         );
-        if (!folded) push(toolOutcome(action, calls));
+        if (!folded) push(toolOutcome(action));
         break;
       }
       // Other calls, progress, context and failures are not conversation.
@@ -215,41 +197,17 @@ export const conversationSince = (
 const findCall = (actions: ReadonlyArray<Action>, handle: string) =>
   actions.findIndex((action) => action.type === 'tool_call' && action.handle === handle);
 
-const agentOf = (call: ToolCall | undefined): string | undefined => {
-  const decoded = call === undefined ? undefined : decodeAgentCall(call.input);
-  return decoded?._tag === 'Some' ? decoded.value.agent : undefined;
-};
-
 const toolOutcome = (
   action: Outcome,
-  calls: ReadonlyMap<string, ToolCall>,
-): Extract<ConversationEntry, { readonly kind: 'toolOutcome' }> => {
-  if (action.type === 'tool_errored') {
-    const agent = action.tool === agentToolName ? agentOf(calls.get(action.handles[0])) : undefined;
-    return {
-      kind: 'toolOutcome',
-      tool: action.tool,
-      ...(agent === undefined ? {} : { agent }),
-      outcome: 'error',
-      text: action.message,
-    };
-  }
-  const result = action.tool === agentToolName ? decodeAgentResult(action.result) : undefined;
-  return result?._tag === 'Some'
-    ? {
-        kind: 'toolOutcome',
-        tool: action.tool,
-        agent: result.value.agent,
-        outcome: 'result',
-        text: renderAgentResult(result.value),
-      }
+): Extract<ConversationEntry, { readonly kind: 'toolOutcome' }> =>
+  action.type === 'tool_errored'
+    ? { kind: 'toolOutcome', tool: action.tool, outcome: 'error', text: action.message }
     : {
         kind: 'toolOutcome',
         tool: action.tool,
         outcome: 'result',
         text: JSON.stringify(action.result),
       };
-};
 
 /** A fence one backtick longer than the longest backtick run in `content`, and at least three. */
 const fenceFor = (content: string) => {
@@ -280,10 +238,10 @@ const renderAnswer = (answer: AskCommand | undefined): string => {
 /** One entry as Markdown. An interruption renders standalone; `renderConversation` merges one into the line it cut. */
 export const renderEntry = (entry: ConversationEntry): string => {
   switch (entry.kind) {
-    case 'interfaceAgent':
+    case 'voice':
       return entry.speaker === undefined
-        ? `**Interface agent:** ${entry.text}`
-        : `**Interface agent (${entry.speaker}):** ${entry.text}`;
+        ? `**Voice:** ${entry.text}`
+        : `**Voice (${entry.speaker}):** ${entry.text}`;
     case 'interruption':
       return '*(The user interrupted to say something.)*';
     case 'show': {
@@ -304,9 +262,8 @@ export const renderEntry = (entry: ConversationEntry): string => {
     case 'user':
       return `**User:** ${entry.text}`;
     case 'toolOutcome': {
-      const source = entry.agent === undefined ? `\`${entry.tool}\`` : `agent "${entry.agent}"`;
       const kind = entry.outcome === 'result' ? 'Result' : 'Error';
-      return `**${kind} from ${source}:**\n${entry.text}`;
+      return `**${kind} from \`${entry.tool}\`:**\n${entry.text}`;
     }
   }
 };
@@ -318,7 +275,7 @@ export const renderConversation = (entries: ReadonlyArray<ConversationEntry>): s
     if (
       entry.kind === 'interruption' &&
       entry.during === 'speech' &&
-      entries[index - 1]?.kind === 'interfaceAgent'
+      entries[index - 1]?.kind === 'voice'
     ) {
       blocks[blocks.length - 1] += ' *(interrupted by the user)*';
     } else {
@@ -328,15 +285,15 @@ export const renderConversation = (entries: ReadonlyArray<ConversationEntry>): s
   return blocks.join('\n\n');
 };
 
-/** The default text a worker receives: the story's hand-off format. Nothing is XML-escaped. */
+/** The default text the worker receives. Nothing is XML-escaped. */
 export const renderHandoff = (handoff: Omit<Handoff, 'rendered'>): string => {
   const [lead, tag] = handoff.isFirstMessage
     ? [
-        'The user is talking with you through a voice conversation. Here is that conversation so far.',
+        'The user is talking with you through a voice conversation. A voice speaks to them as you, in the first person: it presents your responses in short spoken pieces, with material shown on their screen, and passes everything they say back to you. Here is that conversation so far.',
         'conversation_so_far',
       ]
     : [
-        'The user responded through the voice conversation since your last message.',
+        'Here is the voice conversation since the last message you received from it.',
         'conversation_since_last_message',
       ];
   const conversation =
@@ -350,17 +307,12 @@ export const renderHandoff = (handoff: Omit<Handoff, 'rendered'>): string => {
     conversation,
     `</${tag}>`,
     '',
-    '<instruction>',
-    handoff.instruction,
-    '</instruction>',
+    "Respond to the user's latest words. They are the user's own, and take precedence over anything the voice said or showed.",
     '',
-    "Interpret the instruction in light of the conversation above and our earlier conversation. Where they disagree, the user's own words take precedence over the instruction.",
-    '',
-    '- You are working unattended. A voice agent presents your responses to the user in pieces and relays their reactions back to you.',
-    '- Put any questions for the user in your response. Do not use the AskUserQuestion tool.',
-    '- If anything shown or said to the user misrepresents your work, correct it in your response.',
+    '- You are working unattended. The user hears and sees your response only through the voice, in pieces, so include everything needed in it.',
+    '- The voice adds nothing of its own. When the user asks to slow down, repeat or re-explain something, do it in your response.',
+    '- If anything said or shown to the user misrepresents your work, correct it in your response.',
+    '- End your response with any questions for the user, as a numbered list under **Questions for you**. Do not use the AskUserQuestion tool.',
     '- Run tasks and shell commands in the foreground, not in the background.',
-    '',
-    'Your response will be presented to the user by voice, in pieces. Include everything needed in it.',
   ].join('\n');
 };

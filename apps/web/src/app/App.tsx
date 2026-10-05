@@ -5,7 +5,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import {
   type AskPresence,
   Composer,
-  connectionAtom,
   presentationAtom,
   showDriverAtom,
   showPanelAtom,
@@ -18,15 +17,9 @@ import { Subtitle, TapToResume, usePlaybackAnalyser, usePlaybackControls } from 
 import { AskForm, ShowPanel, ShowSheet } from '../tools';
 import { Button, PHONE, typingTarget, useMedia, useReducedMotion } from '../ui';
 import { analyserSource, createAnalysis, Visual } from '../visuals';
-import { selectedWorkerAtom, WorkersLayer } from '../workers';
+import { WorkersLayer } from '../workers';
 import { Dock } from './Dock';
-import {
-  focusTargetOnSwitch,
-  type Layer,
-  nextLayer,
-  selectionOnOpen,
-  selectionOnRestore,
-} from './layers';
+import { focusTargetOnSwitch, type Layer, nextLayer } from './layers';
 import { layerAtom, visualAtom } from './state';
 import { TopBar } from './TopBar';
 
@@ -44,8 +37,6 @@ export function App() {
   const analyser = usePlaybackAnalyser();
   const visual = useAtomValue(visualAtom);
   const [layer, setLayer] = useAtom(layerAtom);
-  const [selectedWorker, setSelectedWorker] = useAtom(selectedWorkerAtom);
-  const connection = useAtomValue(connectionAtom);
   const [panel, setPanel] = useAtom(showPanelAtom);
   const shown = useAtomValue(shownShowAtom);
   const reducedMotion = useReducedMotion();
@@ -56,8 +47,7 @@ export function App() {
   const stageOpen = layer === 'stage';
 
   // Layer switching. Focus moves only when the focused element is inside the layer being hidden (it becomes inert):
-  // to the shown layer's heading, or to the stage. The Workers close button returns focus to the top-bar Workers
-  // button. Opening the Workers layer selects a worker once; while it stays open, nothing changes the selection.
+  // to the shown layer's heading, or to the stage. The Worker close button returns focus to the top-bar Worker button.
   const sections = useRef<Record<Layer, HTMLElement | null>>({
     stage: null,
     transcript: null,
@@ -65,26 +55,8 @@ export function App() {
   });
   const workersButton = useRef<HTMLButtonElement>(null);
   const pendingFocus = useRef<'heading' | 'workersButton' | null>(null);
-  const latestAgent = presentation.latestAgent;
-  // A Workers layer restored at load opens without a switch; it selects the latest worker once the conversation
-  // arrives. Any switch ends the restore, since switches select for themselves.
-  const restoring = useRef(layer === 'workers');
-  useEffect(() => {
-    const selection = selectionOnRestore(
-      restoring.current,
-      connection === 'connected',
-      layer,
-      selectedWorker,
-      latestAgent,
-    );
-    if (connection === 'connected') restoring.current = false;
-    if (selection !== undefined) setSelectedWorker(selection);
-  }, [connection, layer, selectedWorker, latestAgent, setSelectedWorker]);
   const switchLayer = useCallback(
-    (
-      next: Layer,
-      options: { readonly requested?: string; readonly viaWorkersClose?: boolean } = {},
-    ) => {
+    (next: Layer, options: { readonly viaWorkersClose?: boolean } = {}) => {
       const hidden = sections.current[layer];
       const active = document.activeElement;
       pendingFocus.current = focusTargetOnSwitch(
@@ -93,12 +65,9 @@ export function App() {
         hidden !== null && active !== null && hidden.contains(active),
         options.viaWorkersClose,
       );
-      restoring.current = false;
-      const selection = selectionOnOpen(layer, next, options.requested ?? null, latestAgent);
-      if (selection !== undefined) setSelectedWorker(selection);
       setLayer(next);
     },
-    [layer, latestAgent, setLayer, setSelectedWorker],
+    [layer, setLayer],
   );
   // After the switch commits. The shown layer is focusable at once: its visibility flips without a transition.
   useLayoutEffect(() => {
@@ -200,7 +169,7 @@ export function App() {
         />
       </div>
       <main className="relative col-start-1 row-start-2 flex min-h-0 max-sm:overflow-hidden">
-        {/* The player column holds three layers: the stage, the transcript (E) and the Workers layer (W). The Show panel
+        {/* The player column holds three layers: the stage, the transcript (E) and the Worker layer (W). The Show panel
             sits beside it. */}
         <div className="relative min-w-0 flex-1">
           <section
@@ -236,23 +205,20 @@ export function App() {
             <Transcript
               rows={presentation.timeline}
               visible={transcriptOpen && !sheetCovers}
-              onOpenWorker={(agent) => switchLayer('workers', { requested: agent })}
+              onOpenWorker={() => switchLayer('workers')}
             />
           </section>
           <section
-            aria-label="Workers"
+            aria-label="Worker"
             ref={(el) => {
               sections.current.workers = el;
             }}
             inert={!workersOpen || sheetCovers}
             className={layerClass(workersOpen)}
           >
-            {/* Mounted only while showing, so the Workers streams run only then. */}
+            {/* Mounted only while showing, so the Worker streams run only then. */}
             {workersOpen && (
-              <WorkersLayer
-                latest={latestAgent}
-                onClose={() => switchLayer('stage', { viaWorkersClose: true })}
-              />
+              <WorkersLayer onClose={() => switchLayer('stage', { viaWorkersClose: true })} />
             )}
           </section>
         </div>
@@ -306,6 +272,7 @@ export function App() {
                   ? commands.answerAsk(ask.execution, answer)
                   : Promise.resolve(false)
               }
+              onInterrupt={() => void commands.interrupt()}
               extra={
                 ask.mode === 'open'
                   ? composer === 'retryClip' && retryClipButton

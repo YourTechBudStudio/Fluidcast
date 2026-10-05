@@ -61,7 +61,7 @@ const readOnly = <A>(ref: SubscriptionRef.SubscriptionRef<A>): Subscribable<A> =
 type Audio = Effect.Success<ReturnType<typeof makeAudio>>;
 
 /**
- * Protocol sync (ADR 0007): folds the subscription with the Harness's reducer, reconnects, and turns
+ * Protocol sync (ADR 0001): folds the subscription with the Harness's reducer, reconnects, and turns
  * playback requests into instructions. Runs for the lifetime of the current scope.
  */
 export const makeSession = (transport: Transport['Service'], audio: Audio) =>

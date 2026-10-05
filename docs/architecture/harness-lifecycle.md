@@ -25,7 +25,7 @@ Tool outcomes wait as session state until the harness submits them; only then do
 
 Disconnection freezes cursor advancement, not running tools; their results queue. Back moves presentation to the previous speak action without reverse execution or automatic visual restoration. The cursor stays at the execution frontier; a separate replay position moves back and walks forward to it, executing only replay-enabled tools. Next advances the cursor by one position, with intervening tools handled normally.
 
-Interruption stops current presentation and generation and trims history after the cursor, but running tools continue and their results remain eligible ([ADR 0002](../adrs/0002-conversation-as-an-action-log.md)). The current speak action remains in history even if partially heard. Interrupts are ignored while a blocking tool is open.
+Interruption stops current presentation and generation and trims history after the cursor, but running tools continue and their results remain eligible ([ADR 0002](../adrs/0002-conversation-as-an-action-log.md)). The current speak action remains in history even if partially heard. An interrupt while a blocking tool is open cancels it without a result: the user declines to answer.
 
 Rewinding and interrupting may intentionally erase generated actions that never took effect. No rollback or evidence-preservation mechanism is required initially.
 

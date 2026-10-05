@@ -12,9 +12,9 @@ import {
 } from '@yourtechbudstudio/fluidcast-harness/protocol';
 
 import type { Modifier } from './handoff.ts';
-import type { TranscriptEntry } from './schema.ts';
+import { forwardToolName, type TranscriptEntry } from './schema.ts';
 import {
-  AgentSetupError,
+  WorkerSetupError,
   type WorkerEvent,
   type WorkerMessage,
   type WorkerType,
@@ -62,8 +62,7 @@ export const interrupted = (during: 'speech' | 'wait') =>
   ({ type: 'interrupted', during }) as const;
 export const toolCall = (handle: string, tool: string, input: Record<string, unknown>) =>
   ({ type: 'tool_call', handle, tool, input }) as Draft<Action>;
-export const agentCall = (handle: string, agent: string, message: string, agentType = 'claude') =>
-  toolCall(handle, 'agent', { agentType, agent, message });
+export const forwardCall = (handle: string) => toolCall(handle, forwardToolName, {});
 export const result = (handles: ReadonlyArray<string>, tool: string, value: unknown) =>
   ({ type: 'tool_result', handles, tool, result: value }) as Draft<Action>;
 export const errored = (handles: ReadonlyArray<string>, tool: string, message: string) =>
@@ -95,13 +94,12 @@ export const fakeWorkerType = (
   Effect.gen(function* () {
     const connections = yield* Ref.make<ReadonlyArray<FakeConnection>>([]);
     const type: WorkerType = {
-      description: 'A fake worker.',
       cwd: options.cwd ?? '/work',
       composeMessage: options.composeMessage ?? ((prompt) => prompt),
       attach: (sessionId) => {
         const session = options.sessions?.[sessionId];
         return session === undefined
-          ? Effect.fail(new AgentSetupError({ agent: sessionId, reason: 'SessionNotFound' }))
+          ? Effect.fail(new WorkerSetupError({ sessionId, reason: 'SessionNotFound' }))
           : Effect.succeed(session);
       },
       connect: (worker, input) =>
@@ -136,9 +134,9 @@ export const fakeWorkerType = (
 
 /** A progress model that always describes the same activity. */
 export const fakeModel = LanguageModel.make({
-  generateText: () =>
-    Effect.succeed([{ type: 'text' as const, text: 'Working through the plan.' }]),
-  streamText: () => Stream.die('unused'),
+  generateText: () => Effect.die('progress streams'),
+  streamText: () =>
+    Stream.make({ type: 'text-delta' as const, id: 't', delta: 'Working through the plan.' }),
 });
 
 /** Polls `effect` until `done` holds, dying after a second. */

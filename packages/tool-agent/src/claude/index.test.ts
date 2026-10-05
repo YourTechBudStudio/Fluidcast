@@ -4,23 +4,24 @@ import { describe, it } from 'node:test';
 import { claudeWorker } from './index.ts';
 
 describe('claudeWorker', () => {
-  const { composeMessage } = claudeWorker({ description: 'Claude Code', cwd: '/work' });
+  const { composeMessage } = claudeWorker({ cwd: '/work' });
 
   it('leaves the prompt unchanged without modifiers', () => {
     assert.equal(composeMessage('Plan it.', []), 'Plan it.');
   });
 
-  it('chains modifiers ahead of the prompt', () => {
+  it('puts its one modifier ahead of the prompt', () => {
     assert.equal(
-      composeMessage('Plan it.', [{ name: 'brainstorm' }, { name: 'plugin:review_2' }]),
-      '/brainstorm /plugin:review_2 Plan it.',
+      composeMessage('Plan it.', [{ name: 'plugin:review_2' }]),
+      '/plugin:review_2 Plan it.',
     );
   });
 
-  it('throws for more than six modifiers or an invalid name', () => {
-    const seven = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((name) => ({ name }));
-    assert.throws(() => composeMessage('Plan it.', seven));
-    assert.doesNotThrow(() => composeMessage('Plan it.', seven.slice(0, 6)));
+  it('throws for more than one modifier or an invalid name', () => {
+    assert.throws(
+      () => composeMessage('Plan it.', [{ name: 'brainstorm' }, { name: 'review' }]),
+      /at most 1 modifier, got 2/,
+    );
     for (const name of ['', 'Brainstorm', '-x', 'two words', '/slash']) {
       assert.throws(() => composeMessage('Plan it.', [{ name }]), name);
     }

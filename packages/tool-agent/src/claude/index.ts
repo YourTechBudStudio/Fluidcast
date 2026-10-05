@@ -19,9 +19,7 @@ import { attachWith } from './attach.ts';
 import { connectWith } from './connect.ts';
 
 export interface ClaudeWorkerOptions {
-  /** The line the tool rules give this type. */
-  readonly description: string;
-  /** Where new workers run. A preloaded worker runs in its session's recorded directory. */
+  /** Where a new worker runs. A preloaded worker runs in its session's recorded directory. */
   readonly cwd: string;
   readonly model?: string;
   readonly effort?: EffortLevel;
@@ -31,30 +29,26 @@ export interface ClaudeWorkerOptions {
   readonly environment?: Readonly<Record<string, string | undefined>>;
 }
 
-/** Claude Code chains at most six skills at the start of a message. */
-const maxModifiers = 6;
+/** One skill or command per message, for now: chaining several is not supported. */
+const maxModifiers = 1;
 const modifierName = /^[a-z0-9][a-z0-9:_-]*$/;
 
 /**
- * Claude Code recognises a command or skill only at the start of a message, and chains skills as
- * `/a /b <shared arguments>`: every modifier receives the whole prompt as its arguments.
+ * Claude Code recognises a command or skill only at the start of a message, as `/name <prompt>`:
+ * the modifier receives the whole prompt as its arguments.
  */
 const composeMessage = (prompt: string, modifiers: ReadonlyArray<Modifier>): string => {
-  if (modifiers.length === 0) return prompt;
+  const [modifier] = modifiers;
+  if (modifier === undefined) return prompt;
   if (modifiers.length > maxModifiers) {
-    throw new Error(
-      `Claude Code chains at most ${maxModifiers} modifiers, got ${modifiers.length}`,
-    );
+    throw new Error(`Claude Code takes at most ${maxModifiers} modifier, got ${modifiers.length}`);
   }
-  for (const { name } of modifiers) {
-    if (!modifierName.test(name)) throw new Error('Invalid Claude Code modifier name');
-  }
-  return `${modifiers.map(({ name }) => `/${name}`).join(' ')} ${prompt}`;
+  if (!modifierName.test(modifier.name)) throw new Error('Invalid Claude Code modifier name');
+  return `/${modifier.name} ${prompt}`;
 };
 
-/** Claude Code workers: one long-lived streaming-input query per worker. */
+/** The Claude Code worker: one long-lived streaming-input query. */
 export const claudeWorker = (options: ClaudeWorkerOptions): WorkerType => ({
-  description: options.description,
   cwd: options.cwd,
   composeMessage,
   attach: attachWith(

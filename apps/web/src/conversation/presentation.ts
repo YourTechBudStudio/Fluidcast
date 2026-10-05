@@ -2,11 +2,7 @@ import { absurd } from 'effect/Function';
 
 import type { TransportError } from '@yourtechbudstudio/fluidcast-client';
 import type { Execution, ExecutionId } from '@yourtechbudstudio/fluidcast-harness/protocol';
-import {
-  type AgentCall,
-  agentErrorParts,
-  agentToolName,
-} from '@yourtechbudstudio/fluidcast-tool-agent/schema';
+import { forwardErrorParts, forwardToolName } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 import type { AskCommand, AskInput } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 import type { ShowInput } from '@yourtechbudstudio/fluidcast-tool-show/schema';
 
@@ -15,13 +11,12 @@ import type { AskCardState, Correction } from '../tools';
 import type { VisualState } from '../visuals';
 import type { Action, Connection, ConversationView, Speaker } from './model';
 import {
-  agentOf,
-  agentResultOf,
-  agentThinkingSince,
   answerFor,
   askOf,
   findCall,
-  latestAgent,
+  forwardResultOf,
+  forwardThinkingSince,
+  isForward,
   latestShowHandle,
   openAsk,
   pendingAnswer,
@@ -133,39 +128,31 @@ export type TimelineRow =
       readonly correction: Correction;
     }
   | {
-      /** Work handed to a worker. */
-      readonly kind: 'agent';
+      /** The listener's words forwarded to the worker. */
+      readonly kind: 'forward';
       readonly id: string;
       readonly handle: string;
-      readonly call: AgentCall;
       /**
        * `working` while an open execution holds the call; `answered` or `failed` once an outcome that includes it is
        * known (submitted or pending); `null` otherwise, for example after a halt.
        */
       readonly state: 'working' | 'answered' | 'failed' | null;
-      /** The call joined a busy worker's execution, so it steered that worker's current work. */
+      /** The call joined the busy worker's execution, so it steered the current work. */
       readonly joined: boolean;
       /** The other calls the same execution or outcome answers. */
       readonly together: readonly string[];
     }
   | {
-      /** What the model read back from a worker, at the position in the log where it read it. */
-      readonly kind: 'agentResult';
+      /** What the model read back from the worker, at the position in the log where it read it. */
+      readonly kind: 'forwardResult';
       readonly id: string;
       readonly handles: readonly string[];
-      readonly agent: string;
-      readonly agentType: string;
       readonly outcome:
         | { readonly _tag: 'result'; readonly messages: readonly string[] }
         | { readonly _tag: 'error'; readonly error: string; readonly written: string | null };
     }
-  /** A worker's progress, as the model read it. */
-  | {
-      readonly kind: 'progress';
-      readonly id: string;
-      readonly agent: string;
-      readonly text: string;
-    }
+  /** The worker's progress, as the model read it. */
+  | { readonly kind: 'progress'; readonly id: string; readonly text: string }
   | { readonly kind: 'faulted'; readonly id: string; readonly message: string }
   | { readonly kind: 'pending'; readonly label: string };
 
@@ -201,12 +188,10 @@ export interface Presentation {
   /** The Show the Show button opens, if there has been one. */
   readonly latestShow: string | null;
   /**
-   * While thinking, when the earliest open Agent execution started (epoch milliseconds), so the status line counts the
-   * whole time workers have been busy; `null` when no worker is running or the moment is not `thinking`.
+   * While thinking, when the open Forward execution started (epoch milliseconds), so the status line counts the whole
+   * time the worker has been busy; `null` when the worker is not running or the moment is not `thinking`.
    */
   readonly thinkingSince: number | null;
-  /** The worker the last valid agent call addressed: the one the Workers layer opens on. */
-  readonly latestAgent: string | null;
 }
 
 const lastIndexWhere = <A>(items: readonly A[], f: (a: A) => boolean) => {
@@ -234,7 +219,7 @@ const presentedIndex = (view: ConversationView) =>
 /**
  * Playback status only counts for the speak being presented: at the cursor, or at the replay position after Back. A
  * status for any other action, such as a late failure for a line that was interrupted, is stale and ignored by
- * identity (ADR 0007).
+ * identity (ADR 0001).
  */
 function playbackAtPresented(
   view: ConversationView,
@@ -265,8 +250,9 @@ export function momentOf(
     case 'waiting':
       return 'asking';
     case 'working':
-      // While a worker runs, the system is thinking, whatever else goes on around it.
-      if (view.executions.some((execution) => execution.tool === agentToolName)) return 'thinking';
+      // While the worker runs, the system is thinking, whatever else goes on around it.
+      if (view.executions.some((execution) => execution.tool === forwardToolName))
+        return 'thinking';
       // A continuation starts a new model turn too: until it speaks, the model is thinking.
       return view.actions.slice(turnBoundary(view) + 1).some(isSpeak) ? 'waiting' : 'thinking';
     case 'idle': {
@@ -365,7 +351,7 @@ function subtitleOf(
       return earlier ? line(earlier, 'current') : yourLine(view);
     }
     case 'thinking': {
-      // A line said in this turn (while a worker runs) stays, dimmed. Otherwise thinking about your message shows it,
+      // A line said in this turn (while the worker runs) stays, dimmed. Otherwise thinking about your message shows it,
       // and thinking about a tool's outcome keeps the last line.
       const boundary = turnBoundary(view);
       if (lastSpeakIndex > boundary && lastSpeak) return line(lastSpeak, 'dim');
@@ -395,11 +381,11 @@ function askStateOf(
 
 type Outcome = Extract<Action, { type: 'tool_result' | 'tool_errored' }>;
 
-/** Where an agent call stands, and which other calls share its execution or outcome. */
-function agentStateOf(
+/** Where a forward call stands, and which other calls share its execution or outcome. */
+function forwardStateOf(
   view: ConversationView,
   handle: string,
-): Pick<Extract<TimelineRow, { kind: 'agent' }>, 'state' | 'joined' | 'together'> {
+): Pick<Extract<TimelineRow, { kind: 'forward' }>, 'state' | 'joined' | 'together'> {
   const holds = (group: { readonly handles: readonly string[] }) => group.handles.includes(handle);
   const execution = view.executions.find(holds);
   const outcome = [...view.actions, ...view.pendingResults].find(
@@ -421,25 +407,19 @@ function agentStateOf(
   };
 }
 
-/** The row for an agent outcome, when the call it answers first is a valid agent call. */
-function agentResultRowOf(
-  view: ConversationView,
+/** The row for a forward outcome. */
+function forwardResultRowOf(
   outcome: Outcome,
-): Extract<TimelineRow, { kind: 'agentResult' }> | null {
-  if (outcome.tool !== agentToolName) return null;
-  const call = agentOf(findCall(view, outcome.handles[0]));
-  // The Harness's error for an invalid call belongs to that call's own row.
-  if (!call) return null;
+): Extract<TimelineRow, { kind: 'forwardResult' }> | null {
+  if (outcome.tool !== forwardToolName) return null;
   return {
-    kind: 'agentResult',
+    kind: 'forwardResult',
     id: outcome.id,
     handles: outcome.handles,
-    agent: call.agent,
-    agentType: call.agentType,
     outcome:
       outcome.type === 'tool_result'
-        ? { _tag: 'result', messages: agentResultOf(outcome) }
-        : { _tag: 'error', ...agentErrorParts(outcome.message) },
+        ? { _tag: 'result', messages: forwardResultOf(outcome) }
+        : { _tag: 'error', ...forwardErrorParts(outcome.message) },
   };
 }
 
@@ -493,14 +473,12 @@ function timelineOf(
           showFailed = failure !== null;
           break;
         }
-        const agent = agentOf(action);
-        if (agent) {
+        if (isForward(action)) {
           rows.push({
-            kind: 'agent',
+            kind: 'forward',
             id: action.id,
             handle: action.handle,
-            call: agent,
-            ...agentStateOf(view, action.handle),
+            ...forwardStateOf(view, action.handle),
           });
           break;
         }
@@ -528,18 +506,17 @@ function timelineOf(
         });
         break;
       }
-      // An agent outcome has its own row where the model read it; other outcomes belong to their call's row.
+      // A forward outcome has its own row where the model read it; other outcomes belong to their call's row.
       case 'tool_result':
       case 'tool_errored': {
-        const row = agentResultRowOf(view, action);
+        const row = forwardResultRowOf(action);
         if (row) rows.push(row);
         break;
       }
       case 'tool_progress': {
-        // Only the Agent tool reports progress.
-        const agent = agentOf(findCall(view, action.handles[0]));
-        if (agent)
-          rows.push({ kind: 'progress', id: action.id, agent: agent.agent, text: action.text });
+        // Only the Forward tool reports progress.
+        if (isForward(findCall(view, action.handles[0])))
+          rows.push({ kind: 'progress', id: action.id, text: action.text });
         break;
       }
       // Context is for the model only.
@@ -660,7 +637,6 @@ export function present(
     canGoBack: canGoBackOf(view, connection),
     fault: view.actions.findLast((a) => a.type === 'tool_faulted')?.error.message ?? null,
     latestShow: latestShowHandle(view) ?? null,
-    thinkingSince: moment === 'thinking' ? (agentThinkingSince(view) ?? null) : null,
-    latestAgent: latestAgent(view),
+    thinkingSince: moment === 'thinking' ? (forwardThinkingSince(view) ?? null) : null,
   };
 }

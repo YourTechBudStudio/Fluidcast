@@ -11,7 +11,7 @@ import type {
 import { Effect } from 'effect';
 
 import type { TranscriptEntry } from '../schema.ts';
-import { AgentSetupError } from '../worker.ts';
+import { WorkerSetupError } from '../worker.ts';
 import { historyEntries } from './transcript.ts';
 
 /** The SDK's session readers. */
@@ -24,8 +24,7 @@ export interface SessionStore {
 
 /**
  * Checks a session exists and reads its directory (its recorded one, else `cwd`) and history,
- * with each earlier subagent nested under its starting call. Spawns nothing. The pool names the
- * worker in any `AgentSetupError`; this one carries the session ID.
+ * with each earlier subagent nested under its starting call. Spawns nothing.
  */
 export const attachWith =
   (store: SessionStore, cwd: string) =>
@@ -33,17 +32,17 @@ export const attachWith =
     sessionId: string,
   ): Effect.Effect<
     { readonly cwd: string; readonly history: ReadonlyArray<TranscriptEntry> },
-    AgentSetupError
+    WorkerSetupError
   > =>
     Effect.gen(function* () {
       const read = <A>(promise: () => Promise<A>) =>
         Effect.tryPromise({
           try: promise,
-          catch: () => new AgentSetupError({ agent: sessionId, reason: 'SessionUnreadable' }),
+          catch: () => new WorkerSetupError({ sessionId, reason: 'SessionUnreadable' }),
         });
       const info = yield* read(() => store.getSessionInfo(sessionId));
       if (info === undefined) {
-        return yield* new AgentSetupError({ agent: sessionId, reason: 'SessionNotFound' });
+        return yield* new WorkerSetupError({ sessionId, reason: 'SessionNotFound' });
       }
       const dir = info.cwd ?? cwd;
       const [main, agentIds] = yield* Effect.all([

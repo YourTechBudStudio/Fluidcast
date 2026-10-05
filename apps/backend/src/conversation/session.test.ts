@@ -1,24 +1,30 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import * as NodeServices from '@effect/platform-node/NodeServices';
-import { Effect, Layer, Stream } from 'effect';
+import { Effect, Layer, Redacted, Schema, Stream } from 'effect';
 import { LanguageModel } from 'effect/unstable/ai';
+import { Yaml } from 'effect/unstable/encoding';
 
-import { checkTools } from '@yourtechbudstudio/fluidcast-core/generation';
+import {
+  checkTools,
+  Example,
+  outputJsonSchema,
+} from '@yourtechbudstudio/fluidcast-core/generation';
 import { SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';
-import { agentTool } from '@yourtechbudstudio/fluidcast-tool-agent';
-import { agentToolName } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
+import { forwardTool } from '@yourtechbudstudio/fluidcast-tool-agent';
+import { forwardToolName } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 import { askToolName } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 import { showToolName } from '@yourtechbudstudio/fluidcast-tool-show/schema';
 
+import { RemindersSection } from './config.ts';
 import {
   type ConversationConfig,
   referenceTools,
-  referenceWorkerTypes,
+  referenceWorker,
   sessionLayer,
 } from './session.ts';
 
@@ -29,30 +35,41 @@ const unusedModel = LanguageModel.make({
 });
 
 describe('referenceTools', () => {
-  it('registers Show, Ask and Agent, in that order, as a valid tool set', async () => {
-    // Building the pool spawns nothing: workers connect on their first message.
+  it('registers Show, Ask and Forward, in that order, as a valid tool set', async () => {
+    // Building the Forward tool spawns nothing: the worker connects on its first message.
     const tools = await Effect.runPromise(
       Effect.gen(function* () {
-        const agents = yield* agentTool({
-          types: referenceWorkerTypes({ cwd: process.cwd(), environment: {} }),
+        const forward = yield* forwardTool({
+          worker: referenceWorker({ cwd: process.cwd(), environment: {} }),
         });
-        return referenceTools(agents.tool);
+        return referenceTools(forward.tool);
       }).pipe(Effect.provideServiceEffect(LanguageModel.LanguageModel, unusedModel), Effect.scoped),
     );
     assert.deepEqual(
       tools.map((tool) => tool.name),
-      [showToolName, askToolName, agentToolName],
+      [showToolName, askToolName, forwardToolName],
     );
     assert.doesNotThrow(() => checkTools(tools));
+    // The structured-output schema of the same tools: each action by name, `forward` with no fields.
+    const schema = outputJsonSchema({ speakers: [{ id: 'host' }], tools });
+    const defs = schema['$defs'] as Record<string, Record<string, unknown>>;
+    assert.deepEqual(Object.keys(defs).sort(), ['Ask', 'Forward', 'Show']);
+    assert.deepEqual(defs['Forward']?.['properties'], {
+      type: { type: 'string', enum: [forwardToolName] },
+    });
   });
 });
 
 describe('sessionLayer', () => {
-  const config = (generationLog?: string): ConversationConfig => ({
-    llm: { type: 'chatgpt', model: 'm', credentialsPath: '/unused' },
+  const config = (
+    generationLog?: string,
+    llm: ConversationConfig['llm'] = { type: 'chatgpt', model: 'm', credentialsPath: '/unused' },
+  ): ConversationConfig => ({
+    llm,
     instructions: '',
+    examples: [],
     speakers: [{ id: 'host', name: 'Host', personality: 'warm', voice: { name: 'alloy' } }],
-    workers: { cwd: process.cwd(), environment: {} },
+    worker: { cwd: process.cwd(), environment: {} },
     ...(generationLog === undefined ? {} : { generationLog }),
   });
 
@@ -70,7 +87,7 @@ describe('sessionLayer', () => {
       SpeechSynthesizer,
       SpeechSynthesizer.of({ synthesize: () => Stream.die('unused') }),
     );
-    // Building the Agent tool's pool spawns no worker: workers connect on their first message.
+    // Building the Forward tool spawns no worker: it connects on its first message.
     return Effect.runPromise(
       Layer.build(
         sessionLayer(conversation, 'opus').pipe(
@@ -83,8 +100,47 @@ describe('sessionLayer', () => {
     );
   };
 
-  it('uses the one provided model for the Harness and the Agent tool', async () => {
+  it('uses the one provided model for the Harness and the Forward tool', async () => {
     assert.equal(await builds(config()), 1);
+  });
+
+  it('passes the examples to the Harness, which refuses one that uses a tool it lacks', async () => {
+    const example = (tool: string) => [
+      { type: 'user_message' as const, text: 'Show me.' },
+      {
+        type: 'tool_call' as const,
+        tool,
+        handle: 'call_1',
+        input: { format: 'markdown', content: '- One' },
+      },
+    ];
+    assert.equal(await builds({ ...config(), examples: [example(showToolName)] }), 1);
+    await assert.rejects(
+      builds({ ...config(), examples: [example('draw')] }),
+      /Example 1 uses the tool "draw", which is not configured/,
+    );
+  });
+
+  it("accepts the example config's examples and reminders with the reference tools", async () => {
+    const file = readFileSync(
+      new URL('../../../../fluidcast.example.yaml', import.meta.url),
+      'utf8',
+    );
+    const { examples, reminders } = Schema.decodeUnknownSync(
+      Schema.Struct({ examples: Schema.Array(Example), reminders: RemindersSection }),
+    )(Yaml.parse(file));
+    assert.ok(examples.length > 0);
+    assert.equal(await builds({ ...config(), examples, reminders }), 1);
+  });
+
+  it('uses the one provided model with structured output on', async () => {
+    const llm = {
+      type: 'openai-compatible',
+      model: 'm',
+      connection: { apiKey: Redacted.make('unused') },
+      structuredOutput: true,
+    } as const;
+    assert.equal(await builds(config(undefined, llm)), 1);
   });
 
   it('uses the one provided model with the generation log on', async () => {

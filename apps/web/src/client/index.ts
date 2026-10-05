@@ -1,2 +1,2 @@
 export { clientRuntime } from './runtime';
-export { watchTranscript, watchWorkers } from './workers';
+export { watchTranscript, watchWorker } from './workers';

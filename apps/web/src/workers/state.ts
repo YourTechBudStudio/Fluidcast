@@ -5,21 +5,19 @@ import type { TransportError } from '@yourtechbudstudio/fluidcast-client';
 import type {
   TranscriptEntry,
   TranscriptMessage,
-  WorkerNotFound,
   WorkerSummary,
 } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 
-import { watchTranscript, watchWorkers } from '../client';
+import { watchTranscript, watchWorker } from '../client';
 
 /**
  * - `connecting`: nothing has arrived yet;
  * - `live`: connected, `data` is current;
- * - `reconnecting`: the connection dropped; `data` is what arrived before, and a retry is on its way;
- * - `notFound`: the backend has no such worker (permanent; no retry).
+ * - `reconnecting`: the connection dropped; `data` is what arrived before, and a retry is on its way.
  */
-export type WorkersConnection = 'connecting' | 'live' | 'reconnecting' | 'notFound';
+export type WorkersConnection = 'connecting' | 'live' | 'reconnecting';
 
-/** A Workers stream as the page shows it. Page-local: it lives while the Workers layer is showing. */
+/** A Worker stream as the page shows it. Page-local: it lives while the Worker layer is showing. */
 export interface WorkersFeed<A> {
   readonly data: A | undefined;
   readonly connection: WorkersConnection;
@@ -33,8 +31,7 @@ export interface FeedState<A> {
 
 export type FeedEvent<M> =
   | { readonly _tag: 'message'; readonly message: M }
-  | { readonly _tag: 'dropped' }
-  | { readonly _tag: 'notFound' };
+  | { readonly _tag: 'dropped' };
 
 export const initialFeed: FeedState<never> = {
   feed: { data: undefined, connection: 'connecting' },
@@ -60,16 +57,14 @@ export const foldFeed = <A, M>(
     }
     case 'dropped':
       return { feed: { data: state.feed.data, connection: 'reconnecting' }, synced: false };
-    case 'notFound':
-      return { feed: { data: state.feed.data, connection: 'notFound' }, synced: false };
   }
 };
 
-/** Each worker list replaces the last. */
-export const applyWorkerList = (
-  _current: ReadonlyArray<WorkerSummary> | undefined,
-  workers: ReadonlyArray<WorkerSummary>,
-): ReadonlyArray<WorkerSummary> => workers;
+/** Each summary replaces the last. */
+export const applyWorkerSummary = (
+  _current: WorkerSummary | undefined,
+  summary: WorkerSummary,
+): WorkerSummary => summary;
 
 /** A snapshot replaces the transcript; appended entries extend it, but only after this connection's snapshot. */
 export const applyTranscript = (
@@ -88,14 +83,13 @@ export const applyTranscript = (
 export const retryDelay = Duration.seconds(2);
 
 const dropped = { _tag: 'dropped' } as const;
-const notFound = { _tag: 'notFound' } as const;
 
 /**
  * A stream's events across connections: its messages, then `dropped` and a fresh connection after `retryDelay`
- * whenever it fails or ends, until the backend says the worker is not found.
+ * whenever it fails or ends.
  */
 export const connections = <M>(
-  connect: () => Stream.Stream<M, TransportError | WorkerNotFound>,
+  connect: () => Stream.Stream<M, TransportError>,
 ): Stream.Stream<FeedEvent<M>> => {
   const again: Stream.Stream<FeedEvent<M>> = Stream.succeed<FeedEvent<M>>(dropped).pipe(
     Stream.concat(Stream.fromEffectDrain(Effect.sleep(retryDelay))),
@@ -105,16 +99,13 @@ export const connections = <M>(
     Stream.map((message): FeedEvent<M> => ({ _tag: 'message', message })),
     // The backend ends a stream only when it shuts down: connect again.
     Stream.concat(Stream.suspend(() => again)),
-    Stream.catchTags({
-      TransportError: () => again,
-      WorkerNotFound: () => Stream.succeed<FeedEvent<M>>(notFound),
-    }),
+    Stream.catchTag('TransportError', () => again),
   );
 };
 
 /** A feed's atom. It connects only while something reads it, and disconnects when nothing does. */
 const feedAtom = <A, M>(
-  connect: () => Stream.Stream<M, TransportError | WorkerNotFound>,
+  connect: () => Stream.Stream<M, TransportError>,
   apply: (current: A | undefined, message: M) => A | undefined,
 ) => {
   const states = Atom.make(
@@ -135,23 +126,8 @@ const feedAtom = <A, M>(
   );
 };
 
-/** The backend's workers, in creation order. */
-export const workerListAtom = feedAtom(watchWorkers, applyWorkerList);
+/** The worker's status. */
+export const workerAtom = feedAtom(watchWorker, applyWorkerSummary);
 
-/** One worker's transcript entries. */
-export const workerTranscriptAtom = Atom.family((agent: string) =>
-  feedAtom(() => watchTranscript(agent), applyTranscript),
-);
-
-/**
- * The worker the Workers layer shows. `null` resolves to the most recently created worker. Written by the layer's
- * menu and by `app` when the layer opens.
- */
-export const selectedWorkerAtom = Atom.make<string | null>(null).pipe(Atom.keepAlive);
-
-/** The worker a selection shows: the selected one if it is listed, else (for `null`) the most recently created one. */
-export const selectedWorker = (
-  workers: ReadonlyArray<WorkerSummary>,
-  selected: string | null,
-): WorkerSummary | undefined =>
-  selected === null ? workers.at(-1) : workers.find((worker) => worker.agent === selected);
+/** The worker's transcript entries. */
+export const workerTranscriptAtom = feedAtom(watchTranscript, applyTranscript);

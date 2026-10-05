@@ -1,5 +1,5 @@
 /**
- * The session protocol (ADR 0007): snapshot, events, commands, and the pure reducer and phase
+ * The session protocol (ADR 0001): snapshot, events, commands, and the pure reducer and phase
  * derivation that both the Harness and every client fold with. A pure export: it imports only
  * `effect` and Core's action vocabulary.
  */
@@ -287,8 +287,8 @@ export const presentedSpeak = (state: SessionState): Speak | undefined => {
 /**
  * The phase a player presents, first match wins. `working`: the system is busy (generating,
  * starting a call, holding results or running tools) and nothing is playing. `waiting`: a blocking
- * tool waits on the user. An interrupt leaves open executions and pending results for the user's
- * next message, so the turn reads `idle`.
+ * tool waits on the user. An interrupt cancels a blocking execution and leaves the others and
+ * pending results for the user's next message, so the turn reads `idle`.
  */
 export const derivePhase = (state: SessionState): Phase => {
   if (isHalted(state)) return 'halted';

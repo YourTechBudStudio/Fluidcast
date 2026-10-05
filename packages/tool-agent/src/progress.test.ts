@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { Clock, Effect, Fiber, Ref, type Schedule, SubscriptionRef } from 'effect';
+import { Clock, Effect, Fiber, Ref, type Schedule, Stream, SubscriptionRef } from 'effect';
 import { TestClock } from 'effect/testing';
 import { AiError, LanguageModel } from 'effect/unstable/ai';
 
-import { defaultProgressSchedule, oneSentence, progressLoop } from './progress.ts';
+import {
+  defaultProgressPrompt,
+  defaultProgressSchedule,
+  oneSentence,
+  progressLoop,
+} from './progress.ts';
 import type { TranscriptEntry } from './schema.ts';
 
 const text = (value: string): TranscriptEntry => ({
@@ -34,32 +39,49 @@ const setup = (options: {
     const calls = yield* Ref.make<ReadonlyArray<Call>>([]);
     const offers = yield* Ref.make<ReadonlyArray<string>>([]);
     const model = yield* LanguageModel.make({
-      generateText: (request) =>
-        Effect.gen(function* () {
-          const at = yield* Clock.currentTimeMillis;
-          const user = request.prompt.content.find((message) => message.role === 'user');
-          const lines =
-            user === undefined || typeof user.content === 'string'
-              ? String(user?.content)
-              : user.content.map((part) => ('text' in part ? part.text : '')).join('');
-          const all = yield* Ref.updateAndGet(calls, (previous) => [...previous, { at, lines }]);
-          const reply = (options.replies ?? (() => 'Comparing the retry designs.'))(all.length);
-          if (reply === undefined) {
-            return yield* AiError.make({
-              module: 'Test',
-              method: 'generateText',
-              reason: new AiError.RateLimitError({}),
-            });
-          }
-          return [{ type: 'text' as const, text: reply }];
+      // Like the vLLM server's non-streaming replies, which the compatible client rejects.
+      generateText: () =>
+        AiError.make({
+          module: 'Test',
+          method: 'generateText',
+          reason: new AiError.InvalidOutputError({
+            description: 'Expected string at ["service_tier"]',
+          }),
         }),
-      streamText: () => Effect.die('unused') as never,
+      streamText: (request) =>
+        Stream.unwrap(
+          Effect.gen(function* () {
+            const at = yield* Clock.currentTimeMillis;
+            const user = request.prompt.content.find((message) => message.role === 'user');
+            const lines =
+              user === undefined || typeof user.content === 'string'
+                ? String(user?.content)
+                : user.content.map((part) => ('text' in part ? part.text : '')).join('');
+            const all = yield* Ref.updateAndGet(calls, (previous) => [...previous, { at, lines }]);
+            const reply = (options.replies ?? (() => 'Comparing the retry designs.'))(all.length);
+            if (reply === undefined) {
+              return Stream.fail(
+                AiError.make({
+                  module: 'Test',
+                  method: 'streamText',
+                  reason: new AiError.RateLimitError({}),
+                }),
+              );
+            }
+            // Split in two deltas: the snapshot is their concatenation.
+            const middle = Math.floor(reply.length / 2);
+            return Stream.make(
+              { type: 'text-delta' as const, id: 't', delta: reply.slice(0, middle) },
+              { type: 'text-delta' as const, id: 't', delta: reply.slice(middle) },
+            );
+          }),
+        ),
     });
     const transcript = yield* SubscriptionRef.make(options.entries);
     const fiber = yield* Effect.forkChild(
       progressLoop({
-        agent: 'brainstorm',
         schedule: options.schedule ?? defaultProgressSchedule,
+        prompt: defaultProgressPrompt,
         model,
         transcript: SubscriptionRef.get(transcript),
         start: options.start ?? 0,
@@ -90,6 +112,16 @@ const run = <A>(effect: Effect.Effect<A, never, never>) =>
   Effect.runPromise(effect.pipe(Effect.provide(TestClock.layer())) as Effect.Effect<A>);
 
 describe('progressLoop', () => {
+  it('streams its snapshot, so a server whose non-streaming replies fail still gets progress', () =>
+    run(
+      Effect.gen(function* () {
+        const loop = yield* setup({ entries: [text('Reading.')] });
+        yield* loop.advanceTo(10);
+        assert.deepEqual(yield* loop.offers, ['Comparing the retry designs.']);
+        yield* loop.stop;
+      }),
+    ));
+
   it('ticks at 10, 20, 30, 45, 60 and 90 seconds by default', () =>
     run(
       Effect.gen(function* () {

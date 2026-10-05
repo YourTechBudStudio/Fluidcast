@@ -1,11 +1,7 @@
 import { Option, Schema } from 'effect';
 
 import type { Execution, ExecutionId } from '@yourtechbudstudio/fluidcast-harness/protocol';
-import {
-  AgentCall,
-  AgentResult,
-  agentToolName,
-} from '@yourtechbudstudio/fluidcast-tool-agent/schema';
+import { ForwardResult, forwardToolName } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 import {
   type AskCommand,
   AskInput,
@@ -18,7 +14,7 @@ import type { ShowCorrection } from '../tools';
 import type { Action, ConversationView } from './model';
 
 /**
- * Pure derivations of the Show, Ask and Agent tools from the view. The player recognises the tools by name, through
+ * Pure derivations of the Show, Ask and Forward tools from the view. The player recognises the tools by name, through
  * each tool package's pure `./schema` entry, and never imports a tool's backend.
  */
 
@@ -28,13 +24,11 @@ export type ToolResult = Extract<Action, { type: 'tool_result' }>;
 const decodeShow = Schema.decodeUnknownOption(ShowInput);
 const decodeAsk = Schema.decodeUnknownOption(AskInput);
 const decodeAskResult = Schema.decodeUnknownOption(AskResult);
-const decodeAgent = Schema.decodeUnknownOption(AgentCall);
-const decodeAgentResult = Schema.decodeUnknownOption(AgentResult);
+const decodeForwardResult = Schema.decodeUnknownOption(ForwardResult);
 
 // A logged action never changes, so each is decoded once.
 const shows = new WeakMap<ToolCall, ShowInput | undefined>();
 const asks = new WeakMap<ToolCall, AskInput | undefined>();
-const agents = new WeakMap<ToolCall, AgentCall | undefined>();
 
 const cached = <A>(
   cache: WeakMap<ToolCall, A | undefined>,
@@ -63,41 +57,28 @@ export const askOf = (call: ToolCall | undefined): AskInput | undefined =>
     : undefined;
 
 /**
- * The work a call hands to a worker, when it is an `agent` call whose ID and message are valid. Its `agentType` is not
- * checked: the page cannot know which types the backend configured.
+ * Whether a call is a `forward`: it hands the listener's words to the worker. Its input has no fields (any the model
+ * added are ignored), so every `forward` call is valid.
  */
-export const agentOf = (call: ToolCall | undefined): AgentCall | undefined =>
-  call?.tool === agentToolName
-    ? cached(agents, call, () => Option.getOrUndefined(decodeAgent(call.input)))
-    : undefined;
+export const isForward = (call: ToolCall | undefined): boolean => call?.tool === forwardToolName;
 
-/** When the earliest open Agent execution started (epoch milliseconds), if any is open. */
-export const agentThinkingSince = (view: ConversationView): number | undefined => {
+/** When the open Forward execution started (epoch milliseconds), if one is open. */
+export const forwardThinkingSince = (view: ConversationView): number | undefined => {
   const starts = view.executions
-    .filter((execution) => execution.tool === agentToolName)
+    .filter((execution) => execution.tool === forwardToolName)
     .map((execution) => execution.startedAt);
   return starts.length === 0 ? undefined : Math.min(...starts);
 };
 
 /**
- * The messages an agent result carries, in order. A result that does not decode is shown as one message holding its
+ * The messages a forward result carries, in order. A result that does not decode is shown as one message holding its
  * JSON text, so nothing the model read is hidden.
  */
-export const agentResultOf = (result: ToolResult): ReadonlyArray<string> =>
-  Option.match(decodeAgentResult(result.result), {
+export const forwardResultOf = (result: ToolResult): ReadonlyArray<string> =>
+  Option.match(decodeForwardResult(result.result), {
     onSome: (decoded) => decoded.messages,
     onNone: () => [JSON.stringify(result.result, null, 2)],
   });
-
-/** The worker the last valid agent call addressed, among the actions up to the cursor. */
-export const latestAgent = (view: ConversationView): string | null => {
-  for (let i = view.actions.length - 1; i >= 0; i--) {
-    const action = view.actions[i]!;
-    const agent = action.type === 'tool_call' ? agentOf(action) : undefined;
-    if (agent) return agent.agent;
-  }
-  return null;
-};
 
 /** The answer an Ask result carries. */
 export const answerOf = (result: ToolResult): AskCommand | undefined =>

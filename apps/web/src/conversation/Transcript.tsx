@@ -43,8 +43,8 @@ export function Transcript({
 }: {
   readonly rows: readonly TimelineRow[];
   readonly visible: boolean;
-  /** Opens the Workers layer on this worker. */
-  readonly onOpenWorker: (agent: string) => void;
+  /** Opens the Worker layer. */
+  readonly onOpenWorker: () => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
@@ -100,7 +100,7 @@ function TimelineItem({
   readonly last: boolean;
   /** The transcript layer is showing: miniatures may mount. */
   readonly visible: boolean;
-  readonly onOpenWorker: (agent: string) => void;
+  readonly onOpenWorker: () => void;
 }) {
   switch (row.kind) {
     case 'user':
@@ -226,17 +226,17 @@ function TimelineItem({
           <AskCard input={row.input} answer={row.answer} />
         </Row>
       );
-    case 'agent':
-      return <AgentRow row={row} first={first} last={last} onOpenWorker={onOpenWorker} />;
-    case 'agentResult':
-      return <AgentResultRow row={row} first={first} last={last} />;
+    case 'forward':
+      return <ForwardRow row={row} first={first} last={last} onOpenWorker={onOpenWorker} />;
+    case 'forwardResult':
+      return <ForwardResultRow row={row} first={first} last={last} />;
     case 'progress':
       return (
         <Row node={<Node kind="progress" />} first={first} last={last}>
           <div className="flex min-h-[30px] items-start gap-3 pt-[5px]">
             <p className="min-w-0 flex-1 text-[14.5px] leading-snug text-fg-subtle">
               <span className="mr-2 font-mono text-[11.5px] tracking-[0.03em] text-violet/75">
-                {row.agent}
+                Worker
               </span>
               <span className="italic">{row.text}</span>
             </p>
@@ -289,23 +289,22 @@ function TimelineItem({
   }
 }
 
-/** Work handed to a worker. The worker's name opens it in the Workers layer. */
-function AgentRow({
+/** The listener's words forwarded to the worker. "Worker" opens the Worker layer. */
+function ForwardRow({
   row,
   first,
   last,
   onOpenWorker,
 }: {
-  readonly row: Extract<TimelineRow, { kind: 'agent' }>;
+  readonly row: Extract<TimelineRow, { kind: 'forward' }>;
   readonly first: boolean;
   readonly last: boolean;
-  readonly onOpenWorker: (agent: string) => void;
+  readonly onOpenWorker: () => void;
 }) {
-  const { agent, agentType, message } = row.call;
   const others = row.together.join(' and ');
   const note =
     row.state === 'working' && row.joined
-      ? `Steers ${agent}’s current work. One result will answer this and ${others}.`
+      ? `Steers the current work. One result will answer this and ${others}.`
       : row.state === 'answered' && row.together.length > 0
         ? `One result answered this and ${others}.`
         : null;
@@ -314,7 +313,11 @@ function AgentRow({
       node={
         <Node
           kind={
-            row.state === 'working' ? 'agentLive' : row.state === 'failed' ? 'agentFailed' : 'agent'
+            row.state === 'working'
+              ? 'forwardLive'
+              : row.state === 'failed'
+                ? 'forwardFailed'
+                : 'forward'
           }
         />
       }
@@ -322,17 +325,8 @@ function AgentRow({
       last={last}
     >
       <Head type={`tool_call · ${row.handle}`}>
-        <span className="text-fg-subtle">Handed to</span>
-        <button
-          type="button"
-          onClick={() => onOpenWorker(agent)}
-          className="-mx-1 cursor-pointer rounded-sm px-1 font-semibold text-fg underline decoration-line/60 decoration-dotted underline-offset-4 hover:decoration-violet focus-visible:outline-2 focus-visible:outline-blue"
-        >
-          {agent}
-        </button>
-        <span className="font-mono text-[11.5px] tracking-[0.03em] text-fg-subtle">
-          {agentType}
-        </span>
+        <span className="text-fg-subtle">Forwarded to the</span>
+        <WorkerLink onOpenWorker={onOpenWorker} />
         {row.state === 'working' && (
           <Chip tone="violet" live>
             Working
@@ -340,21 +334,31 @@ function AgentRow({
         )}
         {row.state === 'failed' && <Chip tone="red">Failed</Chip>}
       </Head>
-      <p className="mt-0.5 rounded-[6px_16px_16px_16px] border border-violet/20 bg-violet/[0.05] px-3.5 py-2.5 text-[15px] leading-normal text-fg-muted">
-        {message}
-      </p>
-      {note && <p className="mt-1.5 text-[13.5px] text-fg-subtle">{note}</p>}
+      {note && <p className="mt-0.5 text-[13.5px] text-fg-subtle">{note}</p>}
     </Row>
   );
 }
 
-/** What the model read back from a worker, at the point in the log where it read it. */
-function AgentResultRow({
+/** "Worker", as a link that opens the Worker layer. */
+function WorkerLink({ onOpenWorker }: { readonly onOpenWorker: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpenWorker}
+      className="-mx-1 cursor-pointer rounded-sm px-1 font-semibold text-fg underline decoration-line/60 decoration-dotted underline-offset-4 hover:decoration-violet focus-visible:outline-2 focus-visible:outline-blue"
+    >
+      Worker
+    </button>
+  );
+}
+
+/** What the model read back from the worker, at the point in the log where it read it. */
+function ForwardResultRow({
   row,
   first,
   last,
 }: {
-  readonly row: Extract<TimelineRow, { kind: 'agentResult' }>;
+  readonly row: Extract<TimelineRow, { kind: 'forwardResult' }>;
   readonly first: boolean;
   readonly last: boolean;
 }) {
@@ -364,12 +368,9 @@ function AgentResultRow({
     <Row node={<Node kind={failed ? 'resultFailed' : 'result'} />} first={first} last={last}>
       <Head type={`${failed ? 'tool_errored' : 'tool_result'} · ${row.handles.join(' ')}`}>
         <span className={failed ? 'font-semibold text-red' : 'text-fg-subtle'}>
-          {failed ? 'Stopped with an error:' : 'Returned from'}
+          {failed ? 'Stopped with an error' : 'Returned from the'}
         </span>
-        <span className="font-semibold text-fg">{row.agent}</span>
-        <span className="font-mono text-[11.5px] tracking-[0.03em] text-fg-subtle">
-          {row.agentType}
-        </span>
+        {!failed && <span className="font-semibold text-fg">Worker</span>}
         {row.handles.length > 1 && (
           <span className="font-mono text-[11.5px] text-fg-subtle">
             answers {row.handles.join(' + ')}
@@ -432,7 +433,7 @@ function ResultMessages({ messages }: { readonly messages: readonly string[] }) 
   );
 }
 
-/** Everything a failed worker wrote before stopping, as one block: the joined text cannot be split into messages. */
+/** Everything the worker wrote before it stopped, as one block: the joined text cannot be split into messages. */
 function WhatItWrote({ text }: { readonly text: string }) {
   const [open, setOpen] = useState(false);
   return (
@@ -580,9 +581,9 @@ type NodeKind =
   | 'ask'
   | 'invalid'
   | 'faulted'
-  | 'agent'
-  | 'agentLive'
-  | 'agentFailed'
+  | 'forward'
+  | 'forwardLive'
+  | 'forwardFailed'
   | 'result'
   | 'resultFailed'
   | 'progress';
@@ -695,7 +696,7 @@ function Node({
           <OctagonX size={14} strokeWidth={1.8} />
         </span>
       );
-    case 'agent':
+    case 'forward':
       return (
         <span
           aria-hidden
@@ -704,7 +705,7 @@ function Node({
           <SquareTerminal size={14} strokeWidth={1.8} />
         </span>
       );
-    case 'agentLive':
+    case 'forwardLive':
       return (
         <span
           aria-hidden
@@ -713,7 +714,7 @@ function Node({
           <SquareTerminal size={14} strokeWidth={1.8} />
         </span>
       );
-    case 'agentFailed':
+    case 'forwardFailed':
       return (
         <span
           aria-hidden

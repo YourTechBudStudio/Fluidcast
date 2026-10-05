@@ -12,7 +12,7 @@ import {
 import { Session } from '@yourtechbudstudio/fluidcast-harness';
 
 import { sseResponse } from './sse.ts';
-import { workersRoutes } from './workers-routes.ts';
+import { workerRoutes } from './worker-routes.ts';
 
 const encodeMessage = Schema.encodeSync(SubscriptionMessageJson);
 const failureJson = HttpServerResponse.schemaJson(CommandFailure);
@@ -72,5 +72,5 @@ const commands = HttpRouter.add(
   ),
 );
 
-/** The conversation slice's routes. They need the `Session` and `AgentWorkers`. */
-export const conversationRoutes = Layer.mergeAll(events, commands, workersRoutes);
+/** The conversation slice's routes. They need the `Session` and `ConversationWorker`. */
+export const conversationRoutes = Layer.mergeAll(events, commands, workerRoutes);

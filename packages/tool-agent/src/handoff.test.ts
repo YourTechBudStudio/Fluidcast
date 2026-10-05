@@ -5,8 +5,8 @@ import { showTool } from '@yourtechbudstudio/fluidcast-tool-show';
 
 import {
   actions,
-  agentCall,
   errored,
+  forwardCall,
   interrupted,
   result,
   speak,
@@ -21,51 +21,36 @@ import {
   renderHandoff,
   type ConversationEntry,
 } from './handoff.ts';
-import { agentInput } from './schema.ts';
-
-const input = agentInput(['claude']);
-
-/** The hand-off for the call at the cursor, sent to `own` after the call `since`. */
-const handoffFor = (
-  state: Parameters<typeof conversationSince>[0],
-  since: string | undefined,
-  own = 'brainstorm',
-) => {
+/** The hand-off for the forward call at the cursor, after the forward call `since`. */
+const handoffFor = (state: Parameters<typeof conversationSince>[0], since: string | undefined) => {
   const call = state.actions[state.cursor];
   assert.equal(call?.type, 'tool_call');
-  const conversation = conversationSince(state, since, call.handle, own, input);
+  const conversation = conversationSince(state, since, call.handle);
   return {
     conversation,
-    rendered: renderHandoff({
-      agentType: 'claude',
-      agent: own,
-      instruction: String((call.input as { message: string }).message),
-      conversation,
-      isFirstMessage: since === undefined,
-    }),
+    rendered: renderHandoff({ conversation, isFirstMessage: since === undefined }),
   };
 };
 
-const rules = `Interpret the instruction in light of the conversation above and our earlier conversation. Where they disagree, the user's own words take precedence over the instruction.
+const rules = `Respond to the user's latest words. They are the user's own, and take precedence over anything the voice said or showed.
 
-- You are working unattended. A voice agent presents your responses to the user in pieces and relays their reactions back to you.
-- Put any questions for the user in your response. Do not use the AskUserQuestion tool.
-- If anything shown or said to the user misrepresents your work, correct it in your response.
-- Run tasks and shell commands in the foreground, not in the background.
-
-Your response will be presented to the user by voice, in pieces. Include everything needed in it.`;
+- You are working unattended. The user hears and sees your response only through the voice, in pieces, so include everything needed in it.
+- The voice adds nothing of its own. When the user asks to slow down, repeat or re-explain something, do it in your response.
+- If anything said or shown to the user misrepresents your work, correct it in your response.
+- End your response with any questions for the user, as a numbered list under **Questions for you**. Do not use the AskUserQuestion tool.
+- Run tasks and shell commands in the foreground, not in the background.`;
 
 const diagram =
   'sequenceDiagram\n  Client->>Backend: request\n  Backend-->>Client: 503, retry later';
 
 describe('renderHandoff', () => {
-  it("renders the story's example exactly (a later message)", () => {
+  it('renders a later message exactly: what the voice said and showed, then the listener', () => {
     const state = stateOf(
       actions(
         user('Help me design retries for reconnects.'),
-        agentCall('call_1', 'brainstorm', 'Propose retry designs.'),
-        result(['call_1'], 'agent', { agent: 'brainstorm', messages: ['Three options.'] }),
-        speak('Okay, so there are three ways to handle retries here.'),
+        forwardCall('call_1'),
+        result(['call_1'], 'forward_agent', { messages: ['Three options.'] }),
+        speak('Okay, so I found three ways to handle retries here.'),
         speak('Each one puts the decision somewhere else.'),
         toolCall('call_2', 'show', { format: 'mermaid', content: diagram }),
         toolCall('call_3', 'ask', {
@@ -85,19 +70,15 @@ describe('renderHandoff', () => {
         speak('That means the client decides when'),
         interrupted('speech'),
         user("Actually wait, I don't want the client deciding that. The backend should own it."),
-        agentCall(
-          'call_4',
-          'brainstorm',
-          'The user changed their mind: retries should be owned by the backend, not the client. Revise the retry proposal and continue.',
-        ),
+        forwardCall('call_4'),
       ),
     );
     assert.equal(
       handoffFor(state, 'call_1').rendered,
-      `The user responded through the voice conversation since your last message.
+      `Here is the voice conversation since the last message you received from it.
 
 <conversation_since_last_message>
-**Interface agent:** Okay, so there are three ways to handle retries here. Each one puts the decision somewhere else.
+**Voice:** Okay, so I found three ways to handle retries here. Each one puts the decision somewhere else.
 
 **Shown to the user** (mermaid):
 \`\`\`mermaid
@@ -108,40 +89,30 @@ ${diagram}
 Options: Harness-level retry · Client-level retry · No automatic retry
 **Answer:** Client-level retry
 
-**Interface agent:** Nice, client-level it is. That means the client decides when *(interrupted by the user)*
+**Voice:** Nice, client-level it is. That means the client decides when *(interrupted by the user)*
 
 **User:** Actually wait, I don't want the client deciding that. The backend should own it.
 </conversation_since_last_message>
-
-<instruction>
-The user changed their mind: retries should be owned by the backend, not the client. Revise the retry proposal and continue.
-</instruction>
 
 ${rules}`,
     );
   });
 
   it('opens a first message with the conversation so far, or says nothing new was said', () => {
-    const first = stateOf(
-      actions(user('Brainstorm names with me.'), agentCall('call_1', 'names', 'Suggest names.')),
-    );
+    const first = stateOf(actions(user('Brainstorm names with me.'), forwardCall('call_1')));
     assert.equal(
-      handoffFor(first, undefined, 'names').rendered,
-      `The user is talking with you through a voice conversation. Here is that conversation so far.
+      handoffFor(first, undefined).rendered,
+      `The user is talking with you through a voice conversation. A voice speaks to them as you, in the first person: it presents your responses in short spoken pieces, with material shown on their screen, and passes everything they say back to you. Here is that conversation so far.
 
 <conversation_so_far>
 **User:** Brainstorm names with me.
 </conversation_so_far>
 
-<instruction>
-Suggest names.
-</instruction>
-
 ${rules}`,
     );
-    const empty = stateOf(actions(agentCall('call_1', 'names', 'Start.')));
+    const empty = stateOf(actions(forwardCall('call_1')));
     assert.ok(
-      handoffFor(empty, undefined, 'names').rendered.includes(
+      handoffFor(empty, undefined).rendered.includes(
         '<conversation_so_far>\n(Nothing new was said.)\n</conversation_so_far>',
       ),
     );
@@ -150,22 +121,20 @@ ${rules}`,
 
 describe('conversationSince', () => {
   it('takes the whole conversation for a first message and excludes the new call', () => {
-    const state = stateOf(
-      actions(user('One.'), speak('Two.'), agentCall('call_1', 'brainstorm', 'Go.')),
-    );
+    const state = stateOf(actions(user('One.'), speak('Two.'), forwardCall('call_1')));
     assert.deepEqual(handoffFor(state, undefined).conversation, [
       { kind: 'user', text: 'One.' },
-      { kind: 'interfaceAgent', speaker: undefined, text: 'Two.' },
+      { kind: 'voice', speaker: undefined, text: 'Two.' },
     ]);
   });
 
-  it('starts after the last call to this worker and stops at the new call, ignoring what follows it', () => {
+  it('starts after the last forward and stops at the new one, ignoring what follows it', () => {
     const state = stateOf(
       actions(
         user('Before.'),
-        agentCall('call_1', 'brainstorm', 'First.'),
+        forwardCall('call_1'),
         user('Between.'),
-        agentCall('call_2', 'brainstorm', 'Second.'),
+        forwardCall('call_2'),
         speak('After the call.'),
       ),
       { cursor: 3 },
@@ -175,80 +144,53 @@ describe('conversationSince', () => {
     ]);
   });
 
-  it("excludes this worker's own results and includes other workers' and other tools' outcomes", () => {
+  it("excludes forward's own results and errors, and includes other tools' outcomes", () => {
     const state = stateOf(
       actions(
-        agentCall('call_1', 'brainstorm', 'First.'),
-        agentCall('call_2', 'research', 'Look it up.'),
-        agentCall('call_3', 'review', 'Review it.'),
-        result(['call_1'], 'agent', { agent: 'brainstorm', messages: ['Mine.'] }),
-        result(['call_2'], 'agent', { agent: 'research', messages: ['Found A.', 'Found B.'] }),
-        errored(
-          ['call_3'],
-          'agent',
-          'The worker "review" stopped with an error (error_max_turns).',
-        ),
-        toolCall('call_4', 'note', { text: 'x' }),
-        result(['call_4'], 'note', { saved: true }),
-        toolCall('call_5', 'note', { text: 'y' }),
-        errored(['call_5'], 'note', 'Disk full.'),
-        agentCall('call_6', 'brainstorm', 'Continue.'),
+        forwardCall('call_1'),
+        result(['call_1'], 'forward_agent', { messages: ['Mine.'] }),
+        forwardCall('call_2'),
+        errored(['call_2'], 'forward_agent', 'The work stopped with an error (error_max_turns).'),
+        toolCall('call_3', 'note', { text: 'x' }),
+        result(['call_3'], 'note', { saved: true }),
+        toolCall('call_4', 'note', { text: 'y' }),
+        errored(['call_4'], 'note', 'Disk full.'),
+        forwardCall('call_5'),
       ),
     );
     const { conversation } = handoffFor(state, 'call_1');
     assert.deepEqual(conversation, [
-      {
-        kind: 'toolOutcome',
-        tool: 'agent',
-        agent: 'research',
-        outcome: 'result',
-        text: 'Found A.\n\nFound B.',
-      },
-      {
-        kind: 'toolOutcome',
-        tool: 'agent',
-        agent: 'review',
-        outcome: 'error',
-        text: 'The worker "review" stopped with an error (error_max_turns).',
-      },
       { kind: 'toolOutcome', tool: 'note', outcome: 'result', text: '{"saved":true}' },
       { kind: 'toolOutcome', tool: 'note', outcome: 'error', text: 'Disk full.' },
     ]);
     assert.equal(
       renderConversation(conversation),
-      [
-        '**Result from agent "research":**\nFound A.\n\nFound B.',
-        '**Error from agent "review":**\nThe worker "review" stopped with an error (error_max_turns).',
-        '**Result from `note`:**\n{"saved":true}',
-        '**Error from `note`:**\nDisk full.',
-      ].join('\n\n'),
+      ['**Result from `note`:**\n{"saved":true}', '**Error from `note`:**\nDisk full.'].join(
+        '\n\n',
+      ),
     );
   });
 
-  it('excludes own results that answer several calls, including one before the window', () => {
+  it('excludes a result that answers several forwards, including one before the window', () => {
     const state = stateOf(
       actions(
-        agentCall('call_1', 'brainstorm', 'First.'),
-        agentCall('call_2', 'brainstorm', 'Steer.'),
-        result(['call_1', 'call_2'], 'agent', { agent: 'brainstorm', messages: ['Done.'] }),
-        agentCall('call_3', 'brainstorm', 'Next.'),
+        forwardCall('call_1'),
+        forwardCall('call_2'),
+        result(['call_1', 'call_2'], 'forward_agent', { messages: ['Done.'] }),
+        forwardCall('call_3'),
       ),
     );
     assert.deepEqual(handoffFor(state, 'call_2').conversation, []);
   });
 
-  it("leaves out invalid Show, Ask and agent calls and their errors (the interface model's mistakes)", () => {
+  it("leaves out invalid Show and Ask calls and their errors (the voice model's mistakes)", () => {
     const state = stateOf(
       actions(
         toolCall('call_1', 'show', { format: 'pdf', content: 'x' }),
         errored(['call_1'], 'show', 'Expected a format.'),
         toolCall('call_2', 'ask', { kind: 'choice', question: 'Q?' }),
         errored(['call_2'], 'ask', 'Expected options.'),
-        agentCall('call_3', 'Bad ID', 'Go.'),
-        errored(['call_3'], 'agent', 'Expected an id.'),
-        agentCall('call_4', 'research', 'Go.', 'codex'),
-        errored(['call_4'], 'agent', 'Expected claude.'),
-        agentCall('call_5', 'brainstorm', 'Go.'),
+        forwardCall('call_3'),
       ),
     );
     assert.deepEqual(handoffFor(state, undefined).conversation, []);
@@ -279,7 +221,7 @@ describe('conversationSince', () => {
           actions(
             show,
             errored(['call_1'], 'show', 'The show could not be rendered: bad arrow'),
-            agentCall('call_2', 'brainstorm', 'Go.'),
+            forwardCall('call_2'),
           ),
         ),
       );
@@ -292,7 +234,7 @@ describe('conversationSince', () => {
 
     it('is failed from a pending error', () => {
       const entry = statusOf(
-        stateOf(actions(show, agentCall('call_2', 'brainstorm', 'Go.')), {
+        stateOf(actions(show, forwardCall('call_2')), {
           pendingResults: [
             errored(['call_1'], 'show', 'The show could not be rendered: x') as never,
           ],
@@ -304,7 +246,7 @@ describe('conversationSince', () => {
 
     it('is awaiting while its execution is open', () => {
       const entry = statusOf(
-        stateOf(actions(show, agentCall('call_2', 'brainstorm', 'Go.')), {
+        stateOf(actions(show, forwardCall('call_2')), {
           executions: [{ handles: ['call_1'], tool: 'show' }],
         }),
       );
@@ -316,7 +258,7 @@ describe('conversationSince', () => {
     });
 
     it('is rendered otherwise', () => {
-      const entry = statusOf(stateOf(actions(show, agentCall('call_2', 'brainstorm', 'Go.'))));
+      const entry = statusOf(stateOf(actions(show, forwardCall('call_2'))));
       assert.equal(entry.status, 'rendered');
       assert.equal(
         renderEntry(entry).split('\n')[0],
@@ -343,7 +285,7 @@ describe('conversationSince', () => {
           answer: { kind: 'multi', choices: ['A', 'C'], text: ' and maybe B ' },
         }),
         toolCall('call_3', 'ask', { kind: 'text', question: 'Anything else?' }),
-        agentCall('call_4', 'brainstorm', 'Go.'),
+        forwardCall('call_4'),
       ),
     );
     assert.equal(
@@ -359,10 +301,10 @@ describe('conversationSince', () => {
   it('labels speakers only with several, splits paragraphs by speaker, and ignores omitted actions', () => {
     const log = actions(
       speak('Hello.', 'host'),
-      { type: 'tool_context', tool: 'agent', text: 'Workers:' },
+      { type: 'tool_context', tool: 'forward_agent', text: 'The agent is working.' },
       speak('Welcome.', 'host'),
       speak('Hi.', 'guest'),
-      agentCall('call_1', 'brainstorm', 'Go.'),
+      forwardCall('call_1'),
     );
     const speakers = [
       { id: 'host', name: 'Ada' },
@@ -370,7 +312,7 @@ describe('conversationSince', () => {
     ];
     assert.equal(
       renderConversation(handoffFor(stateOf(log, { speakers }), undefined).conversation),
-      '**Interface agent (Ada):** Hello. Welcome.\n\n**Interface agent (Grace):** Hi.',
+      '**Voice (Ada):** Hello. Welcome.\n\n**Voice (Grace):** Hi.',
     );
   });
 

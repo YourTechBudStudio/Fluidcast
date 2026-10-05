@@ -139,7 +139,7 @@ export const ToolContext = Schema.Struct({
 });
 export type ToolContext = typeof ToolContext.Type;
 
-/** Every conversation fact: user-, model-, and runtime-authored actions in one flat union (ADR 0006). */
+/** Every conversation fact: user-, model-, and runtime-authored actions in one flat union (ADR 0002). */
 export const Action = Schema.Union([
   UserMessage,
   Speak,

@@ -18,25 +18,23 @@ import { uuidv7, type Action } from '@yourtechbudstudio/fluidcast-core/actions';
 import { ToolError, ToolFault } from '@yourtechbudstudio/fluidcast-harness';
 import { ExecutionId } from '@yourtechbudstudio/fluidcast-harness/protocol';
 
-import { agentTool, type AgentToolOptions } from './agent-tool.ts';
 import {
   actions,
-  agentCall,
   eventually,
   fakeModel,
   fakeWorkerType,
+  forwardCall,
   stateOf,
   user,
   type FakeConnection,
 } from './fixtures.test.ts';
+import { forwardAgentTool, type ForwardAgentToolOptions } from './forward-tool.ts';
 import type { Handoff } from './handoff.ts';
 import {
-  agentErrorMessage,
-  AgentSetupError,
-  WorkerNotFound,
+  forwardErrorMessage,
+  WorkerSetupError,
   type TranscriptEntry,
   type TranscriptMessage,
-  type WorkerType,
 } from './index.ts';
 
 const text = (value: string, parentToolUseId: string | null = null): TranscriptEntry => ({
@@ -53,25 +51,25 @@ const entry = (value: TranscriptEntry) => ({ _tag: 'Entry', entry: value }) as c
 const consumed = (...ids: ReadonlyArray<string>) => ({ _tag: 'Consumed', ids }) as const;
 const settled = { _tag: 'Settled' } as const;
 
-type Options = Omit<AgentToolOptions<{ claude: WorkerType }>, 'types'>;
+type Options = Omit<ForwardAgentToolOptions, 'worker'>;
 
-/** An Agent tool over a fake worker type, driven the way the Harness drives it. */
+/** A Forward tool over a fake worker type, driven the way the Harness drives it. */
 const setup = (options: Options & { readonly fake?: Parameters<typeof fakeWorkerType>[0] } = {}) =>
   Effect.gen(function* () {
     const fake = yield* fakeWorkerType(options.fake);
     const model = yield* fakeModel;
-    const { tool, workers } = yield* agentTool({ types: { claude: fake.type }, ...options }).pipe(
+    const { tool, worker } = yield* forwardAgentTool({ worker: fake.type, ...options }).pipe(
       Effect.provideService(LanguageModel.LanguageModel, model),
     );
     const log = yield* Ref.make<ReadonlyArray<Action>>([]);
     const progress = yield* Ref.make<ReadonlyArray<string>>([]);
 
     /** A reached call: `assign`, then `run` when it opened a new execution. */
-    const send = (handle: string, agent: string, message: string, agentType = 'claude') =>
+    const send = (handle: string) =>
       Effect.gen(function* () {
-        const [call] = actions(agentCall(handle, agent, message, agentType));
+        const [call] = actions(forwardCall(handle));
         const state = stateOf(yield* Ref.updateAndGet(log, (all) => [...all, call!]));
-        const input = { agentType, agent, message };
+        const input = {};
         const proposed = ExecutionId.make(uuidv7());
         const executionId = yield* tool.assign!(input, { handle, state, executionId: proposed });
         if (executionId !== proposed) return { executionId, joined: true as const };
@@ -100,14 +98,11 @@ const setup = (options: Options & { readonly fake?: Parameters<typeof fakeWorker
         Effect.map((all) => all.map((message) => message.id)),
       );
 
-    const snapshot = (agent: string) =>
-      Effect.flatMap(workers.transcript(agent), (stream) =>
-        Stream.runHead(stream).pipe(Effect.map(Option.getOrThrow)),
-      );
+    const snapshot = Stream.runHead(worker.transcript).pipe(Effect.map(Option.getOrThrow));
 
     return {
       tool,
-      workers,
+      worker,
       fake,
       send,
       connection,
@@ -122,40 +117,49 @@ const setup = (options: Options & { readonly fake?: Parameters<typeof fakeWorker
 const run = <A, E>(effect: Effect.Effect<A, E, ScopeType.Scope>) =>
   Effect.runPromise(Effect.scoped(effect));
 
-/** Whether the fiber has not completed yet, after letting the pool process what was pushed. */
+/** Whether the fiber has not completed yet, after letting the session process what was pushed. */
 const stillRunning = (fiber: Fiber.Fiber<unknown, unknown>) =>
   Effect.gen(function* () {
     yield* Effect.sleep('20 millis');
     return fiber.pollUnsafe() === undefined;
   });
 
-describe('agent pool', () => {
-  it('creates an unknown worker, lists it working, sends the hand-off and delivers its text', () =>
+const working = 'The agent is working.';
+
+describe('worker session', () => {
+  it('starts idle, sends the first hand-off, reports it working and delivers its text', () =>
     run(
       Effect.gen(function* () {
         const ctx = yield* setup();
-        assert.equal(yield* ctx.context, undefined);
-        const sent = yield* ctx.send('call_1', 'brainstorm', 'Suggest names.');
+        assert.equal(yield* ctx.context, undefined, 'an idle worker adds no context');
+        const [idle] = yield* Stream.runHead(ctx.worker.status).pipe(Effect.map(Option.toArray));
+        assert.deepEqual(idle, {
+          _tag: 'WorkerSummary',
+          status: 'idle',
+          sessionId: ctx.worker.sessionId,
+        });
+        assert.equal(
+          (yield* ctx.fake.connections).length,
+          0,
+          'nothing is spawned before a forward',
+        );
+
+        const sent = yield* ctx.send('call_1');
         assert.ok(!sent.joined);
-        assert.equal(yield* ctx.context, 'Workers:\n- brainstorm (claude): working');
+        assert.equal(yield* ctx.context, working);
 
         const open = yield* ctx.connection();
-        assert.equal(open.worker.resume, false);
-        assert.equal(open.worker.cwd, '/work');
+        assert.deepEqual(open.worker, {
+          sessionId: ctx.worker.sessionId,
+          resume: false,
+          cwd: '/work',
+        });
         const [message] = yield* eventually(open.received, (all) => all.length === 1);
         assert.ok(
           message!.text.startsWith('The user is talking with you through a voice conversation.'),
         );
-
-        const [summary] = yield* Stream.runHead(ctx.workers.list).pipe(
-          Effect.map(Option.getOrThrow),
-        );
-        assert.deepEqual(summary, {
-          agent: 'brainstorm',
-          agentType: 'claude',
-          status: 'working',
-          sessionId: open.worker.sessionId,
-        });
+        const [summary] = yield* Stream.runHead(ctx.worker.status).pipe(Effect.map(Option.toArray));
+        assert.equal(summary?.status, 'working');
 
         yield* open.emit(
           consumed(message!.id),
@@ -173,106 +177,58 @@ describe('agent pool', () => {
           entry(turnEnd()),
           settled,
         );
-        const result = yield* Fiber.join(sent.fiber);
-        assert.deepEqual(result, { agent: 'brainstorm', messages: ['One.', 'Two.'] });
-        assert.equal(yield* ctx.context, 'Workers:\n- brainstorm (claude): done');
+        assert.deepEqual(yield* Fiber.join(sent.fiber), { messages: ['One.', 'Two.'] });
+        assert.equal(yield* ctx.context, undefined);
       }),
     ));
 
-  it('refuses a known id with another type as a ToolError, sending nothing', () =>
-    run(
-      Effect.gen(function* () {
-        const calls = yield* Ref.make(0);
-        const second: WorkerType = {
-          ...(yield* fakeWorkerType()).type,
-          composeMessage: (prompt) => prompt,
-        };
-        const fake = yield* fakeWorkerType();
-        const { tool } = yield* agentTool({
-          types: { claude: fake.type, codex: second },
-          hook: (handoff) => {
-            Effect.runSync(Ref.update(calls, (count) => count + 1));
-            return { prompt: handoff.rendered };
-          },
-        }).pipe(Effect.provideService(LanguageModel.LanguageModel, yield* fakeModel));
-        const reach = (handle: string, agentType: string) =>
-          Effect.gen(function* () {
-            const executionId = ExecutionId.make(uuidv7());
-            const input = { agentType, agent: 'brainstorm', message: 'Go.' };
-            const state = stateOf(actions(agentCall(handle, 'brainstorm', 'Go.', agentType)));
-            assert.equal(yield* tool.assign!(input, { handle, state, executionId }), executionId);
-            return yield* Effect.exit(
-              tool
-                .run(input, {
-                  handle,
-                  executionId,
-                  awaitCommand: Effect.never,
-                  progress: () => Effect.succeed(false),
-                })
-                .pipe(Effect.timeout('20 millis')),
-            );
-          });
-        yield* reach('call_1', 'claude');
-        const refused = yield* reach('call_2', 'codex');
-        assert.deepEqual(
-          refused,
-          Exit.fail(
-            new ToolError({
-              message:
-                'The agent "brainstorm" is a claude agent, not a codex agent. Use another id for a new codex agent.',
-            }),
-          ),
-        );
-        assert.equal(yield* Ref.get(calls), 1);
-        const [open] = yield* eventually(fake.connections, (all) => all.length === 1);
-        assert.equal((yield* open!.received).length, 1);
-      }),
-    ));
-
-  it('joins a busy worker and delivers one result once every message sent was consumed', () =>
+  it('joins the busy worker and delivers one result once every message sent was consumed', () =>
     run(
       Effect.gen(function* () {
         const ctx = yield* setup();
-        const first = yield* ctx.send('call_1', 'brainstorm', 'Start.');
+        const first = yield* ctx.send('call_1');
         assert.ok(!first.joined);
         const open = yield* ctx.connection();
-        const second = yield* ctx.send('call_2', 'brainstorm', 'Steer.');
+        const second = yield* ctx.send('call_2');
         assert.deepEqual(second, { executionId: first.executionId, joined: true });
         const [one, two] = yield* ctx.ids(open, 2);
-        assert.ok((yield* open.received)[1]!.text.startsWith('The user responded'));
+        assert.ok(
+          (yield* open.received)[1]!.text.startsWith(
+            'Here is the voice conversation since the last message you received from it.',
+          ),
+        );
 
         // A pure-text turn took in only the first message: its result is superseded.
         yield* open.emit(consumed(one!), entry(text('First answer.')), entry(turnEnd()), settled);
         assert.ok(yield* stillRunning(first.fiber));
-        assert.equal(yield* ctx.context, 'Workers:\n- brainstorm (claude): working');
+        assert.equal(yield* ctx.context, working);
 
         yield* open.emit(consumed(two!), entry(text('Steered answer.')), entry(turnEnd()), settled);
         assert.deepEqual(yield* Fiber.join(first.fiber), {
-          agent: 'brainstorm',
           messages: ['First answer.', 'Steered answer.'],
         });
         // One reader for the worker's whole life.
-        yield* ctx.send('call_3', 'brainstorm', 'Again.');
+        yield* ctx.send('call_3');
         yield* ctx.ids(open, 3);
         assert.equal((yield* ctx.fake.connections).length, 1);
       }),
     ));
 
-  it('carries the rest of an unsolicited automatic turn into the next period, and supersedes its result', () =>
+  it('carries an unsolicited automatic turn into the next period, and supersedes its result', () =>
     run(
       Effect.gen(function* () {
         const ctx = yield* setup();
-        const first = yield* ctx.send('call_1', 'brainstorm', 'Start.');
+        const first = yield* ctx.send('call_1');
         const open = yield* ctx.connection();
         const [one] = yield* ctx.ids(open, 1);
         yield* open.emit(consumed(one!), entry(text('Done.')), entry(turnEnd()), settled);
         yield* Fiber.join(first.fiber);
 
-        // An automatic turn starts after background work: text A has no period to join.
+        // An automatic turn starts after background work: text A has no period to join yet.
         yield* open.emit(entry(text('A')));
-        yield* eventually(ctx.context, (value) => value?.endsWith('working') === true);
+        yield* eventually(ctx.context, (value) => value === working);
 
-        const next = yield* ctx.send('call_2', 'brainstorm', 'Next.');
+        const next = yield* ctx.send('call_2');
         assert.ok(!next.joined);
         const [, two] = yield* ctx.ids(open, 2);
         // The automatic turn goes on (B) and ends before the new message is taken in.
@@ -280,10 +236,33 @@ describe('agent pool', () => {
         assert.ok(yield* stillRunning(next.fiber));
 
         yield* open.emit(consumed(two!), entry(text('C')), entry(turnEnd()), settled);
-        assert.deepEqual(yield* Fiber.join(next.fiber), {
-          agent: 'brainstorm',
-          messages: ['B', 'C'],
-        });
+        assert.deepEqual(yield* Fiber.join(next.fiber), { messages: ['A', 'B', 'C'] });
+      }),
+    ));
+
+  it('delivers a completed automatic turn between forwards in the next result, exactly once', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* setup();
+        const first = yield* ctx.send('call_1');
+        const open = yield* ctx.connection();
+        const [one] = yield* ctx.ids(open, 1);
+        yield* open.emit(consumed(one!), entry(text('Done.')), entry(turnEnd()), settled);
+        assert.deepEqual(yield* Fiber.join(first.fiber), { messages: ['Done.'] });
+
+        // A whole automatic turn, ended before the next forward.
+        yield* open.emit(entry(text('Update.')), entry(turnEnd()), settled);
+        yield* eventually(ctx.context, (value) => value !== working);
+
+        const second = yield* ctx.send('call_2');
+        const [, two] = yield* ctx.ids(open, 2);
+        yield* open.emit(consumed(two!), entry(text('Reply.')), entry(turnEnd()), settled);
+        assert.deepEqual(yield* Fiber.join(second.fiber), { messages: ['Update.', 'Reply.'] });
+
+        const third = yield* ctx.send('call_3');
+        const [, , three] = yield* ctx.ids(open, 3);
+        yield* open.emit(consumed(three!), entry(text('Again.')), entry(turnEnd()), settled);
+        assert.deepEqual(yield* Fiber.join(third.fiber), { messages: ['Again.'] });
       }),
     ));
 
@@ -291,22 +270,23 @@ describe('agent pool', () => {
     run(
       Effect.gen(function* () {
         const ctx = yield* setup();
-        const first = yield* ctx.send('call_0', 'brainstorm', 'Start.');
+        const first = yield* ctx.send('call_0');
         const open = yield* ctx.connection();
         const [id] = yield* ctx.ids(open, 1);
         yield* open.emit(consumed(id!), entry(turnEnd()), settled);
         yield* Fiber.join(first.fiber);
 
+        let seen = 0;
         for (let round = 1; round <= 30; round++) {
-          // Automatic-turn output and a new message race: whichever the pool decides first
-          // must come first in the transcript.
+          // Automatic-turn output and a new message race: whichever the session decides first
+          // must come first in the transcript, and the result reads the texts in that order.
           const [, sent] = yield* Effect.all(
             [
               open.emit(entry(text(`late ${round}`))),
               // A varying head start for the worker's output, so rounds land on both sides.
               Effect.andThen(
                 Effect.forEach(Array.from({ length: round % 8 }), () => Effect.yieldNow),
-                ctx.send(`call_${round}`, 'brainstorm', `Round ${round}.`),
+                ctx.send(`call_${round}`),
               ),
             ],
             { concurrency: 'unbounded' },
@@ -321,23 +301,25 @@ describe('agent pool', () => {
           );
           const result = yield* Fiber.join(sent.fiber);
 
-          const snapshot = yield* ctx.snapshot('brainstorm');
+          const snapshot = yield* ctx.snapshot;
           assert.equal(snapshot._tag, 'TranscriptSnapshot');
           const entries = snapshot._tag === 'TranscriptSnapshot' ? snapshot.entries : [];
-          const prompt = entries.findLastIndex((item) => item._tag === 'prompt');
-          const afterPrompt = entries
-            .slice(prompt + 1)
+          const since = entries
+            .slice(seen)
             .flatMap((item) => (item._tag === 'text' ? [item.text] : []));
-          assert.deepEqual(result.messages, afterPrompt, `round ${round}`);
+          // `late` joins this round's result on either side of the hand-off, exactly once.
+          assert.deepEqual(result.messages, since, `round ${round}`);
+          assert.deepEqual([...since].sort(), [`late ${round}`, `reply ${round}`]);
+          seen = entries.length;
         }
       }),
     ));
 
-  it('turns an error turn end into a ToolError with what the worker wrote, and lists it failed', () =>
+  it('turns an error turn end into a ToolError with what the worker wrote, and reports it failed', () =>
     run(
       Effect.gen(function* () {
         const ctx = yield* setup();
-        const sent = yield* ctx.send('call_1', 'brainstorm', 'Start.');
+        const sent = yield* ctx.send('call_1');
         const open = yield* ctx.connection();
         const [one] = yield* ctx.ids(open, 1);
         yield* open.emit(
@@ -350,15 +332,11 @@ describe('agent pool', () => {
           yield* Effect.exit(Fiber.join(sent.fiber)),
           Exit.fail(
             new ToolError({
-              message: agentErrorMessage({
-                agent: 'brainstorm',
-                outcome: 'error_max_turns',
-                messages: ['Partial.'],
-              }),
+              message: forwardErrorMessage({ outcome: 'error_max_turns', messages: ['Partial.'] }),
             }),
           ),
         );
-        assert.equal(yield* ctx.context, 'Workers:\n- brainstorm (claude): failed');
+        assert.equal(yield* ctx.context, "The agent's last turn stopped with an error.");
       }),
     ));
 
@@ -366,7 +344,7 @@ describe('agent pool', () => {
     run(
       Effect.gen(function* () {
         const ctx = yield* setup();
-        const sent = yield* ctx.send('call_1', 'brainstorm', 'Start.');
+        const sent = yield* ctx.send('call_1');
         const open = yield* ctx.connection();
         const [one] = yield* ctx.ids(open, 1);
         yield* open.emit(
@@ -384,7 +362,7 @@ describe('agent pool', () => {
           Exit.fail(
             new ToolError({
               message:
-                'The worker "brainstorm" stopped with an error (usage_limit). The usage limit resets at 2026-09-21T14:13:20.000Z.',
+                'The work stopped with an error (usage_limit). The usage limit resets at 2026-09-21T14:13:20.000Z.',
             }),
           ),
         );
@@ -396,15 +374,15 @@ describe('agent pool', () => {
       Effect.gen(function* () {
         const ctx = yield* setup();
         const faults = yield* Effect.forkChild(Stream.runCollect(ctx.tool.faults!));
-        const sent = yield* ctx.send('call_1', 'brainstorm', 'Start.');
+        const sent = yield* ctx.send('call_1');
         const open = yield* ctx.connection();
         yield* ctx.ids(open, 1);
         const fault = new ToolFault({ reason: 'ClaudeExited' });
         yield* open.fail(fault);
         assert.deepEqual(yield* Effect.exit(Fiber.join(sent.fiber)), Exit.fail(fault));
-        assert.equal(yield* ctx.context, 'Workers:\n- brainstorm (claude): failed');
+        assert.equal(yield* ctx.context, "The agent's last turn stopped with an error.");
 
-        const again = yield* ctx.send('call_2', 'brainstorm', 'Retry.');
+        const again = yield* ctx.send('call_2');
         assert.ok(!again.joined);
         assert.deepEqual(yield* Effect.exit(Fiber.join(again.fiber)), Exit.fail(fault));
         assert.equal((yield* open.received).length, 1);
@@ -412,30 +390,33 @@ describe('agent pool', () => {
       }),
     ));
 
-  it('reports an idle connection failure or end through faults, exactly once', () =>
-    run(
-      Effect.gen(function* () {
-        const ctx = yield* setup();
-        const faults = yield* Effect.forkChild(
-          Stream.runCollect(ctx.tool.faults!.pipe(Stream.take(2))),
-        );
-        for (const agent of ['one', 'two']) {
-          const sent = yield* ctx.send(`call_${agent}`, agent, 'Start.');
-          const open = yield* ctx.connection(agent === 'one' ? 0 : 1);
+  for (const [how, fault] of [
+    ['fails', new ToolFault({ reason: 'ClaudeExited' })],
+    ['ends', new ToolFault({ reason: 'WorkerEnded' })],
+  ] as const) {
+    it(`reports an idle connection that ${how} through faults, exactly once`, () =>
+      run(
+        Effect.gen(function* () {
+          const ctx = yield* setup();
+          const faults = yield* Effect.forkChild(
+            Stream.runCollect(ctx.tool.faults!.pipe(Stream.take(1))),
+          );
+          const sent = yield* ctx.send('call_1');
+          const open = yield* ctx.connection();
           const [id] = yield* ctx.ids(open, 1);
           yield* open.emit(consumed(id!), entry(turnEnd()), settled);
           yield* Fiber.join(sent.fiber);
-          if (agent === 'one') yield* open.fail(new ToolFault({ reason: 'ClaudeExited' }));
+          if (how === 'fails') yield* open.fail(fault);
           else yield* open.end;
-        }
-        assert.deepEqual(yield* Fiber.join(faults), [
-          new ToolFault({ reason: 'ClaudeExited' }),
-          new ToolFault({ reason: 'WorkerEnded' }),
-        ]);
-      }),
-    ));
+          assert.deepEqual(yield* Fiber.join(faults), [fault]);
+          const more = yield* Effect.forkChild(Stream.runCollect(ctx.tool.faults!));
+          assert.ok(yield* stillRunning(more), 'reported once');
+          yield* Fiber.interrupt(more);
+        }),
+      ));
+  }
 
-  it('gives the hook the pieces and sends what the worker type composes from its modifiers', () =>
+  it('gives the hook the conversation and sends what the worker type composes from its modifiers', () =>
     run(
       Effect.gen(function* () {
         const seen: Array<Handoff> = [];
@@ -443,7 +424,7 @@ describe('agent pool', () => {
           hook: (handoff) => {
             seen.push(handoff);
             return {
-              prompt: `P:${handoff.instruction}`,
+              prompt: `P:${handoff.conversation.length}`,
               modifiers: [{ name: 'a' }, { name: 'b' }],
             };
           },
@@ -453,45 +434,28 @@ describe('agent pool', () => {
           },
         });
         yield* Ref.set(ctx.log, actions(user('Hello.')));
-        yield* ctx.send('call_1', 'brainstorm', 'Start.');
-        yield* ctx.send('call_2', 'brainstorm', 'Steer.');
+        yield* ctx.send('call_1');
+        yield* Ref.update(ctx.log, (all) => [...all, ...actions(user('Faster, please.'))]);
+        yield* ctx.send('call_2');
         const open = yield* ctx.connection();
         const received = yield* eventually(open.received, (all) => all.length === 2);
         assert.deepEqual(
           received.map((message) => message.text),
-          ['/a /b P:Start.', '/a /b P:Steer.'],
+          ['/a /b P:1', '/a /b P:1'],
         );
         assert.deepEqual(
-          seen.map(({ agentType, agent, instruction, conversation, isFirstMessage }) => ({
-            agentType,
-            agent,
-            instruction,
-            conversation,
-            isFirstMessage,
-          })),
+          seen.map(({ conversation, isFirstMessage }) => ({ conversation, isFirstMessage })),
           [
-            {
-              agentType: 'claude',
-              agent: 'brainstorm',
-              instruction: 'Start.',
-              conversation: [{ kind: 'user', text: 'Hello.' }],
-              isFirstMessage: true,
-            },
-            {
-              agentType: 'claude',
-              agent: 'brainstorm',
-              instruction: 'Steer.',
-              conversation: [],
-              isFirstMessage: false,
-            },
+            { conversation: [{ kind: 'user', text: 'Hello.' }], isFirstMessage: true },
+            { conversation: [{ kind: 'user', text: 'Faster, please.' }], isFirstMessage: false },
           ],
         );
         assert.ok(seen[0]!.rendered.includes('**User:** Hello.'));
         // The transcript shows exactly what was sent, before any reply.
-        const snapshot = yield* ctx.snapshot('brainstorm');
+        const snapshot = yield* ctx.snapshot;
         assert.deepEqual(snapshot._tag === 'TranscriptSnapshot' && snapshot.entries, [
-          { _tag: 'prompt', parentToolUseId: null, source: 'fluidcast', text: '/a /b P:Start.' },
-          { _tag: 'prompt', parentToolUseId: null, source: 'fluidcast', text: '/a /b P:Steer.' },
+          { _tag: 'prompt', parentToolUseId: null, source: 'fluidcast', text: '/a /b P:1' },
+          { _tag: 'prompt', parentToolUseId: null, source: 'fluidcast', text: '/a /b P:1' },
         ]);
       }),
     ));
@@ -506,27 +470,25 @@ describe('agent pool', () => {
             },
           },
         });
-        const exit = yield* Effect.exit(ctx.send('call_1', 'brainstorm', 'Start.'));
+        const exit = yield* Effect.exit(ctx.send('call_1'));
         assert.ok(Exit.isFailure(exit) && Exit.hasDies(exit));
         assert.equal(yield* ctx.context, undefined);
+        assert.equal((yield* ctx.fake.connections).length, 0);
       }),
     ));
 
-  it('streams a transcript as a snapshot then appends, and rejects an unknown worker', () =>
+  it('streams the transcript as a snapshot then appends', () =>
     run(
       Effect.gen(function* () {
         const ctx = yield* setup();
-        assert.deepEqual(
-          yield* Effect.flip(ctx.workers.transcript('nobody')),
-          new WorkerNotFound({ agent: 'nobody' }),
-        );
-        yield* ctx.send('call_1', 'brainstorm', 'Start.');
+        yield* ctx.send('call_1');
         const open = yield* ctx.connection();
         yield* ctx.ids(open, 1);
-        const stream = yield* ctx.workers.transcript('brainstorm');
         const received = yield* Ref.make<ReadonlyArray<TranscriptMessage>>([]);
         yield* Effect.forkChild(
-          Stream.runForEach(stream, (message) => Ref.update(received, (all) => [...all, message])),
+          Stream.runForEach(ctx.worker.transcript, (message) =>
+            Ref.update(received, (all) => [...all, message]),
+          ),
         );
         yield* eventually(Ref.get(received), (all) => all.length === 1);
         yield* open.emit(entry(text('One.')));
@@ -550,7 +512,7 @@ describe('agent pool', () => {
     run(
       Effect.gen(function* () {
         const ctx = yield* setup({ progress: { schedule: Schedule.spaced('5 millis') } });
-        const sent = yield* ctx.send('call_1', 'brainstorm', 'Start.');
+        const sent = yield* ctx.send('call_1');
         const open = yield* ctx.connection();
         const [id] = yield* ctx.ids(open, 1);
         yield* Effect.sleep('20 millis');
@@ -566,13 +528,13 @@ describe('agent pool', () => {
       }),
     ));
 
-  it('closes connections on teardown without recording a fault', () =>
+  it('closes the connection on teardown without recording a fault', () =>
     Effect.runPromise(
       Effect.gen(function* () {
         const scope = yield* Scope.make();
         const ctx = yield* setup().pipe(Scope.provide(scope));
         const faults = yield* Effect.forkChild(Stream.runCollect(ctx.tool.faults!));
-        yield* ctx.send('call_1', 'brainstorm', 'Start.').pipe(Scope.provide(scope));
+        yield* ctx.send('call_1').pipe(Scope.provide(scope));
         const open = yield* ctx.connection();
         yield* ctx.ids(open, 1);
         yield* Scope.close(scope, Exit.void);
@@ -583,7 +545,7 @@ describe('agent pool', () => {
     ));
 });
 
-describe('agent pool preload', () => {
+describe('worker session preload', () => {
   const history: ReadonlyArray<TranscriptEntry> = [
     { _tag: 'prompt', parentToolUseId: null, source: 'earlier', text: 'Earlier.' },
     text('Earlier answer.'),
@@ -593,20 +555,16 @@ describe('agent pool preload', () => {
   it('attaches a session: its history, directory and a resumed first message', () =>
     run(
       Effect.gen(function* () {
-        const ctx = yield* setup({
-          fake: { sessions },
-          preload: [{ type: 'claude', agent: 'brainstorm', sessionId: 'session-1' }],
-        });
-        assert.equal(yield* ctx.context, 'Workers:\n- brainstorm (claude): done');
-        const snapshot = yield* ctx.snapshot('brainstorm');
-        assert.deepEqual(snapshot, {
+        const ctx = yield* setup({ fake: { sessions }, session: { sessionId: 'session-1' } });
+        assert.equal(ctx.worker.sessionId, 'session-1');
+        assert.equal(yield* ctx.context, undefined);
+        assert.deepEqual(yield* ctx.snapshot, {
           _tag: 'TranscriptSnapshot',
-          agent: 'brainstorm',
           sessionId: 'session-1',
           entries: history,
         });
         assert.equal((yield* ctx.fake.connections).length, 0, 'nothing is spawned');
-        yield* ctx.send('call_1', 'brainstorm', 'Continue.');
+        yield* ctx.send('call_1');
         const open = yield* ctx.connection();
         assert.deepEqual(open.worker, { sessionId: 'session-1', resume: true, cwd: '/elsewhere' });
         const [message] = yield* eventually(open.received, (all) => all.length === 1);
@@ -616,24 +574,14 @@ describe('agent pool preload', () => {
       }),
     ));
 
-  const setupError = (preload: Options['preload']) =>
-    Effect.runPromise(Effect.scoped(Effect.flip(setup({ fake: { sessions }, preload }))));
-
-  it('rejects an invalid id, a duplicate id and an unknown session', async () => {
+  it('fails setup for a session it cannot attach', async () => {
     assert.deepEqual(
-      await setupError([{ type: 'claude', agent: 'Brainstorm', sessionId: 'session-1' }]),
-      new AgentSetupError({ agent: 'Brainstorm', reason: 'InvalidAgentId' }),
-    );
-    assert.deepEqual(
-      await setupError([
-        { type: 'claude', agent: 'a', sessionId: 'session-1' },
-        { type: 'claude', agent: 'a', sessionId: 'session-1' },
-      ]),
-      new AgentSetupError({ agent: 'a', reason: 'DuplicateAgent' }),
-    );
-    assert.deepEqual(
-      await setupError([{ type: 'claude', agent: 'a', sessionId: 'missing' }]),
-      new AgentSetupError({ agent: 'a', reason: 'SessionNotFound' }),
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.flip(setup({ fake: { sessions }, session: { sessionId: 'missing' } })),
+        ),
+      ),
+      new WorkerSetupError({ sessionId: 'missing', reason: 'SessionNotFound' }),
     );
   });
 });
