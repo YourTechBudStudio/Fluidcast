@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { AskInput } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 
-import { answerForOption, answerForSend, chosenOf, toggled } from './draft';
+import { answerForOption, answerForSend, chosenOf, optionsOf, toggled, typedOf } from './draft';
 
 const options = [{ label: 'Client' }, { label: 'Server' }, { label: 'Both' }];
 const choice: AskInput = { kind: 'choice', question: 'Who?', options };
 const multi: AskInput = { kind: 'multi', question: 'Which?', options };
 const text: AskInput = { kind: 'text', question: 'Why?' };
+const checkpoint: AskInput = { kind: 'continue', question: 'Ready?' };
 
 describe('the Ask draft', () => {
   it('answers a choice on press, carrying any typed text', () => {
@@ -49,6 +50,21 @@ describe('the Ask draft', () => {
   it('reads the labels an answer chose', () => {
     expect(chosenOf({ kind: 'multi', choices: ['Client', 'Both'] })).toEqual(['Client', 'Both']);
     expect(chosenOf({ kind: 'text', text: 'x' })).toEqual([]);
+    expect(chosenOf({ kind: 'continue' })).toEqual(['Continue']);
     expect(chosenOf(null)).toEqual([]);
+  });
+
+  it('reads the text typed with an answer, which a continue answer never has', () => {
+    expect(typedOf({ kind: 'choice', choice: 'Client', text: 'mostly' })).toBe('mostly');
+    expect(typedOf({ kind: 'text', text: 'x' })).toBe('x');
+    expect(typedOf({ kind: 'continue' })).toBeUndefined();
+    expect(typedOf(null)).toBeUndefined();
+  });
+
+  it('gives a continue checkpoint no options and nothing to send', () => {
+    expect(optionsOf(checkpoint)).toEqual([]);
+    expect(optionsOf(choice)).toEqual(options);
+    expect(answerForSend(checkpoint, { text: 'next', picked: [] })).toBeUndefined();
+    expect(answerForOption(checkpoint, { text: '', picked: [] }, 0)).toBeUndefined();
   });
 });

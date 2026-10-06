@@ -12,6 +12,7 @@ const options = [{ label: 'Client' }, { label: 'Server' }];
 const text: AskInput = { kind: 'text', question: 'Which client do you use?' };
 const choice: AskInput = { kind: 'choice', question: 'Who sends the request?', options };
 const multi: AskInput = { kind: 'multi', question: 'Which hold state?', options };
+const checkpoint: AskInput = { kind: 'continue', question: 'Ready for the next part?' };
 
 const accepts = (input: AskInput, answer: unknown) =>
   Exit.isSuccess(Schema.decodeUnknownExit(askAnswerSchema(input))(answer));
@@ -41,7 +42,7 @@ const systemPrompt = (tools: Parameters<typeof generate>[0]['tools']) =>
   });
 
 describe('askAnswerSchema', () => {
-  it('accepts free text for every kind of question', () => {
+  it('accepts free text for every kind of question except continue', () => {
     for (const input of [text, choice, multi]) {
       assert.ok(accepts(input, { kind: 'text', text: 'My own words' }));
       assert.ok(!accepts(input, { kind: 'text', text: '' }));
@@ -63,6 +64,16 @@ describe('askAnswerSchema', () => {
     assert.ok(!accepts(multi, { kind: 'multi', choices: ['Client', 'Proxy'] }));
     assert.ok(!accepts(multi, { kind: 'choice', choice: 'Client' }));
     assert.ok(!accepts(text, { kind: 'multi', choices: ['Client'] }));
+  });
+
+  it('accepts only a continue answer for a continue question, and it for no other kind', () => {
+    assert.ok(accepts(checkpoint, { kind: 'continue' }));
+    assert.ok(!accepts(checkpoint, { kind: 'text', text: 'next' }));
+    assert.ok(!accepts(checkpoint, { kind: 'choice', choice: 'Continue' }));
+    assert.ok(!accepts(checkpoint, { kind: 'multi', choices: ['Continue'] }));
+    for (const input of [text, choice, multi]) {
+      assert.ok(!accepts(input, { kind: 'continue' }));
+    }
   });
 });
 
@@ -101,6 +112,10 @@ describe('askTool', () => {
     assert.equal(
       await render(choice, { kind: 'text', text: 'Neither' }),
       'Question: Who sends the request?\nAnswer, in their own words: Neither',
+    );
+    assert.equal(
+      await render(checkpoint, { kind: 'continue' }),
+      'Question: Ready for the next part?\nAnswer: Continue',
     );
   });
 
@@ -143,6 +158,11 @@ describe('askTool', () => {
         '    /** A short answer the listener can pick. */',
         '    label: string;',
         '  }[];',
+        '} | {',
+        '  type: "ask";',
+        '  kind: "continue";',
+        '  /** Exactly one question. */',
+        '  question: string;',
         '};',
       ].join('\n'),
     );

@@ -15,7 +15,7 @@ export const askTool = (): Tool<AskInput, AskResult, AskCommand> => ({
   name: askToolName,
   input: AskInput,
   guidelines: [
-    "Use `ask` for one question that needs the listener's answer. `ask` blocks: the conversation waits for the answer, which arrives as a `<tool_result>`. The listener can always answer in their own words.",
+    'Use `ask` for one question that needs the listener\'s answer. `ask` blocks: the conversation waits for the answer, which arrives as a `<tool_result>`. `kind: "continue"` is a checkpoint the listener only acknowledges with a Continue button; every other kind can also be answered in the listener\'s own words.',
   ],
   result: AskResult,
   renderResult: renderAnswer,
@@ -38,8 +38,15 @@ const renderAnswer = ({ question, answer }: AskResult): string => {
     case 'multi':
       lines.push(`Answer: ${answer.choices.join('; ')}`);
       break;
+    case 'continue':
+      lines.push('Answer: Continue');
+      break;
   }
-  if (answer.kind !== 'text' && answer.text !== undefined && answer.text.trim() !== '') {
+  if (
+    (answer.kind === 'choice' || answer.kind === 'multi') &&
+    answer.text !== undefined &&
+    answer.text.trim() !== ''
+  ) {
     lines.push(`They added: ${answer.text.trim()}`);
   }
   return lines.join('\n');

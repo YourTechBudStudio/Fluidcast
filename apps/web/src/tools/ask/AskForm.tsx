@@ -12,7 +12,15 @@ import {
 import type { AskCommand, AskInput } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 
 import { Button, Kbd, Swap, typingTarget } from '../../ui';
-import { type AskDraft, answerForOption, answerForSend, chosenOf, toggled } from './draft';
+import {
+  type AskDraft,
+  answerForOption,
+  answerForSend,
+  chosenOf,
+  optionsOf,
+  toggled,
+  typedOf,
+} from './draft';
 
 export interface AskFormProps {
   readonly input: AskInput;
@@ -36,13 +44,15 @@ const HINT: Record<AskInput['kind'], string> = {
   text: 'Type your answer',
   choice: 'Pick one, or say it your way',
   multi: 'Pick any, then send',
+  continue: 'Continue when ready',
 };
 
 /**
  * One question in place of the composer, without chrome: the dock around it owns the surface. The question stays
- * put while the body below it swaps between the open form and the answer as sent. Free text is always available, and
- * so is Interrupt: it declines the question without answering it, stops the narration, and hands back the composer
- * for what the listener wants to say instead.
+ * put while the body below it swaps between the open form and the answer as sent. Free text is available for every
+ * kind except `continue`, a checkpoint answered only with its Continue button. Interrupt is always available: it
+ * declines the question without answering it, stops the narration, and hands back the composer for what the listener
+ * wants to say instead.
  */
 export function AskForm({
   input,
@@ -58,8 +68,11 @@ export function AskForm({
   const [sending, setSending] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const blocked = disabled || sending || mode !== 'open';
-  const options = input.kind === 'text' ? [] : input.options;
+  const options = optionsOf(input);
   const multi = input.kind === 'multi';
+  const checkpoint = input.kind === 'continue';
+  // Number keys: one per option, or `1` for a checkpoint's Continue.
+  const keys = checkpoint ? 1 : options.length;
   const sendable = answerForSend(input, draft);
 
   const submit = (next: AskCommand | undefined) => {
@@ -72,27 +85,28 @@ export function AskForm({
   };
   const choose = (index: number) => {
     if (blocked) return;
-    if (multi) setDraft((current) => toggled(current, index));
+    if (checkpoint) submit({ kind: 'continue' });
+    else if (multi) setDraft((current) => toggled(current, index));
     else submit(answerForOption(input, draft, index));
   };
 
-  // Number keys pick options when no typing target has focus.
+  // Number keys pick options, or Continue, when no typing target has focus.
   const latestChoose = useRef(choose);
   latestChoose.current = choose;
   useEffect(() => {
-    if (mode !== 'open' || options.length === 0) return;
+    if (mode !== 'open' || keys === 0) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
       if (typingTarget(event.target)) return;
       const n = Number(event.key);
-      if (Number.isInteger(n) && n >= 1 && n <= Math.min(9, options.length)) {
+      if (Number.isInteger(n) && n >= 1 && n <= Math.min(9, keys)) {
         event.preventDefault();
         latestChoose.current(n - 1);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [mode, options.length]);
+  }, [mode, keys]);
 
   const sendLabel =
     multi && draft.picked.length > 0
@@ -177,16 +191,31 @@ export function AskForm({
                 })}
               </div>
             )}
-            <FreeText
-              box={box}
-              input={input}
-              text={draft.text}
-              disabled={disabled}
-              canSend={!blocked && sendable !== undefined}
-              sendLabel={sendLabel}
-              onText={(text) => setDraft((current) => ({ ...current, text }))}
-              onSend={() => submit(sendable)}
-            />
+            {checkpoint && (
+              <div className="mt-3.5">
+                <Button
+                  tone="primary"
+                  unavailable={blocked}
+                  aria-keyshortcuts="1"
+                  icon={<ArrowRight size={16} strokeWidth={1.9} aria-hidden />}
+                  onClick={() => choose(0)}
+                >
+                  Continue <Kbd>1</Kbd>
+                </Button>
+              </div>
+            )}
+            {!checkpoint && (
+              <FreeText
+                box={box}
+                input={input}
+                text={draft.text}
+                disabled={disabled}
+                canSend={!blocked && sendable !== undefined}
+                sendLabel={sendLabel}
+                onText={(text) => setDraft((current) => ({ ...current, text }))}
+                onSend={() => submit(sendable)}
+              />
+            )}
             <div className="mt-2.5 flex flex-wrap items-center justify-end gap-1.5">
               <Button
                 tone="ghost"
@@ -288,6 +317,7 @@ function SentAnswer({
   readonly extra: ReactNode;
 }) {
   const chosen = chosenOf(answer);
+  const typed = typedOf(answer);
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -300,9 +330,9 @@ function SentAnswer({
             {label}
           </span>
         ))}
-        {answer.text && (
+        {typed && (
           <span className="min-w-0 text-[15px] text-fg-muted italic">
-            {chosen.length ? '+ ' : ''}“{answer.text}”
+            {chosen.length ? '+ ' : ''}“{typed}”
           </span>
         )}
       </div>

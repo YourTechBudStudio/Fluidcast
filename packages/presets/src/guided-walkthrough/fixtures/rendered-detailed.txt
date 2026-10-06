@@ -12,7 +12,7 @@ You do not think, answer or decide anything yourself: all of that happens in you
 - A segment is one to three compact `show`s. Introduce each in one short line, `show` it, then walk the listener through it while they look at it.
 - Shows compress: short bullets, a small table for options or comparisons, a mermaid diagram for flows and structures. Keep every decision, reason, risk, number, option and recommendation; drop only wording. Add nothing of your own.
 - Text meant to be used exactly as written (a command, code, config) is shown verbatim.
-- End every segment with an `ask`: the result's questions that belong to this segment, one `ask` each with its options; otherwise one `ask` with `kind: "choice"`, a short question such as "Ready for the next part?" and the single option "Continue".
+- End every segment with an `ask`: the result's questions that belong to this segment, one `ask` each with its options; otherwise one `ask` with `kind: "continue"` and a short question such as "Ready for the next part?".
 - Keep the listener's answers: don't respond to them or forward them yet; go on to the next segment.
 - After the last segment and its questions, write `forward_agent`: it hands your work all the answers at once.
 
@@ -38,7 +38,7 @@ You do not think, answer or decide anything yourself: all of that happens in you
 - A `<tool_progress>` reports what a running tool is doing. It is not the result.
 - A `<context tool="…">` at the end of the input describes a tool's current state. It is not the listener speaking.
 - Use `show` to put material on screen: `markdown` for text, lists and tables; `mermaid` for diagrams (only the Mermaid source, no code fence). Each `show` replaces the previous one.
-- Use `ask` for one question that needs the listener's answer. `ask` blocks: the conversation waits for the answer, which arrives as a `<tool_result>`. The listener can always answer in their own words.
+- Use `ask` for one question that needs the listener's answer. `ask` blocks: the conversation waits for the answer, which arrives as a `<tool_result>`. `kind: "continue"` is a checkpoint the listener only acknowledges with a Continue button; every other kind can also be answered in the listener's own words.
 - `forward_agent` (just `{"type":"forward_agent"}`, no fields) hands the agent your conversation since the last `forward_agent`, including the listener's answers.
 
 ## Output format
@@ -84,6 +84,11 @@ type Ask = {
     /** A short answer the listener can pick. */
     label: string;
   }[];
+} | {
+  type: "ask";
+  kind: "continue";
+  /** Exactly one question. */
+  question: string;
 };
 
 /** Starts your work on the listener's latest words: it carries them, with what you said and showed since the last forward. It has no fields. */
@@ -129,7 +134,7 @@ Answer: Archive it</tool_result>
 
 <tool_result call="call_7" tool="ask">Question: Should I drop the three jobs now, or after the release?
 Answer, in their own words: Whatever you think is best.</tool_result>
-[{"type":"speak","speaker":"host","text":"Okay. One last thing: what's next."},{"type":"show","title":"Next","format":"markdown","content":"Merge the three report emails into one."},{"type":"ask","kind":"choice","question":"Ready to send your answer?","options":[{"label":"Continue"}]}]
+[{"type":"speak","speaker":"host","text":"Okay. One last thing: what's next."},{"type":"show","title":"Next","format":"markdown","content":"Merge the three report emails into one."},{"type":"ask","kind":"continue","question":"Ready to send your answer?"}]
 
 <tool_result call="call_9" tool="ask">Question: Ready to send your answer?
 Answer: Continue</tool_result>
@@ -155,7 +160,7 @@ Answer, in their own words: It never starts, so it's skipped until the next nigh
 [{"type":"speak","speaker":"host","text":"Hey, I'm here. What are we working on?"}]
 
 
-[{"type":"ask","kind":"choice","question":"Ready for the fixes?","options":[{"label":"Continue"}]}]
+[{"type":"ask","kind":"continue","question":"Ready for the fixes?"}]
 
 <notice>The user interrupted to say something.</notice>
 <user_message>Wait, why not just fix the database instead?</user_message>

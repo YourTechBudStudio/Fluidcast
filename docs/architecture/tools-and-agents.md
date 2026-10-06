@@ -11,7 +11,7 @@ The contract itself is `ToolDefinition` (`packages/core/src/generation/tools.ts`
 ## Initial tools
 
 - **Show:** Presents Markdown, Mermaid, or HTML with an optional title. Each show is complete and replaces the last. The client reports rendering, so render failures reach the model as errors.
-- **Ask:** Asks the listener exactly one question: free text, single choice, or multiple choice. Options are short labels only, with free text always available. It blocks until answered, or until an interrupt cancels it unanswered.
+- **Ask:** Asks the listener exactly one question: free text, single choice, multiple choice, or a Continue checkpoint the listener only acknowledges. Options are short labels only, with free text available for every kind except Continue. It blocks until answered, or until an interrupt cancels it unanswered.
 - **Forward Agent:** Hands the conversation to the session's one worker, the agent that does the thinking. It has no fields: the model writes `{"type":"forward_agent"}`.
 
 ## The worker

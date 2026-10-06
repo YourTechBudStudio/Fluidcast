@@ -3,12 +3,13 @@ import { Check, User } from 'lucide-react';
 import type { AskCommand, AskInput } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 
 import { Chip } from '../../ui';
-import { chosenOf } from './draft';
+import { chosenOf, optionsOf, typedOf } from './draft';
 
 const KIND_LABEL: Record<AskInput['kind'], string> = {
   text: 'Open answer',
   choice: 'Pick one',
   multi: 'Pick any',
+  continue: 'Continue',
 };
 
 /**
@@ -45,7 +46,10 @@ export function AskCardTitle({
   );
 }
 
-/** The question with every option offered: yours checked, the rest dimmed, and anything you typed as a quote. */
+/**
+ * The question with every option offered: yours checked, the rest dimmed, and anything you typed as a quote. A
+ * `continue` checkpoint offers no options, so its answer shows as a checked Continue row.
+ */
 export function AskCard({
   input,
   answer,
@@ -54,7 +58,8 @@ export function AskCard({
   readonly answer: AskCommand | null;
 }) {
   const chosen = chosenOf(answer);
-  const options = input.kind === 'text' ? [] : input.options;
+  const options = optionsOf(input);
+  const typed = typedOf(answer);
   return (
     <div className="mt-0.5 overflow-hidden rounded-lg border border-line/35 bg-elevated/40">
       <p className="px-4 pt-3 pb-2.5 font-display text-[16.5px] leading-snug text-fg">
@@ -86,10 +91,22 @@ export function AskCard({
           })}
         </ul>
       )}
-      {answer?.text && (
+      {answer?.kind === 'continue' && (
+        <p className="flex items-center gap-3 border-t border-line/20 bg-cyan/7 px-4 py-2.5 text-[14.5px] font-semibold text-fg">
+          <span
+            aria-hidden
+            className="grid size-4 shrink-0 place-items-center rounded-full border border-cyan bg-cyan text-scrim"
+          >
+            <Check size={11} strokeWidth={3} />
+          </span>
+          Continue
+          <span className="sr-only"> (your answer)</span>
+        </p>
+      )}
+      {typed && (
         <p className="flex items-start gap-2 border-t border-line/20 px-4 py-2.5 text-[14.5px] text-fg-muted italic">
           <User size={13} strokeWidth={1.8} className="mt-1 shrink-0 not-italic" aria-hidden />“
-          {answer.text}”
+          {typed}”
         </p>
       )}
     </div>
