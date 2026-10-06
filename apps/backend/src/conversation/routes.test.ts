@@ -1,77 +1,78 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { Effect, Layer, Stream } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
+import { Layer } from 'effect';
 import { HttpRouter } from 'effect/unstable/http';
 
-import { routes } from '@fluidcast/app-contract';
-import { SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';
-import { layer as harnessLayer } from '@yourtechbudstudio/fluidcast-harness';
+import { noSessionStatus, sessionPaths } from '@fluidcast/app-contract';
 
+import { fakeActiveLayer, fakeBuild, startOver, withApp } from './fixtures.test.ts';
 import { conversationRoutes } from './routes.ts';
-import { ConversationWorker } from './worker.ts';
 
-/**
- * The command routes over a real speech-only session whose providers are never called, with an
- * idle fake worker.
- */
-const app = conversationRoutes.pipe(
-  Layer.provideMerge(
-    harnessLayer({
-      instructions: '',
-      speakers: [{ id: 'host', name: 'Host', personality: 'Warm.', voice: { name: 'alloy' } }],
-      speechFormat: 'opus',
-      tools: [],
-    }),
-  ),
-  Layer.provideMerge(
-    Layer.succeed(
-      ConversationWorker,
-      ConversationWorker.of({ sessionId: 's', status: Stream.empty, transcript: Stream.empty }),
-    ),
-  ),
-  Layer.provide(
-    Layer.merge(
-      Layer.effect(
-        LanguageModel.LanguageModel,
-        LanguageModel.make({
-          generateText: () => Effect.die('unused'),
-          streamText: () => Effect.die('unused') as never,
-        }),
-      ),
-      Layer.succeed(
-        SpeechSynthesizer,
-        SpeechSynthesizer.of({ synthesize: () => Effect.die('unused') as never }),
-      ),
-    ),
-  ),
-);
+/** The conversation routes over a fake build: real speech-only sessions with an idle fake worker. */
+const app = () =>
+  HttpRouter.toWebHandler(
+    conversationRoutes.pipe(Layer.provideMerge(fakeActiveLayer(fakeBuild().build))),
+    { disableLogger: true },
+  );
 
-describe('POST /api/commands', () => {
+const staleToolCommand = {
+  _tag: 'ToolCommand',
+  handle: 'call_1',
+  executionId: 'gone',
+  payload: { rendered: true },
+};
+
+describe('POST /api/session/:sessionId/commands', () => {
   it('answers a stale ToolCommand with 409 and a ToolCommandRejected body', async () => {
-    const { handler, dispose } = HttpRouter.toWebHandler(app, { disableLogger: true });
-    try {
-      const response = await handler(
-        new Request(`http://localhost${routes.commands}`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            _tag: 'ToolCommand',
-            handle: 'call_1',
-            executionId: 'gone',
-            payload: { rendered: true },
-          }),
-        }),
-      );
+    await withApp(app(), async (send) => {
+      const id = await startOver(send);
+      const response = await send(sessionPaths(id).commands, {
+        method: 'POST',
+        json: staleToolCommand,
+      });
       assert.equal(response.status, 409);
       assert.deepEqual(await response.json(), {
         _tag: 'ToolCommandRejected',
         executionId: 'gone',
         reason: 'stale',
       });
-    } finally {
-      await dispose();
-    }
+    });
+  });
+
+  it('answers 404 NoSession for a session that is not the live one', async () => {
+    await withApp(app(), async (send) => {
+      await startOver(send);
+      const response = await send(sessionPaths('other').commands, {
+        method: 'POST',
+        json: staleToolCommand,
+      });
+      assert.equal(response.status, noSessionStatus);
+      assert.deepEqual(await response.json(), { _tag: 'NoSession' });
+    });
+  });
+});
+
+describe('GET /api/session/:sessionId/events', () => {
+  it('answers 404 NoSession for a session that is not the live one', async () => {
+    await withApp(app(), async (send) => {
+      const before = await send(sessionPaths('none').events);
+      assert.equal(before.status, noSessionStatus);
+      assert.deepEqual(await before.json(), { _tag: 'NoSession' });
+    });
+  });
+
+  it('streams the live session, and ends when it is reset', async () => {
+    await withApp(app(), async (send) => {
+      const id = await startOver(send);
+      const response = await send(sessionPaths(id).events);
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('content-type'), 'text/event-stream');
+      const reset = await send(sessionPaths(id).session, { method: 'DELETE' });
+      assert.equal(reset.status, 204);
+      // The body ends, so reading it completes.
+      const body = await response.text();
+      assert.ok(body.startsWith('data: {"_tag":"Snapshot"'));
+    });
   });
 });

@@ -7,52 +7,50 @@ import {
   WorkerSummaryJson,
 } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 
-import { sseResponse } from './sse.ts';
-import { ConversationWorker } from './worker.ts';
+import { liveSession, noSessionResponse } from './session-routes.ts';
+import { logConnection, sseResponse } from './sse.ts';
 
 const encodeSummary = Schema.encodeSync(WorkerSummaryJson);
 const encodeTranscript = Schema.encodeSync(TranscriptMessageJson);
+const SessionParams = Schema.Struct({ sessionId: Schema.String });
 
-/** Logs a stream's connection, with the route only, never its content. */
-const logConnection =
-  (route: string) =>
-  <A, E, R>(stream: Stream.Stream<A, E, R>) =>
-    stream.pipe(
-      Stream.onStart(Effect.logInfo(`${route}: subscribed`)),
-      Stream.onExit((exit) =>
-        Effect.logInfo(exit._tag === 'Success' ? `${route}: ended` : `${route}: disconnected`),
-      ),
-    );
-
-/** `GET /api/worker`: the worker's status as SSE, one `WorkerSummary` per change. */
+/**
+ * `GET /api/session/:sessionId/worker`: the worker's status as SSE, one `WorkerSummary` per
+ * change, until the session is discarded. `404 NoSession` for a session that is not live.
+ */
 const status = HttpRouter.add(
   'GET',
   routes.worker,
   Effect.gen(function* () {
-    const worker = yield* ConversationWorker;
+    const { sessionId } = yield* HttpRouter.schemaPathParams(SessionParams);
+    const live = yield* liveSession(sessionId);
     return sseResponse(
-      worker.status.pipe(
+      live.bound(live.worker.status).pipe(
         Stream.map((summary) => encodeSummary(summary)),
         logConnection('worker'),
       ),
     );
-  }),
+  }).pipe(Effect.catchTags({ NoSession: noSessionResponse }), Effect.orDie),
 );
 
-/** `GET /api/worker/transcript`: the worker's transcript as SSE, a snapshot then appended entries. */
+/**
+ * `GET /api/session/:sessionId/worker/transcript`: the worker's transcript as SSE, a snapshot then
+ * appended entries, until the session is discarded. `404 NoSession` for a session that is not live.
+ */
 const transcript = HttpRouter.add(
   'GET',
   routes.workerTranscript,
   Effect.gen(function* () {
-    const worker = yield* ConversationWorker;
+    const { sessionId } = yield* HttpRouter.schemaPathParams(SessionParams);
+    const live = yield* liveSession(sessionId);
     return sseResponse(
-      worker.transcript.pipe(
+      live.bound(live.worker.transcript).pipe(
         Stream.map((message) => encodeTranscript(message)),
         logConnection('worker transcript'),
       ),
     );
-  }),
+  }).pipe(Effect.catchTags({ NoSession: noSessionResponse }), Effect.orDie),
 );
 
-/** The Worker view's routes. They need `ConversationWorker`. */
+/** The Worker view's routes. They need `ActiveSession`. */
 export const workerRoutes = Layer.mergeAll(status, transcript);

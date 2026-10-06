@@ -62,6 +62,18 @@ preset:
     # Optional delivery guidance, for voices that support it.
     # instructions: Calm and unhurried.
 
+# The agent behind the forward_agent tool: Claude Code.
+# workers:
+#   # Where a new brainstorm's worker runs, relative to this file. Default: this file's directory.
+#   # A continued session runs in its own recorded directory.
+#   cwd: .
+#   claude:
+#     # The model for new sessions. Absent: Claude Code's default. A continued session keeps its own.
+#     model: opus
+#     # Effort for new sessions (low, medium, high, xhigh, max). A continued session uses the effort
+#     # it last ran with, and this when none is recorded.
+#     effort: high
+
 # Development aids, off by default.
 # debug:
 #   # Appends each generation (prompt, raw reply, finish reason, token usage) as a JSON line,

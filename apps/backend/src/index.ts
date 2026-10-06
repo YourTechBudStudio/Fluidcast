@@ -6,4 +6,4 @@ export {
   type Environment,
   type LoadConfigOptions,
 } from './config.ts';
-export { serve, serverLayer, type ServeOptions } from './server.ts';
+export { serve, serverLayer } from './server.ts';

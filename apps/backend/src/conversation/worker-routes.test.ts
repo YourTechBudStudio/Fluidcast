@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { Layer, Schema, Stream } from 'effect';
 import { HttpRouter } from 'effect/unstable/http';
 
-import { routes, workerStatus } from '@fluidcast/app-contract';
+import { noSessionStatus, sessionPaths, workerStatus } from '@fluidcast/app-contract';
 import {
   TranscriptMessageJson,
   WorkerSummaryJson,
@@ -12,8 +12,12 @@ import {
   type WorkerSummary,
 } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 
+import { dataOf, fakeActiveLayer, fakeBuild, startOver, withApp } from './fixtures.test.ts';
+import { sessionRoutes } from './session-routes.ts';
 import { workerRoutes } from './worker-routes.ts';
-import { ConversationWorker } from './worker.ts';
+
+const decodeSummary = Schema.decodeSync(WorkerSummaryJson);
+const decodeTranscript = Schema.decodeSync(TranscriptMessageJson);
 
 const idle: WorkerSummary = { _tag: 'WorkerSummary', status: 'idle', sessionId: 'session-1' };
 const working: WorkerSummary = { ...idle, status: 'working' };
@@ -29,61 +33,66 @@ const appended: TranscriptMessage = {
   entries: [{ _tag: 'text', parentToolUseId: null, text: 'Looking.' }],
 };
 
-/** The Worker routes over a fake worker. */
-const app = workerRoutes.pipe(
-  Layer.provideMerge(
-    Layer.succeed(
-      ConversationWorker,
-      ConversationWorker.of({
-        sessionId: 'session-1',
-        status: Stream.make(idle, working),
-        transcript: Stream.make(snapshot, appended),
-      }),
+/** The Worker routes, and the lifecycle routes to start a session, over a fake worker. */
+const app = () =>
+  HttpRouter.toWebHandler(
+    Layer.mergeAll(workerRoutes, sessionRoutes).pipe(
+      Layer.provideMerge(
+        fakeActiveLayer(
+          fakeBuild({
+            worker: {
+              sessionId: 'session-1',
+              status: Stream.make(idle, working),
+              transcript: Stream.make(snapshot, appended),
+            },
+          }).build,
+        ),
+      ),
     ),
-  ),
-);
+    { disableLogger: true },
+  );
 
-const get = async (path: string) => {
-  const { handler, dispose } = HttpRouter.toWebHandler(app, { disableLogger: true });
-  try {
-    const response = await handler(new Request(`http://localhost${path}`));
-    return {
-      status: response.status,
-      type: response.headers.get('content-type'),
-      text: await response.text(),
-    };
-  } finally {
-    await dispose();
-  }
-};
-
-/** The `data:` payloads of an SSE body, in order. */
-const dataOf = (body: string) =>
-  body
-    .split('\n\n')
-    .filter((event) => event.startsWith('data: '))
-    .map((event) => event.slice('data: '.length));
-
-describe('GET /api/worker', () => {
+describe('GET /api/session/:sessionId/worker', () => {
   it('streams each status change as one SSE message', async () => {
-    const response = await get(routes.worker);
-    assert.equal(response.status, workerStatus.ok);
-    assert.equal(response.type, 'text/event-stream');
-    assert.deepEqual(dataOf(response.text).map(Schema.decodeSync(WorkerSummaryJson)), [
-      idle,
-      working,
-    ]);
+    await withApp(app(), async (send) => {
+      const response = await send(sessionPaths(await startOver(send)).worker);
+      assert.equal(response.status, workerStatus.ok);
+      assert.equal(response.headers.get('content-type'), 'text/event-stream');
+      assert.deepEqual(
+        dataOf(await response.text()).map((data) => decodeSummary(data)),
+        [idle, working],
+      );
+    });
+  });
+
+  it('answers 404 NoSession for a session that is not the live one', async () => {
+    await withApp(app(), async (send) => {
+      await startOver(send);
+      const response = await send(sessionPaths('other').worker);
+      assert.equal(response.status, noSessionStatus);
+      assert.deepEqual(await response.json(), { _tag: 'NoSession' });
+    });
   });
 });
 
-describe('GET /api/worker/transcript', () => {
+describe('GET /api/session/:sessionId/worker/transcript', () => {
   it('streams the snapshot, then appended entries', async () => {
-    const response = await get(routes.workerTranscript);
-    assert.equal(response.status, workerStatus.ok);
-    assert.equal(response.type, 'text/event-stream');
-    assert.deepEqual(dataOf(response.text).map(Schema.decodeSync(TranscriptMessageJson)), [
-      snapshot,
-      appended,
-    ]);
+    await withApp(app(), async (send) => {
+      const response = await send(sessionPaths(await startOver(send)).workerTranscript);
+      assert.equal(response.status, workerStatus.ok);
+      assert.equal(response.headers.get('content-type'), 'text/event-stream');
+      assert.deepEqual(
+        dataOf(await response.text()).map((data) => decodeTranscript(data)),
+        [snapshot, appended],
+      );
+    });
+  });
+
+  it('answers 404 NoSession for a session that is not the live one', async () => {
+    await withApp(app(), async (send) => {
+      const response = await send(sessionPaths('none').workerTranscript);
+      assert.equal(response.status, noSessionStatus);
+      assert.deepEqual(await response.json(), { _tag: 'NoSession' });
+    });
   });
 });
