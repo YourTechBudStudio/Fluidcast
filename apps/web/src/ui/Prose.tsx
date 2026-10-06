@@ -6,8 +6,7 @@ import { createMarkdown } from './markdown';
 const renderSafe = createMarkdown({ html: false });
 
 /**
- * Markdown as a reading column, with raw HTML off. `compact` is a step smaller and full width, for text that sits among
- * other output.
+ * Markdown as a reading column, with raw HTML off. `compact` is a step smaller, for text that sits among other output.
  */
 export function Prose({
   source,

@@ -1,7 +1,6 @@
 /* Rendered Markdown that Tailwind utilities cannot style: a calm reading column in the player's type system. Used by
-   Markdown Shows and worker text. */
+   Markdown Shows and worker text. It fills its container. */
 .markdown-prose {
-  max-width: 68ch;
   font-size: 16.5px;
   line-height: 1.65;
   color: var(--color-fg-muted);
@@ -110,9 +109,68 @@
   border-radius: var(--radius-md);
 }
 
-/* A step smaller and full width, for Markdown that sits among other output (worker text). */
+/* Highlighted code (highlight.js classes) in the player's palette. */
+.markdown-prose .hljs-comment,
+.markdown-prose .hljs-quote {
+  font-style: italic;
+  color: var(--color-fg-subtle);
+}
+.markdown-prose .hljs-keyword,
+.markdown-prose .hljs-selector-tag,
+.markdown-prose .hljs-literal,
+.markdown-prose .hljs-doctag {
+  color: var(--color-violet);
+}
+.markdown-prose .hljs-string,
+.markdown-prose .hljs-regexp,
+.markdown-prose .hljs-addition,
+.markdown-prose .hljs-template-tag {
+  color: var(--color-green);
+}
+.markdown-prose .hljs-number,
+.markdown-prose .hljs-symbol,
+.markdown-prose .hljs-bullet,
+.markdown-prose .hljs-variable.constant_ {
+  color: var(--color-amber);
+}
+.markdown-prose .hljs-title,
+.markdown-prose .hljs-section,
+.markdown-prose .hljs-selector-id {
+  color: var(--color-blue);
+}
+.markdown-prose .hljs-type,
+.markdown-prose .hljs-built_in,
+.markdown-prose .hljs-title.class_,
+.markdown-prose .hljs-selector-class {
+  color: var(--color-cyan);
+}
+.markdown-prose .hljs-attr,
+.markdown-prose .hljs-attribute,
+.markdown-prose .hljs-property,
+.markdown-prose .hljs-params,
+.markdown-prose .hljs-variable,
+.markdown-prose .hljs-template-variable {
+  color: var(--color-fg);
+}
+.markdown-prose .hljs-meta,
+.markdown-prose .hljs-tag,
+.markdown-prose .hljs-name,
+.markdown-prose .hljs-operator,
+.markdown-prose .hljs-punctuation {
+  color: var(--color-fg-muted);
+}
+.markdown-prose .hljs-deletion {
+  color: var(--color-red);
+}
+.markdown-prose .hljs-emphasis {
+  font-style: italic;
+}
+.markdown-prose .hljs-strong {
+  font-weight: 600;
+}
+
+/* A step smaller, for Markdown that sits among other output (worker text). */
 .markdown-prose-compact {
-  max-width: none;
   font-size: 15.5px;
   line-height: 1.6;
 }

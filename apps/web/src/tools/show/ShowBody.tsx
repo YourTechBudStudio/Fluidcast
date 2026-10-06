@@ -102,7 +102,7 @@ function Skeleton({ format }: { readonly format: ShowFormat }) {
           ))}
         </div>
       ) : (
-        <div aria-hidden className="flex max-w-[68ch] flex-col gap-3">
+        <div aria-hidden className="flex flex-col gap-3">
           <div className="skeleton h-6 w-2/5 rounded-md" />
           <div className="skeleton mt-2 h-3.5 w-full rounded-full" />
           <div className="skeleton h-3.5 w-11/12 rounded-full" />
