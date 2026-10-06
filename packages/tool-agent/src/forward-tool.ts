@@ -22,7 +22,7 @@ export interface ForwardAgentToolOptions {
   /**
    * An existing session to resume as the worker, such as a fork of a recorded Claude Code session:
    * its history opens the transcript, and its first forward resumes it in its recorded directory.
-   * Nothing is spawned until then. Absent: a new session.
+   * No worker connects until then. Absent: a new session.
    */
   readonly session?: { readonly sessionId: string };
   /**

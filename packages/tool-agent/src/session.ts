@@ -154,7 +154,7 @@ export interface WorkerSession {
   readonly transcript: Stream.Stream<TranscriptMessage>;
 }
 
-/** Builds the worker session in the current scope, attaching a preloaded session. Nothing is spawned. */
+/** Builds the worker session in the current scope, attaching a preloaded session. Nothing connects. */
 export const makeWorkerSession = (
   options: WorkerSessionOptions,
 ): Effect.Effect<WorkerSession, WorkerSetupError, Scope.Scope> =>

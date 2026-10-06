@@ -36,7 +36,7 @@ export interface WorkerType {
    * Throws when the type cannot express the modifiers (a hook defect, which halts).
    */
   readonly composeMessage: (prompt: string, modifiers: ReadonlyArray<Modifier>) => string;
-  /** Preload: checks an existing session and reads its directory and history. Spawns nothing. */
+  /** Preload: checks an existing session and reads its directory and history. Starts no turn. */
   readonly attach: (
     sessionId: string,
   ) => Effect.Effect<

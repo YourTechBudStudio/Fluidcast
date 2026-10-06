@@ -6,11 +6,9 @@
  */
 import type { SDKMessage, SessionMessage } from '@anthropic-ai/claude-agent-sdk';
 
+import { capped } from '../content.ts';
 import type { TranscriptEntry } from '../schema.ts';
 import { turnOutcome, type RateLimit } from './failure.ts';
-
-/** The cap on a tool call's input JSON and a tool result's text, in characters. */
-export const maxContentLength = 4000;
 
 type Block = Readonly<Record<string, unknown>>;
 
@@ -23,11 +21,6 @@ const stringField = (block: Block, key: string): string | undefined => {
   const value = block[key];
   return typeof value === 'string' ? value : undefined;
 };
-
-const capped = (text: string) =>
-  text.length > maxContentLength
-    ? { text: text.slice(0, maxContentLength), truncated: true }
-    : { text, truncated: false };
 
 /** A `tool_result` block's text: a string, or its text blocks joined. Uncapped. */
 const toolResultText = (block: Block): string => {
