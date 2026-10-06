@@ -1,5 +1,13 @@
 import type { AskCommand, AskInput } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 
+/** What each kind asks of the listener, as the dock's label and the transcript heading name it. */
+export const ASK_KIND_LABEL: Record<AskInput['kind'], string> = {
+  text: 'Open answer',
+  choice: 'Pick one',
+  multi: 'Pick any',
+  continue: 'Checkpoint',
+};
+
 /** What the listener has put together so far: typed text and, for `multi`, the options toggled on (by index). */
 export interface AskDraft {
   readonly text: string;
