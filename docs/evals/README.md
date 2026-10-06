@@ -93,6 +93,16 @@ Comparisons are paired on (case, run) and use a seeded bootstrap that resamples 
 
 A tie that makes the prompt shorter or simpler may also be promoted.
 
+## Quick check
+
+For a prompt change you want to see before a full run, as when the walk-through speech was added ([Guided walkthrough prompting](../research/guided-walkthrough-prompting.md)):
+
+- About 7 cases of different shapes (a short answer, questions, a table, code, a diagram, a status report, a recent live session), 1 run each, old and new prompt side by side.
+- The real preset rendered by Core with the real tools, and Qwen with the production settings.
+- A scripted listener that presses Continue, picks the first option and answers free text neutrally; no judges.
+- Read each run as the listener experiences it (speech, screens and questions in order), plus one or two counters for the behavior under test, such as screens walked through and spoken words per screen.
+- It shows behavior, not fidelity: confirm a change you keep with the held-out run.
+
 ## The unattended loop
 
 Each round is one orchestrated run of fresh agents. Between rounds, the orchestrator (a person or a long-running session) reviews the analyst's proposals, applies measurement changes deliberately, checks the promotion against the fidelity numbers, and starts the next round.

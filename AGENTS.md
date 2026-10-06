@@ -10,6 +10,7 @@ Fluidcast is a set of SDKs that provide a voice-and-visual interface for working
 - `packages/harness` is the Harness SDK: conversation history, action state, the playback cursor, tool execution, and iteration scheduling. It builds on Core.
 - `packages/client` is the Client SDK: communication with the application backend, playback coordination with the harness, and audio prefetching and caching. Applications supply actual playback.
 - `packages/tool-*` are the tool packages (Show, Ask, Agent): each exports a backend factory the harness registers and a pure schema clients import. The Agent tool package owns agent pools and per-SDK adapters.
+- `packages/presets` holds voice behavior presets (instructions, worked examples, speaker profile, reminders), such as the Guided Walkthrough. The SDKs carry only mechanics.
 - `packages/typescript-config` contains the shared TypeScript configuration.
 - `packages/app-contract` is the reference apps' HTTP contract (route paths, Schemas, SSE framing) shared by the backend and the web app's transport. It is not an SDK surface.
 - `apps/backend` is the reference application backend that wires Core, the harness, and the tools to a transport.
