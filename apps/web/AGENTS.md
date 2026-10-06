@@ -23,7 +23,6 @@ src/
   tools/          # Tool rendering (Show, Ask), unaware of the conversation
   visuals/        # WebGL visuals and audio analysis
   ui/             # Shared primitives, tokens and motion
-  mocks/          # Throwaway, presentation-only mocks under /mocks; deleted once their story is implemented
 ```
 
 - Each module publishes through `index.ts`. Allowed dependencies between modules are enforced by `tests/architecture.test.mjs`.

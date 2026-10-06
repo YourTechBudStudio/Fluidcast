@@ -16,9 +16,7 @@ const files = readdirSync(root, { recursive: true }).filter((file) => /\.tsx?$/.
  * product-agnostic.
  */
 const ALLOWED = {
-  app: ['client', 'conversation', 'mocks', 'playback', 'visuals', 'tools', 'ui', 'workers'],
-  // Throwaway mocks for issue #5; removed with them.
-  mocks: ['conversation', 'playback', 'ui', 'visuals'],
+  app: ['client', 'conversation', 'playback', 'visuals', 'tools', 'ui', 'workers'],
   client: [],
   conversation: ['client', 'playback', 'visuals', 'tools', 'ui'],
   playback: ['client', 'ui'],

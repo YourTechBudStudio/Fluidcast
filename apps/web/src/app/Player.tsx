@@ -29,7 +29,8 @@ const analysis = createAnalysis();
 const inMenu = (target: EventTarget | null) =>
   target instanceof Element && target.closest('[role="menu"]') !== null;
 
-export function App() {
+/** The player for one backend session. It renders inside that session's own atom registry (see `Root.tsx`). */
+export function Player() {
   useAtomMount(showDriverAtom);
   const presentation = useAtomValue(presentationAtom);
   const commands = useConversationCommands();
@@ -166,6 +167,11 @@ export function App() {
             onToggle: (target) => switchLayer(layer === target ? 'stage' : target),
             workersRef: workersButton,
           }}
+          reset={{
+            onReset: () => void commands.reset(),
+            pending: presentation.resetPending,
+            failed: presentation.status === 'resetFailed',
+          }}
         />
       </div>
       <main className="relative col-start-1 row-start-2 flex min-h-0 max-sm:overflow-hidden">
@@ -188,7 +194,8 @@ export function App() {
               <TapToResume
                 visible={moment === 'held' || moment === 'ready'}
                 label={moment === 'ready' ? 'Tap to start' : 'Tap to resume'}
-                onActivate={moment === 'ready' ? commands.start : playback.resume}
+                onActivate={moment === 'ready' ? () => void commands.start() : playback.resume}
+                unavailable={moment === 'ready' && presentation.resetPending}
               />
             </div>
             <div className="mt-[clamp(12px,3vh,36px)] flex w-full justify-center">

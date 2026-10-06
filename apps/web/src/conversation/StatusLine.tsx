@@ -29,6 +29,8 @@ const DOT: Record<StatusMoment, { color: string; pulse: boolean; error?: true }>
   connecting: { color: 'var(--color-fg-subtle)', pulse: true },
   reconnecting: { color: 'var(--color-fg-subtle)', pulse: true },
   superseded: { color: 'var(--color-fg-subtle)', pulse: false },
+  resetting: { color: 'var(--color-fg-subtle)', pulse: true },
+  resetFailed: RED,
 };
 
 /** `Date.now()`, re-rendering every second while `on`. */

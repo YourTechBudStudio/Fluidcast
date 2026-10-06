@@ -18,6 +18,9 @@ export const fromStatus = (status: number): TransportError =>
     status,
   });
 
+export const isTransportError = (error: unknown): error is TransportError =>
+  error instanceof TransportError;
+
 /** Identifiers only: never a body or a URL. */
 const fromHttpError = (error: HttpClientError.HttpClientError): TransportError => {
   const reason = error.reason;

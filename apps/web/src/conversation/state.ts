@@ -1,5 +1,6 @@
 import { useAtomSet } from '@effect/atom-react';
 import { Effect, Option, Stream } from 'effect';
+import { FetchHttpClient } from 'effect/unstable/http';
 import { AsyncResult, Atom } from 'effect/unstable/reactivity';
 import { useMemo } from 'react';
 
@@ -12,10 +13,10 @@ import type {
 } from '@yourtechbudstudio/fluidcast-harness/protocol';
 import { AskCommand } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 
-import { clientRuntime } from '../client';
+import { clientRuntime, resetSession, sessionIdAtom } from '../client';
 import { playbackAtom } from '../playback';
 import type { Connection, ConversationCommands, ConversationView } from './model';
-import { present } from './presentation';
+import { present, resetPendingOf } from './presentation';
 
 const EMPTY: ConversationView = {
   actions: [],
@@ -64,6 +65,41 @@ export const sendFailureAtom = Atom.writable(
   },
   (ctx, failure: TransportError | null) => ctx.setSelf(failure),
 ).pipe(Atom.keepAlive);
+
+/**
+ * Why the last Reset was not confirmed, if it was not. Like `sendFailureAtom`, a change in the phase or the connection
+ * clears it, and pressing Reset again does too.
+ */
+const resetFailureAtom = Atom.writable(
+  (get): TransportError | null => {
+    get(phaseAtom);
+    get(connectionAtom);
+    return null;
+  },
+  (ctx, failure: TransportError | null) => ctx.setSelf(failure),
+).pipe(Atom.keepAlive);
+
+/**
+ * Ends this registry's backend session. Resolves `true` once the backend confirmed it; the page leaves the session only
+ * when the status stream reports it, which disposes this registry. Pressing Reset again after a failure is the retry.
+ */
+const resetAtom = Atom.fn((_: void, get) =>
+  Effect.sync(() => get.set(resetFailureAtom, null)).pipe(
+    Effect.andThen(resetSession(get(sessionIdAtom))),
+    Effect.provide(FetchHttpClient.layer),
+    Effect.as(true),
+    Effect.catchTag('TransportError', (error) =>
+      Effect.sync(() => get.set(resetFailureAtom, error)).pipe(
+        Effect.andThen(Effect.logWarning('reset failed')),
+        Effect.annotateLogs({ reason: error.reason, status: error.status }),
+        Effect.as(false),
+      ),
+    ),
+  ),
+);
+
+/** Reset is in flight, or succeeded and the page is about to leave the session. */
+const resetPendingAtom = Atom.make((get) => resetPendingOf(get(resetAtom)));
 
 /**
  * Show executions whose report the Harness would not accept (`invalid`): the page and the backend disagree, so this
@@ -148,6 +184,7 @@ export function useConversationCommands(): ConversationCommands {
   const answerAsk = useAtomSet(answerAskAtom, { mode: 'promise' });
   const back = useAtomSet(backAtom, { mode: 'promise' });
   const start = useAtomSet(startAtom, { mode: 'promise' });
+  const reset = useAtomSet(resetAtom, { mode: 'promise' });
   return useMemo(
     () => ({
       sendMessage,
@@ -156,14 +193,15 @@ export function useConversationCommands(): ConversationCommands {
       answerAsk: (execution, answer) => answerAsk({ execution, answer }),
       back: () => back(),
       start: () => start(),
+      reset: () => reset(),
     }),
-    [sendMessage, interrupt, retryGeneration, answerAsk, back, start],
+    [sendMessage, interrupt, retryGeneration, answerAsk, back, start, reset],
   );
 }
 
 /**
- * Everything the player shows, derived from the conversation, the connection, playback, a failed send and Show
- * reports the Harness would not accept.
+ * Everything the player shows, derived from the conversation, the connection, playback, a failed send, Show reports
+ * the Harness would not accept, and Reset.
  */
 export const presentationAtom = Atom.make((get) =>
   present(
@@ -172,5 +210,6 @@ export const presentationAtom = Atom.make((get) =>
     get(playbackAtom),
     get(sendFailureAtom),
     get(unresolvedShowsAtom),
+    { pending: get(resetPendingAtom), failure: get(resetFailureAtom) },
   ),
 );

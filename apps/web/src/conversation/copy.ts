@@ -60,6 +60,8 @@ export const COPY: Record<StatusMoment, readonly string[]> = {
     'The player and server are out of sync. Try reloading.',
     'We’re speaking different versions. Reload to catch up.',
   ],
+  resetting: ['Ending this session…'],
+  resetFailed: ['Couldn’t reset: the backend didn’t confirm it. Press Reset to try again.'],
   superseded: [
     'Looks like you picked me up in another tab.',
     'You’re talking to me in another tab now.',
