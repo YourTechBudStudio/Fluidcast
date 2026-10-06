@@ -1,17 +1,19 @@
 # Interaction model
 
-A quiet player does not necessarily mean work is complete: agents may still be working and sending progress. Questions can appear before their spoken explanation finishes; answering does not cut off that narration. Users can explicitly interrupt when they want to redirect immediately.
+A quiet player does not necessarily mean work is complete: the worker may still be working and sending progress. Questions can appear before their spoken explanation finishes; answering does not cut off that narration. Users can explicitly interrupt when they want to redirect immediately.
 
 ## Player controls
 
 - **Away/resume:** Step away and come back without abandoning background work. Nothing plays while away, and the next response is prepared once outstanding work returns. A session can start away, so starting it is resuming it.
 - **Next:** Skip ahead while preserving execution of intervening tools.
-- **Back:** Return to the previous speech without executing actions in reverse. Replaying speech does not rerun agent work; replayable presentation tools can show content again during forward playback.
-- **Interrupt:** Redirect immediately, discarding presentation that has not happened yet. Agents keep working; corrections reach them as new messages. While an agent call is pending, the user interrupts before typing.
+- **Back:** Return to the previous speech without executing actions in reverse. Replaying speech does not rerun the worker's work; replayable presentation tools can show content again during forward playback.
+- **Interrupt:** Redirect immediately, discarding presentation that has not happened yet. The worker keeps working; corrections reach it as new messages that steer its current work. While a forward is pending, the user interrupts before typing.
 
-## Questions
+## Walkthroughs and questions
 
-Every question to the user goes through Ask, one question at a time. The question stays visible until answered, with free text always available alongside any choices. While a question is open, interrupting is unavailable, but the user can still step away and return to it.
+The listener drives. Each worker reply is walked through one segment at a time, and the walkthrough moves on only when the listener continues: a Continue, a plain agreement or an answer all mean go on. Interrupt is for breaking the flow to redirect the worker now; it is not needed to agree or to answer.
+
+The voice has no questions of its own: the worker's questions become the voice's, asked in the first person, one at a time through Ask, where they come up in the reply. An Ask question stays visible until answered, with free text always available alongside any choices. Answers are kept, not judged, and go back to the worker together in one forward when the walkthrough ends. The question's own Interrupt action declines it instead: the question closes unanswered, narration stops, and the user says what they want in its place, which the voice forwards at once. The user can still step away and return to it.
 
 ## Attention
 

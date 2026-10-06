@@ -1,9 +1,11 @@
 import {
   Cause,
+  Clock,
   Context,
   Duration,
   Effect,
   Exit,
+  Fiber,
   FiberHandle,
   FiberSet,
   Layer,
@@ -22,6 +24,8 @@ import {
   type Action,
   type ToolCall,
   type ToolFaulted,
+  type ToolProgress,
+  type UserMessage,
 } from '@yourtechbudstudio/fluidcast-core/actions';
 import { checkTools, decodeToolCall, generate } from '@yourtechbudstudio/fluidcast-core/generation';
 import {
@@ -59,7 +63,7 @@ import {
 } from './protocol.ts';
 
 /**
- * The single-session conversation authority (ADRs 0003, 0006): the action log, the cursor,
+ * The single-session conversation authority (ADRs 0001, 0002): the action log, the cursor,
  * playback identity, generation, tool execution, and the one subscription.
  */
 export class Session extends Context.Service<
@@ -83,13 +87,14 @@ export class Session extends Context.Service<
 
 type Subscriber = Queue.Queue<SubscriptionMessage, Cause.Done>;
 
-/** The live side of an open execution, kept in step with `state.executions`. */
+/** The live side of an open execution, kept in step with `state.executions`, which holds its handles. */
 interface Running {
   readonly tool: Tool;
-  readonly handle: string;
   /** `tool.command?.(input)`, resolved once when the execution started; absent after a failed setup. */
   readonly accepts: Schema.Codec<unknown, Schema.Json> | undefined;
   readonly commands: Queue.Queue<unknown>;
+  /** The execution's fiber, once forked: interrupted when an Interrupt cancels a blocking execution. */
+  fiber?: Fiber.Fiber<void, never>;
 }
 
 /** How long continuation waits for more outcomes before submitting them together. */
@@ -98,7 +103,7 @@ const batchWindow = Duration.millis(200);
 /**
  * Whether queued outcomes should be submitted now, without user input: someone is there to hear
  * the answer, nothing is playing, generating or holding, and no interrupt left them for the user's
- * next message. Agrees with `derivePhase`: whenever this holds, the phase is `waiting`.
+ * next message. Agrees with `derivePhase`: whenever this holds, the phase is `working`.
  */
 const ready = (state: SessionState, subscribed: boolean): boolean =>
   subscribed &&
@@ -111,12 +116,33 @@ const ready = (state: SessionState, subscribed: boolean): boolean =>
   state.actions.at(-1)?.type !== 'interrupted';
 
 /**
+ * Whether a progress update can be used now: someone is there, nothing is playing, queued,
+ * generating or holding, and the user has not interrupted to speak. Unlike `ready`, it needs no
+ * pending result.
+ */
+const progressAllowed = (state: SessionState, subscribed: boolean): boolean =>
+  subscribed &&
+  !isHalted(state) &&
+  state.generation === 'idle' &&
+  state.replay === null &&
+  state.cursor === state.actions.length &&
+  state.pendingResults.length === 0 &&
+  blockingExecution(state) === undefined &&
+  state.actions.at(-1)?.type !== 'interrupted';
+
+/**
  * Builds a session in the current scope. Also returns `state`, which the Layer does not expose, so
  * tests can observe a session that has no subscriber.
  */
 export const make = (config: SessionConfig) =>
   Effect.gen(function* () {
-    checkTools(config.tools);
+    checkTools(config.tools, config.examples);
+    for (const tool of config.tools) {
+      // A replayed call would be assigned again under a new execution that no outcome can join.
+      if (tool.assign !== undefined && tool.policy.replay) {
+        throw new Error(`Tool "${tool.name}" assigns calls, so it must not replay`);
+      }
+    }
     const languageModel = yield* LanguageModel.LanguageModel;
     const synthesizer = yield* SpeechSynthesizer;
 
@@ -137,7 +163,7 @@ export const make = (config: SessionConfig) =>
     });
     const subscriber = yield* Ref.make<Subscriber | undefined>(undefined);
     const generation = yield* FiberHandle.make<void, never>();
-    // Executions end on their own or with the session scope; nothing cancels one by key.
+    // Executions end on their own, with the session scope, or (blocking ones) by an Interrupt.
     const executions = yield* FiberSet.make<void, never>();
     // Set when the session scope starts closing. Finalizers run in reverse order, so this is set
     // before the execution set interrupts its fibers: only then is an interrupted execution teardown.
@@ -247,7 +273,33 @@ export const make = (config: SessionConfig) =>
         if (pass === 'replay' && toolNamed(call.tool)?.policy.replay !== true) return;
         const decoded = decodeToolCall(config.tools, call);
         if (Result.isSuccess(decoded)) {
-          return yield* startExecution(decoded.success.tool, decoded.success.input, call.handle);
+          const { tool, input } = decoded.success;
+          const proposed = ExecutionId.make(uuidv7());
+          if (pass === 'first' && tool.assign !== undefined) {
+            const current = yield* Ref.get(state);
+            const assigned = yield* Effect.exit(
+              Effect.suspend(() =>
+                tool.assign!(input, { handle: call.handle, state: current, executionId: proposed }),
+              ),
+            );
+            const target = Exit.isSuccess(assigned) ? assigned.value : undefined;
+            if (target === proposed) {
+              return yield* startExecution(tool, input, call.handle, proposed);
+            }
+            if (
+              current.executions.some(
+                (execution) => execution.executionId === target && execution.tool === tool.name,
+              )
+            ) {
+              yield* emit({ _tag: 'ToolJoined', executionId: target!, handle: call.handle });
+              return yield* Effect.logInfo('tool joined').pipe(
+                Effect.annotateLogs({ tool: tool.name, handle: call.handle }),
+              );
+            }
+            // A dead `assign`, or an ID that is not an open execution of this tool: a tool defect.
+            return yield* startExecution(tool, input, call.handle, proposed, true);
+          }
+          return yield* startExecution(tool, input, call.handle, proposed);
         }
         if (pass === 'replay') return;
         yield* emit({
@@ -255,7 +307,7 @@ export const make = (config: SessionConfig) =>
           result: {
             type: 'tool_errored',
             id: makeActionId(),
-            handle: call.handle,
+            handles: [call.handle],
             tool: call.tool,
             message: decoded.failure,
           },
@@ -267,37 +319,51 @@ export const make = (config: SessionConfig) =>
       });
 
     /**
-     * Opens one execution and forks it. It never fails or throws: any defect, in setup, in `run` or
-     * in its result, reaches `finish` in the execution's own fiber, which can halt safely because it
-     * is neither the generation fiber nor a command.
+     * Opens one execution under `executionId` and forks it. It never fails or throws: any defect,
+     * in setup, in `run` or in its result, reaches `finish` in the execution's own fiber, which can
+     * halt safely because it is neither the generation fiber nor a command. `broken`: the tool
+     * mis-assigned the call, so the body dies.
      */
-    const startExecution = (tool: Tool, input: unknown, handle: string) =>
+    const startExecution = (
+      tool: Tool,
+      input: unknown,
+      handle: string,
+      executionId: ExecutionId,
+      broken = false,
+    ) =>
       Effect.gen(function* () {
-        const executionId = ExecutionId.make(uuidv7());
         const commands = yield* Queue.unbounded<unknown>();
         let accepts: Running['accepts'];
         let body: Effect.Effect<unknown, ToolError | ToolFault>;
         try {
+          if (broken) throw new Error('the tool assigned a call to an execution it does not own');
           accepts = tool.command?.(input);
           body = Effect.suspend(() =>
-            tool.run(input, { handle, awaitCommand: Queue.take(commands) }),
+            tool.run(input, {
+              handle,
+              executionId,
+              awaitCommand: Queue.take(commands),
+              progress: offerProgress(executionId),
+            }),
           );
         } catch (defect) {
           accepts = undefined;
           body = Effect.die(defect);
         }
-        running.set(executionId, { tool, handle, accepts, commands });
+        const entry: Running = { tool, accepts, commands };
+        running.set(executionId, entry);
         yield* emit({
           _tag: 'ToolStarted',
           executionId,
-          handle,
+          handles: [handle],
           tool: tool.name,
           blocking: tool.policy.blocking,
+          startedAt: yield* Clock.currentTimeMillis,
         });
         yield* Effect.logInfo('tool started').pipe(
           Effect.annotateLogs({ tool: tool.name, handle }),
         );
-        yield* FiberSet.run(
+        entry.fiber = yield* FiberSet.run(
           executions,
           body.pipe(
             Effect.exit,
@@ -322,9 +388,14 @@ export const make = (config: SessionConfig) =>
         const entry = running.get(executionId);
         if (entry === undefined) return;
         running.delete(executionId);
-        const { tool, handle } = entry;
+        const { tool } = entry;
+        const current = yield* Ref.get(state);
+        // Read before `ToolCompleted` removes the execution: its handles live only in the state.
+        const handles = current.executions.find(
+          (execution) => execution.executionId === executionId,
+        )!.handles;
         let outcome: string;
-        if (isHalted(yield* Ref.get(state))) {
+        if (isHalted(current)) {
           outcome = 'dropped';
         } else if (Exit.isSuccess(exit)) {
           outcome = 'result';
@@ -336,20 +407,20 @@ export const make = (config: SessionConfig) =>
                 result: {
                   type: 'tool_result',
                   id: makeActionId(),
-                  handle,
+                  handles,
                   tool: tool.name,
                   result: read.success,
                 },
               });
             } else {
               outcome = 'UnexpectedError';
-              yield* halt(tool, handle, describeFault(tool.name, undefined));
+              yield* halt(tool.name, handles, describeFault(tool.name, undefined));
             }
           }
         } else if (Cause.hasDies(exit.cause) || Cause.hasInterrupts(exit.cause)) {
           // A defect or a self-interruption anywhere in the cause, even beside an expected error.
           outcome = 'UnexpectedError';
-          yield* halt(tool, handle, describeFault(tool.name, undefined));
+          yield* halt(tool.name, handles, describeFault(tool.name, undefined));
         } else {
           // Every expected failure in the cause: a fault anywhere halts, even beside a `ToolError`.
           const errors = exit.cause.reasons
@@ -365,7 +436,7 @@ export const make = (config: SessionConfig) =>
                 result: {
                   type: 'tool_errored',
                   id: makeActionId(),
-                  handle,
+                  handles,
                   tool: tool.name,
                   message: error.message,
                 },
@@ -373,22 +444,43 @@ export const make = (config: SessionConfig) =>
             }
           } else {
             outcome = fault?._tag ?? 'UnexpectedError';
-            yield* halt(tool, handle, describeFault(tool.name, fault));
+            yield* halt(tool.name, handles, describeFault(tool.name, fault));
           }
         }
         // After any `ResultQueued`, so no event prefix reads as a finished turn.
         yield* emit({ _tag: 'ToolCompleted', executionId });
         yield* Effect.logInfo('tool completed').pipe(
-          Effect.annotateLogs({ tool: tool.name, handle, outcome }),
+          Effect.annotateLogs({ tool: tool.name, handles: handles.join(' '), outcome }),
         );
       });
 
     // Stopping
 
     /**
+     * Cancels the open blocking executions for an Interrupt: the user declines to answer. Each
+     * leaves the state with no outcome (none is invented) and its fiber is interrupted without
+     * waiting, so a late outcome finds no entry in `finish` and changes nothing. An expected end,
+     * not a fault. Non-blocking executions, such as a running worker, continue.
+     */
+    const cancelBlocking = Effect.gen(function* () {
+      const current = yield* Ref.get(state);
+      for (const execution of current.executions.filter((candidate) => candidate.blocking)) {
+        const entry = running.get(execution.executionId);
+        running.delete(execution.executionId);
+        yield* emit({ _tag: 'ToolCompleted', executionId: execution.executionId });
+        // Forked: the fiber may be waiting for the lock this command holds.
+        if (entry?.fiber !== undefined)
+          yield* FiberSet.run(executions, Fiber.interrupt(entry.fiber));
+        yield* Effect.logInfo('tool cancelled').pipe(
+          Effect.annotateLogs({ tool: execution.tool, handles: execution.handles.join(' ') }),
+        );
+      }
+    });
+
+    /**
      * Stops presentation and generation, shared by Interrupt and halt so the two cannot drift:
      * ends a replay, trims what never took effect, appends `action` and moves the cursor to the end,
-     * which clears playback. Running executions continue (ADR 0008). An unreached tool call at the
+     * which clears playback. Running executions continue (ADR 0002). An unreached tool call at the
      * cursor (appended there during a replay) never took effect, so it is trimmed too.
      */
     const stop = (action: Action) =>
@@ -412,14 +504,60 @@ export const make = (config: SessionConfig) =>
         yield* emit({ _tag: 'CursorMoved', cursor: end });
       });
 
-    /** Halts the conversation for good (until a future Reset): no further generation. */
-    const halt = (tool: Tool, handle: string, error: ToolFaulted['error']) =>
+    /**
+     * Halts the conversation for good (until a future Reset): no further generation. `handles` is
+     * empty for a fault outside any call.
+     */
+    const halt = (tool: string, handles: ReadonlyArray<string>, error: ToolFaulted['error']) =>
       Effect.gen(function* () {
-        yield* stop({ type: 'tool_faulted', id: makeActionId(), handle, error });
+        yield* stop({ type: 'tool_faulted', id: makeActionId(), handles, tool, error });
         yield* Effect.logWarning('tool faulted').pipe(
-          Effect.annotateLogs({ tool: tool.name, handle, error: error.tag }),
+          Effect.annotateLogs({ tool, handles: handles.join(' '), error: error.tag }),
         );
       });
+
+    /** A tool's failure outside any execution: the first halts; later ones and teardown record nothing. */
+    const faultOutside = (tool: Tool, fault: ToolFault | undefined) =>
+      Effect.gen(function* () {
+        if (closing || isHalted(yield* Ref.get(state))) {
+          return yield* Effect.logInfo('tool fault dropped').pipe(
+            Effect.annotateLogs({ tool: tool.name }),
+          );
+        }
+        yield* halt(tool.name, [], describeFault(tool.name, fault));
+      });
+
+    // Progress
+
+    /**
+     * Uses a running execution's progress update when `progressAllowed` holds: it is logged as
+     * `tool_progress` with the execution's current handles and starts an iteration. Otherwise it is
+     * dropped. The text is never logged.
+     */
+    const offerProgress = (executionId: ExecutionId) => (text: string) =>
+      transact(
+        Effect.gen(function* () {
+          const current = yield* Ref.get(state);
+          const execution = current.executions.find(
+            (candidate) => candidate.executionId === executionId,
+          );
+          const used =
+            !closing && execution !== undefined && progressAllowed(current, yield* subscribed);
+          yield* Effect.logInfo(used ? 'tool progress used' : 'tool progress dropped').pipe(
+            Effect.annotateLogs({ tool: execution?.tool ?? 'closed', executionId }),
+          );
+          if (used) {
+            yield* beginIteration({
+              type: 'tool_progress',
+              id: makeActionId(),
+              handles: execution.handles,
+              tool: execution.tool,
+              text,
+            });
+          }
+          return used;
+        }),
+      );
 
     // Generation
 
@@ -427,9 +565,11 @@ export const make = (config: SessionConfig) =>
     const iterate = (history: ReadonlyArray<Action>) =>
       generate({
         instructions: config.instructions,
+        ...(config.examples === undefined ? {} : { examples: config.examples }),
         speakers: profiles,
         history,
         tools: config.tools,
+        ...(config.reminders === undefined ? {} : { reminders: config.reminders }),
       }).pipe(
         Stream.runForEach((element) =>
           transact(
@@ -469,19 +609,44 @@ export const make = (config: SessionConfig) =>
       );
 
     /**
-     * Starts another iteration: the only submission path for a message, a retry and continuation,
-     * so a queued outcome is submitted exactly once, before any new input. `running` comes first,
-     * so no event prefix reads as a finished turn.
+     * Records each tool's context when it changed, so the latest one closes this iteration's
+     * input. A failing `context` is logged by tool name and skipped. Never starts an iteration.
      */
-    const beginIteration = (text?: string) =>
+    const recordContext = Effect.gen(function* () {
+      for (const tool of config.tools) {
+        if (tool.context === undefined) continue;
+        const sampled = yield* Effect.exit(Effect.suspend(() => tool.context!));
+        if (Exit.isFailure(sampled)) {
+          yield* Effect.logWarning('tool context failed').pipe(
+            Effect.annotateLogs({ tool: tool.name }),
+          );
+          continue;
+        }
+        const text = sampled.value ?? '';
+        const latest = (yield* Ref.get(state)).actions.findLast(
+          (action) => action.type === 'tool_context' && action.tool === tool.name,
+        );
+        const recorded = latest?.type === 'tool_context' ? latest.text : '';
+        if (text !== recorded) {
+          yield* append({ type: 'tool_context', id: makeActionId(), tool: tool.name, text });
+        }
+      }
+    });
+
+    /**
+     * Starts another iteration: the only submission path for a message, a progress update, a retry
+     * and continuation, so a queued outcome is submitted exactly once, before any new input.
+     * `running` comes first, so no event prefix reads as a finished turn. Context is recorded after
+     * the input, so it closes it.
+     */
+    const beginIteration = (input?: UserMessage | ToolProgress) =>
       Effect.gen(function* () {
         yield* emit({ _tag: 'GenerationChanged', generation: 'running' });
         if ((yield* Ref.get(state)).pendingResults.length > 0) {
           yield* emit({ _tag: 'ResultsSubmitted' });
         }
-        if (text !== undefined) {
-          yield* append({ type: 'user_message', id: makeActionId(), text });
-        }
+        if (input !== undefined) yield* append(input);
+        yield* recordContext;
         yield* settle;
         const history = effectiveActions(yield* Ref.get(state));
         yield* FiberHandle.run(generation, iterate(history));
@@ -552,32 +717,42 @@ export const make = (config: SessionConfig) =>
             if (phase !== 'idle' && phase !== 'generationFailed') {
               return yield* reject(command._tag, current);
             }
-            return yield* beginIteration(command.text);
+            return yield* beginIteration({
+              type: 'user_message',
+              id: makeActionId(),
+              text: command.text,
+            });
           }
           case 'RetryGeneration': {
             if (phase !== 'generationFailed') return yield* reject(command._tag, current);
             return yield* beginIteration();
           }
           case 'PlaybackFinished': {
-            // Stale by identity, or nobody is subscribed: the cursor stays frozen (ADR 0003).
+            // Stale by identity, or nobody is subscribed: the cursor stays frozen (ADR 0001).
             if (current.playback?.playbackId !== command.playbackId) return;
             if (!(yield* subscribed)) return;
             if (current.replay !== null) return yield* advanceReplay(current.replay);
             return yield* settleFrom(current.cursor + 1);
           }
           case 'Interrupt': {
-            // Ignored, not rejected: the listener must answer a blocking tool.
-            if (blockingExecution(current) !== undefined) return;
+            // The user declines an open blocking tool (a question) to say something else: it is
+            // cancelled, and the interruption always stands, whatever else was going on.
+            const declined = phase !== 'halted' && blockingExecution(current) !== undefined;
+            if (declined) yield* cancelBlocking;
             // Stops listening to an old line first; the frontier's own phase decides the rest.
             const endedReplay = current.replay !== null;
             if (endedReplay) yield* emit({ _tag: 'ReplayMoved', replay: null });
             const frontier = yield* Ref.get(state);
             const frontierPhase = derivePhase(frontier);
-            if (frontierPhase !== 'speaking' && frontierPhase !== 'waiting') {
+            if (!declined && frontierPhase !== 'speaking' && frontierPhase !== 'working') {
               if (endedReplay) return;
               return yield* reject(command._tag, frontier);
             }
-            return yield* stop({ type: 'interrupted', id: makeActionId() });
+            return yield* stop({
+              type: 'interrupted',
+              id: makeActionId(),
+              during: frontierPhase === 'speaking' ? 'speech' : 'wait',
+            });
           }
           case 'Back': {
             const target = backTarget(current);
@@ -591,9 +766,12 @@ export const make = (config: SessionConfig) =>
           case 'ToolCommand': {
             if (phase === 'halted') return yield* reject(command._tag, current);
             const entry = running.get(command.executionId);
+            const execution = current.executions.find(
+              (candidate) => candidate.executionId === command.executionId,
+            );
             const rejectTool = (reason: ToolCommandRejected['reason']) =>
               Effect.fail(new ToolCommandRejected({ executionId: command.executionId, reason }));
-            if (entry === undefined || entry.handle !== command.handle) {
+            if (entry === undefined || execution?.handles.includes(command.handle) !== true) {
               return yield* rejectTool('stale');
             }
             if (entry.accepts === undefined) return yield* rejectTool('invalid');
@@ -646,6 +824,18 @@ export const make = (config: SessionConfig) =>
           }),
         ),
     };
+
+    // Registered after the `closing` finalizer, so teardown interrupts these first and records
+    // nothing. A defect in a stream halts like one in an execution.
+    for (const tool of config.tools) {
+      const faults = tool.faults;
+      if (faults === undefined) continue;
+      yield* Effect.forkScoped(
+        Stream.runForEach(faults, (fault) => transact(faultOutside(tool, fault))).pipe(
+          Effect.catchDefect(() => transact(faultOutside(tool, undefined))),
+        ),
+      );
+    }
 
     return { service, state: Ref.get(state) };
   });

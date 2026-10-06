@@ -6,13 +6,8 @@ import type { StatusMoment } from './presentation';
  */
 export const COPY: Record<StatusMoment, readonly string[]> = {
   fresh: ['What’s on your mind?', 'Ask me anything.', 'Where should we start?'],
-  thinking: [
-    'Mulling that over…',
-    'Ooh, good one. Thinking…',
-    'Gathering my thoughts…',
-    'Give me a sec…',
-  ],
-  mulling: ['Mulling over your answer…'],
+  // One word for every kind of thinking; the status line adds the elapsed time.
+  thinking: ['Thinking'],
   waiting: ['Hang on, more coming…', 'Still going, one moment…', 'Lining up the next bit…'],
   asking: ['Over to you.'],
   askingText: ['Take your time. I’m listening.'],
@@ -81,4 +76,15 @@ export function haltedCopy(fault: string | null): string {
   return fault
     ? `${fault} I stopped here. Restart the backend to begin again.`
     : copyFor('halted', 0);
+}
+
+/** Elapsed time as `m:ss`, or `h:mm:ss` past an hour. A negative duration (clock skew) reads as zero. */
+export function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = String(total % 60).padStart(2, '0');
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}`
+    : `${minutes}:${seconds}`;
 }

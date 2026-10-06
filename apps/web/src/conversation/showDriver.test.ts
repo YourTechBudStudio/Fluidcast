@@ -52,9 +52,10 @@ describe('retryDelay', () => {
 describe('unseenShows', () => {
   const execution = (id: string, handle: string, tool = 'show'): Execution => ({
     executionId: id as ExecutionId,
-    handle,
+    handles: [handle],
     tool,
     blocking: tool === 'ask',
+    startedAt: 0,
   });
 
   it('opens the panel for a Show execution not seen before, including a replay of a seen call', () => {

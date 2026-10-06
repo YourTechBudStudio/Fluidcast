@@ -1,12 +1,5 @@
-import { Effect, Layer, Option, Schema, Stream } from 'effect';
-import { Sse } from 'effect/unstable/encoding';
-import {
-  FetchHttpClient,
-  HttpClient,
-  HttpClientError,
-  HttpClientRequest,
-  type HttpClientResponse,
-} from 'effect/unstable/http';
+import { Effect, Layer, Option, Stream } from 'effect';
+import { FetchHttpClient, HttpClient, HttpClientRequest } from 'effect/unstable/http';
 
 import {
   CommandBody,
@@ -20,49 +13,7 @@ import {
 import { Transport, TransportError } from '@yourtechbudstudio/fluidcast-client';
 import { SubscriptionMessage, type Command } from '@yourtechbudstudio/fluidcast-harness/protocol';
 
-/** A status with no failure body the contract knows: the class of status is all there is to go on. */
-const fromStatus = (status: number): TransportError =>
-  new TransportError({
-    reason: status >= 500 ? 'ServerError' : status >= 400 ? 'BadRequest' : 'Malformed',
-    status,
-  });
-
-/** Identifiers only: never a body or a URL. */
-const fromHttpError = (error: HttpClientError.HttpClientError): TransportError => {
-  const reason = error.reason;
-  switch (reason._tag) {
-    case 'TransportError':
-      return new TransportError({ reason: 'Unreachable' });
-    case 'EncodeError':
-    case 'InvalidUrlError':
-      return new TransportError({ reason: 'BadRequest' });
-    case 'StatusCodeError':
-      return fromStatus(reason.response.status);
-    case 'DecodeError':
-    case 'EmptyBodyError':
-      return new TransportError({ reason: 'Malformed', status: reason.response.status });
-  }
-};
-
-/**
- * Anything that is not already a `TransportError`: an HTTP client failure, or a reply that did not
- * decode (a schema or SSE framing failure), which means the backend broke the protocol.
- */
-const toTransportError = (error: unknown): TransportError => {
-  if (error instanceof TransportError) return error;
-  if (HttpClientError.isHttpClientError(error)) return fromHttpError(error);
-  return new TransportError({ reason: 'Malformed' });
-};
-
-/**
- * Reads a failure response's body as one of the contract's tagged errors. A body that is missing or
- * unknown falls back to the status.
- */
-const failureOf = <A, I>(
-  schema: Schema.Codec<A, I>,
-  response: HttpClientResponse.HttpClientResponse,
-): Effect.Effect<Option.Option<A>> =>
-  response.json.pipe(Effect.flatMap(Schema.decodeUnknownEffect(schema)), Effect.option);
+import { failureOf, fromStatus, sseStream, toTransportError } from './http';
 
 const encodeCommand = HttpClientRequest.schemaBodyJson(CommandBody);
 
@@ -81,24 +32,10 @@ export const httpTransport: Layer.Layer<Transport> = Layer.effect(
     const client = HttpClient.withScope(yield* HttpClient.HttpClient);
 
     const subscribe = () =>
-      Stream.unwrap(
-        Effect.flatMap(
-          client.execute(
-            HttpClientRequest.get(routes.events).pipe(
-              HttpClientRequest.accept('text/event-stream'),
-            ),
-          ),
-          (response) =>
-            response.status === 200
-              ? Effect.succeed(response.stream)
-              : Effect.fail(fromStatus(response.status)),
-        ),
-      ).pipe(
-        Stream.decodeText,
-        Stream.pipeThroughChannel(Sse.decodeDataSchema(SubscriptionMessage)),
-        Stream.map((event) => event.data),
-        Stream.mapError(toTransportError),
-      );
+      sseStream(client, routes.events, SubscriptionMessage, {
+        onFailure: (response) => Effect.fail(fromStatus(response.status)),
+        isKnown: (error): error is TransportError => error instanceof TransportError,
+      });
 
     const send = (command: Command) =>
       Effect.gen(function* () {

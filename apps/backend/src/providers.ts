@@ -1,4 +1,6 @@
-import { Schema, type Redacted } from 'effect';
+import * as OpenAiClient from '@effect/ai-openai/OpenAiClient';
+import { Schema, type Layer, type Redacted } from 'effect';
+import type { HttpClient } from 'effect/unstable/http';
 
 /**
  * The provider types. `openai` is OpenAI's API (Responses for generation, `/audio/speech` for TTS);
@@ -33,3 +35,15 @@ export interface Connection {
   readonly baseUrl?: string;
   readonly apiKey: Redacted.Redacted<string>;
 }
+
+/**
+ * The `OpenAiClient` for an API-key connection: OpenAI's API, or `baseUrl` when set. The one place
+ * the backend turns a `Connection` into an `OpenAiClient`.
+ */
+export const openAiClientLayer = (
+  connection: Connection,
+): Layer.Layer<OpenAiClient.OpenAiClient, never, HttpClient.HttpClient> =>
+  OpenAiClient.layer({
+    apiKey: connection.apiKey,
+    ...(connection.baseUrl === undefined ? {} : { apiUrl: connection.baseUrl }),
+  });

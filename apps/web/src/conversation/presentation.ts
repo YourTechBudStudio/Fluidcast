@@ -2,6 +2,7 @@ import { absurd } from 'effect/Function';
 
 import type { TransportError } from '@yourtechbudstudio/fluidcast-client';
 import type { Execution, ExecutionId } from '@yourtechbudstudio/fluidcast-harness/protocol';
+import { forwardErrorParts, forwardToolName } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 import type { AskCommand, AskInput } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 import type { ShowInput } from '@yourtechbudstudio/fluidcast-tool-show/schema';
 
@@ -11,8 +12,11 @@ import type { VisualState } from '../visuals';
 import type { Action, Connection, ConversationView, Speaker } from './model';
 import {
   answerFor,
-  answerOf,
   askOf,
+  findCall,
+  forwardResultOf,
+  forwardThinkingSince,
+  isForward,
   latestShowHandle,
   openAsk,
   pendingAnswer,
@@ -66,15 +70,10 @@ export type FailureStatus =
 /**
  * What the status line speaks to: the moment, with an audio failure refined to its cause, or a command that could
  * not reach the backend. A failed send changes nothing else, because the conversation did not change; connection
- * moments still take priority. Two refinements only change the copy:
- * - `askingText`: `asking`, for a question answered in the listener's own words;
- * - `mulling`: `thinking`, about the answer to a question.
+ * moments still take priority. One refinement only changes the copy: `askingText`, `asking` for a question answered
+ * in the listener's own words.
  */
-export type StatusMoment =
-  | Exclude<Moment, 'audioFailed'>
-  | FailureStatus
-  | 'askingText'
-  | 'mulling';
+export type StatusMoment = Exclude<Moment, 'audioFailed'> | FailureStatus | 'askingText';
 
 /** Which controls the composer offers. */
 export type ComposerMode = 'compose' | 'busy' | 'retry' | 'retryClip' | 'offline';
@@ -89,12 +88,13 @@ export type TimelineRow =
       readonly text: string;
       /** Same speaker as the previous row: drawn as a continuation. */
       readonly continued: boolean;
-      /** The next action is `interrupted`: this line was cut. */
+      /** The next action interrupted this line while it played. */
       readonly interrupted: boolean;
       /** Set on the line at the cursor. */
       readonly now: 'playing' | 'audioFailed' | 'held' | 'queued' | null;
     }
-  | { readonly kind: 'interrupted'; readonly id: string }
+  /** `speech`: a playing line was cut. `wait`: the listener cut in while nothing played. */
+  | { readonly kind: 'interrupted'; readonly id: string; readonly during: 'speech' | 'wait' }
   | { readonly kind: 'failed'; readonly id: string; readonly tag: string; readonly message: string }
   | {
       readonly kind: 'show';
@@ -127,6 +127,32 @@ export type TimelineRow =
        */
       readonly correction: Correction;
     }
+  | {
+      /** The listener's words forwarded to the worker. */
+      readonly kind: 'forward';
+      readonly id: string;
+      readonly handle: string;
+      /**
+       * `working` while an open execution holds the call; `answered` or `failed` once an outcome that includes it is
+       * known (submitted or pending); `null` otherwise, for example after a halt.
+       */
+      readonly state: 'working' | 'answered' | 'failed' | null;
+      /** The call joined the busy worker's execution, so it steered the current work. */
+      readonly joined: boolean;
+      /** The other calls the same execution or outcome answers. */
+      readonly together: readonly string[];
+    }
+  | {
+      /** What the model read back from the worker, at the position in the log where it read it. */
+      readonly kind: 'forwardResult';
+      readonly id: string;
+      readonly handles: readonly string[];
+      readonly outcome:
+        | { readonly _tag: 'result'; readonly messages: readonly string[] }
+        | { readonly _tag: 'error'; readonly error: string; readonly written: string | null };
+    }
+  /** The worker's progress, as the model read it. */
+  | { readonly kind: 'progress'; readonly id: string; readonly text: string }
   | { readonly kind: 'faulted'; readonly id: string; readonly message: string }
   | { readonly kind: 'pending'; readonly label: string };
 
@@ -153,7 +179,10 @@ export interface Presentation {
   readonly subtitle: SubtitleLine | null;
   readonly timeline: readonly TimelineRow[];
   readonly ask: AskPresence | null;
-  /** Esc and Interrupt act: something is playing or on its way, and no blocking tool holds the turn. */
+  /**
+   * Esc and Interrupt act: something is playing or on its way, or a question is open. Interrupting an
+   * open question closes it unanswered, as the Ask card's Interrupt does.
+   */
   readonly interruptible: boolean;
   /** An earlier line can be presented again. */
   readonly canGoBack: boolean;
@@ -161,6 +190,11 @@ export interface Presentation {
   readonly fault: string | null;
   /** The Show the Show button opens, if there has been one. */
   readonly latestShow: string | null;
+  /**
+   * While thinking, when the open Forward execution started (epoch milliseconds), so the status line counts the whole
+   * time the worker has been busy; `null` when the worker is not running or the moment is not `thinking`.
+   */
+  readonly thinkingSince: number | null;
 }
 
 const lastIndexWhere = <A>(items: readonly A[], f: (a: A) => boolean) => {
@@ -171,7 +205,11 @@ const lastIndexWhere = <A>(items: readonly A[], f: (a: A) => boolean) => {
 const isSpeak = (action: Action): action is Extract<Action, { type: 'speak' }> =>
   action.type === 'speak';
 
-const blocked = (view: ConversationView) => view.executions.some((e) => e.blocking);
+/** Whether the action at `index` is a line an interrupt cut while it played. */
+const cutAt = (view: ConversationView, index: number) => {
+  const next = view.actions[index + 1];
+  return next?.type === 'interrupted' && next.during === 'speech';
+};
 
 /** Where the presented speak sits in the view; the end when nothing is presented. */
 const presentedIndex = (view: ConversationView) =>
@@ -182,7 +220,7 @@ const presentedIndex = (view: ConversationView) =>
 /**
  * Playback status only counts for the speak being presented: at the cursor, or at the replay position after Back. A
  * status for any other action, such as a late failure for a line that was interrupted, is stale and ignored by
- * identity (ADR 0007).
+ * identity (ADR 0001).
  */
 function playbackAtPresented(
   view: ConversationView,
@@ -209,9 +247,13 @@ export function momentOf(
       return 'halted';
     case 'speaking':
       return 'speaking';
+    // A blocking tool holds the turn for the listener.
     case 'waiting':
-      // A blocking tool holds the turn for the listener.
-      if (blocked(view)) return 'asking';
+      return 'asking';
+    case 'working':
+      // While the worker runs, the system is thinking, whatever else goes on around it.
+      if (view.executions.some((execution) => execution.tool === forwardToolName))
+        return 'thinking';
       // A continuation starts a new model turn too: until it speaks, the model is thinking.
       return view.actions.slice(turnBoundary(view) + 1).some(isSpeak) ? 'waiting' : 'thinking';
     case 'idle': {
@@ -309,19 +351,21 @@ function subtitleOf(
       const earlier = before.slice(turnStart + 1).findLast(isSpeak);
       return earlier ? line(earlier, 'current') : yourLine(view);
     }
-    case 'thinking':
-      // Thinking about your message shows it; thinking about a tool's outcome keeps the last line.
-      return view.actions[turnBoundary(view)]?.type === 'user_message'
+    case 'thinking': {
+      // A line said in this turn (while the worker runs) stays, dimmed. Otherwise thinking about your message shows it,
+      // and thinking about a tool's outcome keeps the last line.
+      const boundary = turnBoundary(view);
+      if (lastSpeakIndex > boundary && lastSpeak) return line(lastSpeak, 'dim');
+      return view.actions[boundary]?.type === 'user_message'
         ? yourLine(view)
         : lastSpeak
           ? line(lastSpeak, 'dim')
           : null;
+    }
     case 'waiting':
       return lastSpeak ? line(lastSpeak, 'current') : null;
     case 'interrupted':
-      return lastSpeak
-        ? line(lastSpeak, 'dim', view.actions[lastSpeakIndex + 1]?.type === 'interrupted')
-        : null;
+      return lastSpeak ? line(lastSpeak, 'dim', cutAt(view, lastSpeakIndex)) : null;
     default:
       return lastSpeak ? line(lastSpeak, 'dim') : null;
   }
@@ -333,7 +377,51 @@ function askStateOf(
   answer: { readonly pending: boolean } | undefined,
 ): AskCardState {
   if (answer) return answer.pending ? 'pending' : 'answered';
-  return view.executions.some((e) => e.handle === handle) ? 'live' : 'unanswered';
+  return view.executions.some((e) => e.handles.includes(handle)) ? 'live' : 'unanswered';
+}
+
+type Outcome = Extract<Action, { type: 'tool_result' | 'tool_errored' }>;
+
+/** Where a forward call stands, and which other calls share its execution or outcome. */
+function forwardStateOf(
+  view: ConversationView,
+  handle: string,
+): Pick<Extract<TimelineRow, { kind: 'forward' }>, 'state' | 'joined' | 'together'> {
+  const holds = (group: { readonly handles: readonly string[] }) => group.handles.includes(handle);
+  const execution = view.executions.find(holds);
+  const outcome = [...view.actions, ...view.pendingResults].find(
+    (action): action is Outcome =>
+      (action.type === 'tool_result' || action.type === 'tool_errored') && holds(action),
+  );
+  const state = execution
+    ? 'working'
+    : outcome?.type === 'tool_result'
+      ? 'answered'
+      : outcome?.type === 'tool_errored'
+        ? 'failed'
+        : null;
+  const handles = (execution ?? outcome)?.handles ?? [handle];
+  return {
+    state,
+    joined: handles[0] !== handle,
+    together: handles.filter((other) => other !== handle),
+  };
+}
+
+/** The row for a forward outcome. */
+function forwardResultRowOf(
+  outcome: Outcome,
+): Extract<TimelineRow, { kind: 'forwardResult' }> | null {
+  if (outcome.tool !== forwardToolName) return null;
+  return {
+    kind: 'forwardResult',
+    id: outcome.id,
+    handles: outcome.handles,
+    outcome:
+      outcome.type === 'tool_result'
+        ? { _tag: 'result', messages: forwardResultOf(outcome) }
+        : { _tag: 'error', ...forwardErrorParts(outcome.message) },
+  };
 }
 
 function timelineOf(
@@ -366,7 +454,7 @@ function timelineOf(
           tone,
           text: action.text,
           continued: previous?.type === 'speak' && previous.speaker === action.speaker,
-          interrupted: view.actions[i + 1]?.type === 'interrupted',
+          interrupted: cutAt(view, i),
           now,
         });
         break;
@@ -384,6 +472,15 @@ function timelineOf(
             corrects: showFailed,
           });
           showFailed = failure !== null;
+          break;
+        }
+        if (isForward(action)) {
+          rows.push({
+            kind: 'forward',
+            id: action.id,
+            handle: action.handle,
+            ...forwardStateOf(view, action.handle),
+          });
           break;
         }
         const ask = askOf(action);
@@ -410,15 +507,27 @@ function timelineOf(
         });
         break;
       }
-      // Outcomes belong to their call's row.
+      // A forward outcome has its own row where the model read it; other outcomes belong to their call's row.
       case 'tool_result':
-      case 'tool_errored':
+      case 'tool_errored': {
+        const row = forwardResultRowOf(action);
+        if (row) rows.push(row);
+        break;
+      }
+      case 'tool_progress': {
+        // Only the Forward tool reports progress.
+        if (isForward(findCall(view, action.handles[0])))
+          rows.push({ kind: 'progress', id: action.id, text: action.text });
+        break;
+      }
+      // Context is for the model only.
+      case 'tool_context':
         break;
       case 'tool_faulted':
         rows.push({ kind: 'faulted', id: action.id, message: action.error.message });
         break;
       case 'interrupted':
-        rows.push({ kind: 'interrupted', id: action.id });
+        rows.push({ kind: 'interrupted', id: action.id, during: action.during });
         break;
       case 'generation_failed':
         rows.push({
@@ -482,21 +591,9 @@ function statusOf(
       return playback.kind === 'failed' ? audioStatus(playback.error) : 'audioUnplayable';
     case 'asking':
       return openAsk(view)?.input.kind === 'text' ? 'askingText' : 'asking';
-    case 'thinking':
-      return answeredLast(view) ? 'mulling' : 'thinking';
     default:
       return moment;
   }
-}
-
-/** Whether the latest submitted batch of tool outcomes, the current turn's boundary, holds an Ask answer. */
-function answeredLast(view: ConversationView): boolean {
-  for (let i = turnBoundary(view); i >= 0; i--) {
-    const action = view.actions[i]!;
-    if (action.type === 'tool_result' && answerOf(action)) return true;
-    if (action.type !== 'tool_result' && action.type !== 'tool_errored') return false;
-  }
-  return false;
 }
 
 function askPresenceOf(view: ConversationView): AskPresence | null {
@@ -506,7 +603,10 @@ function askPresenceOf(view: ConversationView): AskPresence | null {
   // After an interrupt the answer goes with the next message, and after a generation failure Retry submits it: the
   // composer returns in both.
   const pending = pendingAnswer(view);
-  if (pending && (view.phase === 'speaking' || view.phase === 'waiting'))
+  if (
+    pending &&
+    (view.phase === 'speaking' || view.phase === 'waiting' || view.phase === 'working')
+  )
     return { mode: 'sent', ...pending };
   return null;
 }
@@ -534,9 +634,10 @@ export function present(
     subtitle: subtitleOf(view, moment, playback),
     timeline: timelineOf(view, moment, playback),
     ask: askPresenceOf(view),
-    interruptible: (composer === 'busy' || composer === 'retryClip') && !blocked(view),
+    interruptible: composer === 'busy' || composer === 'retryClip',
     canGoBack: canGoBackOf(view, connection),
     fault: view.actions.findLast((a) => a.type === 'tool_faulted')?.error.message ?? null,
     latestShow: latestShowHandle(view) ?? null,
+    thinkingSince: moment === 'thinking' ? (forwardThinkingSince(view) ?? null) : null,
   };
 }

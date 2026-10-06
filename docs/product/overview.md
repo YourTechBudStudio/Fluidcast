@@ -9,11 +9,12 @@ The primary experience resembles an interactive podcast player: users listen, se
 ## Use cases
 
 - **Brainstorming:** A capable agent advances the thinking one step per turn while Fluidcast walks the user through each step, collects their reactions, and relays them back. This is the lead use case.
-- **Agent coordination:** Explain results, discuss decisions, and delegate work to existing or newly created agent sessions. A conversation can begin from work an agent has already completed, not only from a fresh user prompt.
-- **Curriculum delivery:** Explain prepared learning material, potentially without a backing coding agent. This remains a possible layer above the same harness, not a separate architectural requirement.
+- **Agent coordination:** Explain results, discuss decisions, and steer the session's one worker, which can be an existing agent session. A conversation can begin from work an agent has already completed, not only from a fresh user prompt.
+- **Curriculum delivery:** Explain prepared learning material that the session's worker holds. This remains a possible layer above the same harness, not a separate architectural requirement.
 
 ## Experience principles
 
+- The listener drives: each worker reply is walked through one piece at a time, and nothing moves on until the listener continues.
 - Favor fluent, bounded speech segments over long monologues.
 - Start background work early when conversational ordering permits, and use progress updates to keep users informed.
 - Show dense material in bounded pieces and talk over it, rather than presenting everything at once.

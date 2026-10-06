@@ -6,15 +6,20 @@ These documents capture product intent, architectural scope, and consequential d
 
 - [Overview](product/overview.md): Use cases, goals, and scope.
 - [Interaction model](product/interaction-model.md): Player controls, questions, attention, and recovery expectations.
-- [Writing instructions](product/writing-instructions.md): Shaping an experience through application instructions.
+- [Presets and instructions](product/presets.md): Where the voice's behavior comes from, and the Guided Walkthrough preset.
 
 ## Architecture: ownership and decisions
 
 - [Overview](architecture/overview.md): SDK responsibilities and integration boundaries.
 - [Core SDK](architecture/core-sdk.md): Stateless action generation and speech synthesis.
 - [Harness lifecycle](architecture/harness-lifecycle.md): Execution, continuation, interruption, and recovery.
-- [Tools and agents](architecture/tools-and-agents.md): The tool contract, initial tools, and agent pools.
+- [Tools and the worker](architecture/tools-and-agents.md): The tool contract, initial tools, and the session's one worker.
 - [Client integration](architecture/client-integration.md): Connection, playback, and audio boundaries.
+
+## Research: what has been measured
+
+- [Guided walkthrough prompting](research/guided-walkthrough-prompting.md): What worked and what didn't when tuning a small voice model for the Guided Walkthrough, with compressed results.
+- [Evaluating voice behavior](evals/README.md): How presets are measured and improved: the method, scoring, the unattended tuning loop, and what worked, as a specification to rebuild the harness from.
 
 ## ADRs: durable rationale
 

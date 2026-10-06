@@ -1,9 +1,11 @@
 import { useAtom } from '@effect/atom-react';
-import { PanelRight, TextAlignStart, Undo2 } from 'lucide-react';
+import { PanelRight, SquareTerminal, TextAlignStart, Undo2 } from 'lucide-react';
+import type { Ref } from 'react';
 
 import { Button, Kbd, RadioMenu } from '../ui';
 import { VISUAL_IDS, VISUAL_NAMES, VisualSwatch } from '../visuals';
-import { transcriptOpenAtom, visualAtom } from './state';
+import type { Layer } from './layers';
+import { visualAtom } from './state';
 
 const VISUAL_OPTIONS = VISUAL_IDS.map((id) => ({
   value: id,
@@ -22,11 +24,17 @@ export interface TopBarProps {
     readonly available: boolean;
     readonly onToggle: () => void;
   };
+  /** The transcript and Worker buttons: pressed while their layer shows; each toggles it with the stage. */
+  readonly layers: {
+    readonly current: Layer;
+    readonly onToggle: (layer: 'transcript' | 'workers') => void;
+    /** The Worker button, where focus returns when the layer closes from its own close button. */
+    readonly workersRef: Ref<HTMLButtonElement>;
+  };
 }
 
-export function TopBar({ back, show }: TopBarProps) {
+export function TopBar({ back, show, layers }: TopBarProps) {
   const [visual, setVisual] = useAtom(visualAtom);
-  const [transcriptOpen, setTranscriptOpen] = useAtom(transcriptOpenAtom);
   return (
     <header className="relative z-20 flex min-h-17 items-center gap-3 px-4.5 py-3.5 max-sm:px-3">
       <div className="inline-flex items-center gap-2.5 font-display text-[15px] font-medium tracking-[-0.01em] text-fg-muted">
@@ -36,7 +44,7 @@ export function TopBar({ back, show }: TopBarProps) {
         />
         Fluidcast
       </div>
-      <div className="ml-auto flex items-center gap-1.5">
+      <div className="ml-auto flex items-center gap-1.5 max-sm:gap-0.5">
         <Button
           tone="ghost"
           aria-label="Back"
@@ -81,15 +89,30 @@ export function TopBar({ back, show }: TopBarProps) {
         <Button
           tone="ghost"
           aria-label="Transcript"
-          aria-pressed={transcriptOpen}
+          aria-pressed={layers.current === 'transcript'}
           aria-keyshortcuts="E"
           className="text-sm"
           icon={<TextAlignStart {...icon} />}
-          onClick={() => setTranscriptOpen(!transcriptOpen)}
+          onClick={() => layers.onToggle('transcript')}
         >
           <span className="max-sm:hidden">Transcript</span>
           <span className="max-sm:hidden">
             <Kbd>E</Kbd>
+          </span>
+        </Button>
+        <Button
+          ref={layers.workersRef}
+          tone="ghost"
+          aria-label="Worker"
+          aria-pressed={layers.current === 'workers'}
+          aria-keyshortcuts="W"
+          className="text-sm"
+          icon={<SquareTerminal {...icon} />}
+          onClick={() => layers.onToggle('workers')}
+        >
+          <span className="max-sm:hidden">Worker</span>
+          <span className="max-sm:hidden">
+            <Kbd>W</Kbd>
           </span>
         </Button>
       </div>

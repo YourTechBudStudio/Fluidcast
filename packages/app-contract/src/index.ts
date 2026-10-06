@@ -25,6 +25,10 @@ export const routes = {
   commands: '/api/commands',
   /** `GET`: the audio for one speak action, streamed. */
   speech: '/api/speech/:actionId',
+  /** `GET`: the worker's status as Server-Sent Events, one `WorkerSummary` per change. */
+  worker: '/api/worker',
+  /** `GET`: the worker's transcript as SSE: a `TranscriptSnapshot`, then `TranscriptAppended`s. */
+  workerTranscript: '/api/worker/transcript',
 } as const;
 
 /** The path of the speech route for one action. */
@@ -79,3 +83,13 @@ export const SubscriptionMessageJson = Schema.fromJsonString(SubscriptionMessage
 
 /** How often the server sends a heartbeat comment. */
 export const heartbeatIntervalMillis = 15_000;
+
+// GET /api/worker and GET /api/worker/transcript
+
+/**
+ * Responses: `200`, SSE with the same framing as `/api/events` (one `data:` line per message,
+ * heartbeat comments), each message JSON-encoded with the Forward tool's `WorkerSummaryJson` or
+ * `TranscriptMessageJson` (`fluidcast-tool-agent/schema`, which owns the Worker surface). A session
+ * always has its one worker, so there is no not-found case.
+ */
+export const workerStatus = { ok: 200 } as const;

@@ -40,7 +40,7 @@ export class TransportError extends Schema.TaggedError<TransportError>()('Transp
 
 /**
  * How the client reaches the application backend. Applications implement it over their own
- * transport (ADR 0003); the client never assumes HTTP, SSE or WebSockets.
+ * transport (ADR 0001); the client never assumes HTTP, SSE or WebSockets.
  */
 export class Transport extends Context.Service<
   Transport,

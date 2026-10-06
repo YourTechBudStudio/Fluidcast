@@ -6,6 +6,7 @@ import { useMemo } from 'react';
 import { Client, type TransportError } from '@yourtechbudstudio/fluidcast-client';
 import type {
   CommandRejected,
+  Execution,
   ExecutionId,
   ToolCommandRejected,
 } from '@yourtechbudstudio/fluidcast-harness/protocol';
@@ -121,11 +122,19 @@ const answerAskAtom = clientRuntime.fn(
       execution,
       answer,
     }: {
-      readonly execution: { readonly handle: string; readonly executionId: ExecutionId };
+      readonly execution: Execution;
       readonly answer: AskCommand;
     },
     get,
-  ) => accepted(get, (client) => client.sendToolCommand(AskCommand, execution, answer)),
+  ) =>
+    accepted(get, (client) =>
+      // Commands name the execution's opening call.
+      client.sendToolCommand(
+        AskCommand,
+        { handle: execution.handles[0], executionId: execution.executionId },
+        answer,
+      ),
+    ),
 );
 const backAtom = clientRuntime.fn((_: void, get) => accepted(get, (client) => client.back()));
 

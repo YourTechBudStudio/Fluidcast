@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Stream } from 'effect';
 import { LanguageModel } from 'effect/unstable/ai';
 import { HttpRouter } from 'effect/unstable/http';
 
@@ -10,8 +10,12 @@ import { SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';
 import { layer as harnessLayer } from '@yourtechbudstudio/fluidcast-harness';
 
 import { conversationRoutes } from './routes.ts';
+import { ConversationWorker } from './worker.ts';
 
-/** The command routes over a real speech-only session whose providers are never called. */
+/**
+ * The command routes over a real speech-only session whose providers are never called, with an
+ * idle fake worker.
+ */
 const app = conversationRoutes.pipe(
   Layer.provideMerge(
     harnessLayer({
@@ -20,6 +24,12 @@ const app = conversationRoutes.pipe(
       speechFormat: 'opus',
       tools: [],
     }),
+  ),
+  Layer.provideMerge(
+    Layer.succeed(
+      ConversationWorker,
+      ConversationWorker.of({ sessionId: 's', status: Stream.empty, transcript: Stream.empty }),
+    ),
   ),
   Layer.provide(
     Layer.merge(

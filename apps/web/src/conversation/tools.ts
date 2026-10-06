@@ -1,6 +1,7 @@
 import { Option, Schema } from 'effect';
 
 import type { Execution, ExecutionId } from '@yourtechbudstudio/fluidcast-harness/protocol';
+import { ForwardResult, forwardToolName } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 import {
   type AskCommand,
   AskInput,
@@ -13,16 +14,17 @@ import type { ShowCorrection } from '../tools';
 import type { Action, ConversationView } from './model';
 
 /**
- * Pure derivations of the Show and Ask tools from the view. The player recognises the two tools by name, through each
- * tool package's pure `./schema` entry, and never imports a tool's backend.
+ * Pure derivations of the Show, Ask and Forward tools from the view. The player recognises the tools by name, through
+ * each tool package's pure `./schema` entry, and never imports a tool's backend.
  */
 
 export type ToolCall = Extract<Action, { type: 'tool_call' }>;
-type ToolResult = Extract<Action, { type: 'tool_result' }>;
+export type ToolResult = Extract<Action, { type: 'tool_result' }>;
 
 const decodeShow = Schema.decodeUnknownOption(ShowInput);
 const decodeAsk = Schema.decodeUnknownOption(AskInput);
 const decodeAskResult = Schema.decodeUnknownOption(AskResult);
+const decodeForwardResult = Schema.decodeUnknownOption(ForwardResult);
 
 // A logged action never changes, so each is decoded once.
 const shows = new WeakMap<ToolCall, ShowInput | undefined>();
@@ -54,6 +56,30 @@ export const askOf = (call: ToolCall | undefined): AskInput | undefined =>
     ? cached(asks, call, () => Option.getOrUndefined(decodeAsk(call.input)))
     : undefined;
 
+/**
+ * Whether a call is a `forward`: it hands the listener's words to the worker. Its input has no fields (any the model
+ * added are ignored), so every `forward` call is valid.
+ */
+export const isForward = (call: ToolCall | undefined): boolean => call?.tool === forwardToolName;
+
+/** When the open Forward execution started (epoch milliseconds), if one is open. */
+export const forwardThinkingSince = (view: ConversationView): number | undefined => {
+  const starts = view.executions
+    .filter((execution) => execution.tool === forwardToolName)
+    .map((execution) => execution.startedAt);
+  return starts.length === 0 ? undefined : Math.min(...starts);
+};
+
+/**
+ * The messages a forward result carries, in order. A result that does not decode is shown as one message holding its
+ * JSON text, so nothing the model read is hidden.
+ */
+export const forwardResultOf = (result: ToolResult): ReadonlyArray<string> =>
+  Option.match(decodeForwardResult(result.result), {
+    onSome: (decoded) => decoded.messages,
+    onNone: () => [JSON.stringify(result.result, null, 2)],
+  });
+
 /** The answer an Ask result carries. */
 export const answerOf = (result: ToolResult): AskCommand | undefined =>
   result.tool === askToolName
@@ -72,7 +98,7 @@ export const openAsk = (
 ): { readonly execution: Execution; readonly input: AskInput } | undefined => {
   for (const execution of view.executions) {
     if (execution.tool !== askToolName) continue;
-    const input = askOf(findCall(view, execution.handle));
+    const input = askOf(findCall(view, execution.handles[0]));
     if (input) return { execution, input };
   }
   return undefined;
@@ -86,9 +112,11 @@ export const pendingAnswer = (
   | undefined => {
   for (const result of view.pendingResults.toReversed()) {
     if (result.type !== 'tool_result' || result.tool !== askToolName) continue;
-    const input = askOf(findCall(view, result.handle));
+    // An Ask execution holds only its own call.
+    const [handle] = result.handles;
+    const input = askOf(findCall(view, handle));
     const answer = answerOf(result);
-    if (input && answer) return { handle: result.handle, input, answer };
+    if (input && answer) return { handle, input, answer };
   }
   return undefined;
 };
@@ -101,7 +129,7 @@ export const toolErrorOf = (
   handle: string,
 ): { readonly message: string; readonly submitted: boolean } | undefined => {
   const matches = (action: Action | ToolErrored): action is ToolErrored =>
-    action.type === 'tool_errored' && action.handle === handle;
+    action.type === 'tool_errored' && action.handles.includes(handle);
   const submitted = view.actions.find(matches);
   if (submitted) return { message: submitted.message, submitted: true };
   const pending = view.pendingResults.find(matches);
@@ -125,13 +153,13 @@ export const showCorrectionOf = (
     (action) => action.type === 'tool_call' && action.handle === handle,
   );
   const awaited =
-    (view.phase === 'speaking' || view.phase === 'waiting') &&
+    (view.phase === 'speaking' || view.phase === 'waiting' || view.phase === 'working') &&
     !view.actions
       .slice(call + 1)
       .some((action) => action.type === 'user_message' || action.type === 'interrupted');
   if (toolErrorOf(view, handle)?.submitted) return { error: 'sent', awaited };
   return view.executions.some(
-    (execution) => execution.handle === handle && unresolved.has(execution.executionId),
+    (execution) => execution.handles.includes(handle) && unresolved.has(execution.executionId),
   )
     ? null
     : { error: 'pending', awaited };
@@ -147,7 +175,7 @@ export const answerFor = (
     [view.pendingResults, true],
   ] as const) {
     for (const action of results) {
-      if (action.type !== 'tool_result' || action.handle !== handle) continue;
+      if (action.type !== 'tool_result' || !action.handles.includes(handle)) continue;
       const answer = answerOf(action);
       if (answer) return { answer, pending };
     }
@@ -156,13 +184,14 @@ export const answerFor = (
 };
 
 /**
- * Where the model's current turn begins: the latest user message, or the latest submitted tool outcome, since a
- * continuation starts a new model turn too. `-1` when there is none.
+ * Where the model's current turn begins: the latest user message, submitted tool outcome or used progress update,
+ * since a continuation or a progress iteration starts a new model turn too. `-1` when there is none.
  */
 export const turnBoundary = (view: ConversationView): number =>
   view.actions.findLastIndex(
     (action) =>
       action.type === 'user_message' ||
       action.type === 'tool_result' ||
-      action.type === 'tool_errored',
+      action.type === 'tool_errored' ||
+      action.type === 'tool_progress',
   );

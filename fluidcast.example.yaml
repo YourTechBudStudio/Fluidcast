@@ -5,8 +5,9 @@ server:
   host: 127.0.0.1
   port: 4700
 
-# How each provider type is reached, shared by every section that uses it. Optional: an absent
-# entry uses OpenAI's base URL and the default key variable (FLUIDCAST_<TYPE>_API_KEY).
+# How each API-key provider type is reached, shared by every section that uses it. Optional: an
+# absent entry uses OpenAI's base URL and the default key variable (FLUIDCAST_<TYPE>_API_KEY).
+# The chatgpt LLM type has no entry here: it uses your ChatGPT sign-in instead of a key.
 providers:
   # OpenAI: the Responses API for the LLM, and text-to-speech.
   openai:
@@ -23,8 +24,24 @@ llm:
   provider:
     type: openai
     # reasoningEffort: low
+  # Or any Chat Completions server (the openai-compatible connection above). structuredOutput
+  # constrains the voice's replies to the output's JSON Schema via response_format (vLLM supports
+  # it); off by default, and only this type accepts it. With vLLM, start the server with
+  # structured-output whitespace disabled (disable_any_whitespace), or a stray quote can turn into a
+  # long run of spaces.
+  # provider:
+  #   type: openai-compatible
+  #   structuredOutput: true
+  # Or use your ChatGPT Plus/Pro subscription instead of an API key: run pnpm chatgpt:login once,
+  # and set model to one your ChatGPT plan offers. No providers entry or key is needed for it;
+  # tts below still needs the OpenAI API key.
+  # provider:
+  #   type: chatgpt
+  #   # reasoningEffort: low
   # Sampling temperature. Absent uses the server's default.
   # temperature: 0.7
+  # The most tokens one reply may use. Absent uses the server's limit. Not with chatgpt.
+  # maxOutputTokens: 8192
 
 tts:
   model: gpt-4o-mini-tts
@@ -33,33 +50,17 @@ tts:
   provider:
     type: openai
 
-# A demo lesson written for the reference tools (Show and Ask). Replace it with your own.
-instructions: |
-  You are teaching a short, interactive lesson on the basics of client–server architecture. When the listener says hello or asks to start, run the lesson below in order; if they ask something else, answer it, then offer to continue where you left off.
-
-  Pacing, for the whole lesson:
-  - Work in bounded pieces: one idea per show, never a wall of material at once.
-  - Say two or three lines before each show, then walk through it while it is on screen.
-  - Every question that needs the listener's answer goes through ask, and it is the last thing you say. Wait for the answer before moving on, and respond to what they actually said.
-
-  The lesson:
-  1. Open with two or three spoken lines: what a client and a server are in everyday terms, and that most of what they do online is these two talking.
-  2. Show the two roles in markdown: a short table or two lists of what the client does and what the server does. Walk through it.
-  3. Show one request and its response as a mermaid sequence diagram: the browser, the server and a database, with the request, the query, the result and the response. Walk through it step by step.
-  4. Ask a choice question that checks which side does what, for example who decides what a page looks like, or who checks a password. Offer three or four options, and give each a one-line description.
-  5. Show, in html, one HTTP request next to its response as two columns: the method, path and headers on the left, the status, headers and a small body on the right. Walk through the parts that line up.
-  6. Ask a text question: which client they use every day, and what they think it asks a server for.
-  7. Close with a markdown recap show of the main ideas, walk through it briefly, and invite their questions.
-
-# Each speaker keeps its personality and its voice together. The first speaker is the lead.
-speakers:
-  - id: host
-    name: Host
-    personality: Warm, curious and engaging. Explains things plainly, like a good storyteller.
-    voice:
-      name: alloy
-      # Optional delivery guidance, for voices that support it.
-      # instructions: Calm and unhurried.
+# The voice's behavior: the Guided Walkthrough preset. The agent behind the forward_agent tool does
+# the thinking, and the voice walks you through its work one segment at a time.
+preset:
+  # detailed: for smaller or local models such as Qwen. The tested profile, and the default.
+  # compact: the protocol alone, for frontier models. Untested.
+  profile: detailed
+  # The host's synthesized voice, in the speech provider's names.
+  voice:
+    name: alloy
+    # Optional delivery guidance, for voices that support it.
+    # instructions: Calm and unhurried.
 
 # Development aids, off by default.
 # debug:

@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react';
 
 export type ButtonTone = 'primary' | 'quiet' | 'danger' | 'ghost';
 
@@ -18,6 +18,7 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
   readonly icon?: ReactNode;
   /** Disabled buttons stay focusable and announce themselves; clicks are ignored. */
   readonly unavailable?: boolean;
+  readonly ref?: Ref<HTMLButtonElement>;
 }
 
 /** The player's one button. Hit area is at least 44 px in every tone. */

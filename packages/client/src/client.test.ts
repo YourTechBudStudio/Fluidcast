@@ -356,14 +356,15 @@ describe('Client', () => {
         };
         const execution = {
           executionId: ExecutionId.make('e1'),
-          handle: 'call_1',
+          handles: ['call_1'] as const,
           tool: 'view',
           blocking: false,
+          startedAt: 1_000,
         };
         const errored = {
           type: 'tool_errored',
           id: ActionId.make('err'),
-          handle: 'call_1',
+          handles: ['call_1', 'call_2'],
           tool: 'view',
           message: 'failed',
         } as const;
@@ -380,6 +381,20 @@ describe('Client', () => {
         assert.deepEqual(current.executions, [execution]);
         assert.deepEqual(current.pendingResults, [errored]);
         assert.equal(current.presented?.id, 'b');
+
+        // A joined call is folded into its execution.
+        yield* connection.send({
+          _tag: 'ToolJoined',
+          executionId: execution.executionId,
+          handle: 'call_2',
+        });
+        const joined = yield* eventually(
+          client.view.get,
+          (value) => Option.isSome(value) && value.value.executions[0]?.handles.length === 2,
+        );
+        assert.deepEqual(Option.getOrThrow(joined).executions, [
+          { ...execution, handles: ['call_1', 'call_2'] },
+        ]);
 
         yield* connection.send({ _tag: 'ReplayMoved', replay: 1 });
         const replaying = yield* eventually(

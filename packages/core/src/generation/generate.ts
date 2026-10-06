@@ -3,20 +3,32 @@ import { AiError, LanguageModel } from 'effect/unstable/ai';
 
 import type { Action, Speak, SpeakerProfile } from '../actions/index.ts';
 import { ProviderError, type GenerationError } from './errors.ts';
+import type { Example } from './examples.ts';
 import { renderHistory } from './history.ts';
 import { parseActions } from './parser.ts';
 import { buildSystemPrompt } from './prompt.ts';
+import type { Reminders } from './reminders.ts';
 import type { ToolCallDraft, ToolDefinition } from './tools.ts';
 
 export interface GenerateOptions {
   /** Integrator instructions placed in the system prompt. */
   readonly instructions: string;
+  /**
+   * Integrator worked examples, rendered after the output format like history. Each may use only
+   * the configured tools; one that does not fit them is a configuration defect and throws.
+   */
+  readonly examples?: ReadonlyArray<Example>;
   /** The configured speakers. The first is the lead speaker. At least one is required. */
   readonly speakers: ReadonlyArray<SpeakerProfile>;
   /** The actions that have taken effect, oldest first. */
   readonly history: ReadonlyArray<Action>;
   /** The tools the model may call, in prompt order. Empty for a speech-only conversation. */
   readonly tools: ReadonlyArray<ToolDefinition>;
+  /**
+   * The configuration's reminders for the newest input, rendered after it and never in the system
+   * prompt. Absent: no reminders.
+   */
+  readonly reminders?: Reminders;
 }
 
 /**
@@ -31,7 +43,11 @@ export const generate = (
   Stream.suspend(() => {
     const prompt = [
       { role: 'system' as const, content: buildSystemPrompt(options) },
-      ...renderHistory(options.history, options.tools),
+      ...renderHistory(
+        options.history,
+        options.tools,
+        options.reminders === undefined ? {} : { reminders: options.reminders },
+      ),
     ];
     const text = LanguageModel.streamText({ prompt }).pipe(
       Stream.mapError(toProviderError),

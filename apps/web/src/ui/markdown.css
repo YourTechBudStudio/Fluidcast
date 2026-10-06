@@ -1,0 +1,138 @@
+/* Rendered Markdown that Tailwind utilities cannot style: a calm reading column in the player's type system. Used by
+   Markdown Shows and worker text. */
+.markdown-prose {
+  max-width: 68ch;
+  font-size: 16.5px;
+  line-height: 1.65;
+  color: var(--color-fg-muted);
+}
+.markdown-prose > * + * {
+  margin-top: 1em;
+}
+.markdown-prose h1,
+.markdown-prose h2,
+.markdown-prose h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: var(--color-fg);
+  line-height: 1.25;
+}
+.markdown-prose h1 {
+  font-size: 1.7em;
+}
+.markdown-prose h2 {
+  font-size: 1.35em;
+}
+.markdown-prose h3 {
+  font-size: 1.1em;
+}
+.markdown-prose * + h2,
+.markdown-prose * + h3 {
+  margin-top: 1.6em;
+}
+.markdown-prose strong {
+  font-weight: 600;
+  color: var(--color-fg);
+}
+.markdown-prose a {
+  color: var(--color-blue);
+  text-decoration: underline;
+  text-decoration-color: rgb(138 173 244 / 40%);
+  text-underline-offset: 3px;
+}
+.markdown-prose ol,
+.markdown-prose ul {
+  padding-left: 1.3em;
+}
+.markdown-prose ol {
+  list-style: decimal;
+}
+.markdown-prose ul {
+  list-style: disc;
+}
+.markdown-prose li + li {
+  margin-top: 0.4em;
+}
+.markdown-prose li::marker {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--color-fg-subtle);
+}
+.markdown-prose :not(pre) > code {
+  padding: 0.12em 0.4em;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.84em;
+  color: var(--color-cyan);
+  background: rgb(145 215 227 / 9%);
+}
+.markdown-prose pre {
+  overflow-x: auto;
+  padding: 14px 18px;
+  border: 1px solid rgb(91 96 120 / 35%);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-fg);
+  background: rgb(20 22 34 / 55%);
+}
+.markdown-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.93em;
+}
+.markdown-prose th {
+  padding: 0 12px 8px 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+  color: var(--color-fg-subtle);
+}
+.markdown-prose td {
+  padding: 9px 12px 9px 0;
+  border-top: 1px solid rgb(91 96 120 / 28%);
+}
+.markdown-prose blockquote {
+  padding: 4px 0 4px 18px;
+  border-left: 2px solid var(--color-violet);
+  font-family: var(--font-display);
+  font-size: 1.05em;
+  font-weight: 300;
+  color: var(--color-fg);
+}
+.markdown-prose img {
+  max-width: 100%;
+  border-radius: var(--radius-md);
+}
+
+/* A step smaller and full width, for Markdown that sits among other output (worker text). */
+.markdown-prose-compact {
+  max-width: none;
+  font-size: 15.5px;
+  line-height: 1.6;
+}
+.markdown-prose-compact > * + * {
+  margin-top: 0.75em;
+}
+.markdown-prose-compact h1 {
+  font-size: 1.3em;
+}
+.markdown-prose-compact h2 {
+  font-size: 1.15em;
+}
+.markdown-prose-compact h3 {
+  font-size: 1.02em;
+}
+.markdown-prose-compact * + h2,
+.markdown-prose-compact * + h3 {
+  margin-top: 1.3em;
+}
+.markdown-prose-compact pre {
+  padding: 10px 14px;
+  font-size: 12.5px;
+}

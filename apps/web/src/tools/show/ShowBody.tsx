@@ -51,7 +51,7 @@ function Rendered({
   );
   switch (rendered.kind) {
     case 'markup':
-      return <div className="show-prose" dangerouslySetInnerHTML={{ __html: rendered.html }} />;
+      return <div className="markdown-prose" dangerouslySetInnerHTML={{ __html: rendered.html }} />;
     case 'diagram':
       return <div className="show-diagram" dangerouslySetInnerHTML={{ __html: diagram }} />;
     case 'frame':

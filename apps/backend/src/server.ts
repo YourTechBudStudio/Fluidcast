@@ -10,7 +10,7 @@ import {
 } from 'effect/unstable/http';
 
 import type { Config } from './config.ts';
-import { conversationRoutes, sessionLayer } from './conversation/index.ts';
+import { conversationRoutes, languageModelLayer, sessionLayer } from './conversation/index.ts';
 import { speechRoutes, synthesizerLayer } from './speech/index.ts';
 
 export interface ServeOptions {
@@ -38,7 +38,10 @@ export const serverLayer = (config: Config, options: ServeOptions = {}) =>
     ),
   ).pipe(
     Layer.provide(sessionLayer(config.conversation, config.speech.format)),
-    Layer.provide(synthesizerLayer(config.speech)),
+    // Provided once, so the whole server shares one model (and one ChatGPT sign-in).
+    Layer.provide(
+      Layer.merge(languageModelLayer(config.conversation.llm), synthesizerLayer(config.speech)),
+    ),
     Layer.provide(FetchHttpClient.layer),
     // Shut down at once: waiting for open connections to drain would hold Ctrl+C on the
     // long-lived event stream, so in-flight requests are interrupted instead.

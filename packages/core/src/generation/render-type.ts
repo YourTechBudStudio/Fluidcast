@@ -15,7 +15,7 @@ export const renderTypeScript = (schema: Schema.Top): string => {
     if (typeof identifier !== 'string') return body(ast);
     if (!declared.has(identifier)) {
       declared.add(identifier);
-      const comment = docComment(ast.annotations?.['description'], '');
+      const comment = docComment(description(ast), '');
       declarations.push(`${comment}type ${identifier} = ${body(ast)};`);
     }
     return identifier;
@@ -44,7 +44,7 @@ export const renderTypeScript = (schema: Schema.Top): string => {
         const properties = ast.propertySignatures.map((property) => {
           if (typeof property.name !== 'string') return unsupported('non-string property key');
           const optional = property.type.context?.isOptional === true ? '?' : '';
-          const comment = docComment(property.type.annotations?.['description'], '  ');
+          const comment = docComment(description(property.type), '  ');
           const value = reference(property.type).replaceAll('\n', '\n  ');
           return `${comment}  ${property.name}${optional}: ${value};`;
         });
@@ -59,8 +59,15 @@ export const renderTypeScript = (schema: Schema.Top): string => {
   return declarations.join('\n\n');
 };
 
-const docComment = (description: unknown, indent: string): string =>
-  typeof description === 'string' ? `${indent}/** ${description} */\n` : '';
+/**
+ * The node's description. Annotating a schema that has checks (such as `NonEmptyString`) stores the
+ * annotation on its last check, so that is read too.
+ */
+const description = (ast: SchemaAST.AST): unknown =>
+  ast.annotations?.['description'] ?? ast.checks?.at(-1)?.annotations?.['description'];
+
+const docComment = (text: unknown, indent: string): string =>
+  typeof text === 'string' ? `${indent}/** ${text} */\n` : '';
 
 const unsupported = (shape: string): never => {
   throw new Error(`renderTypeScript does not support ${shape} schemas`);

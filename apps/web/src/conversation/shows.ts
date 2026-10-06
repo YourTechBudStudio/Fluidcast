@@ -89,12 +89,19 @@ export const showDriverAtom = clientRuntime
       const report = (execution: Execution) =>
         Effect.gen(function* () {
           const id = execution.executionId;
-          const body = yield* AtomRegistry.getResult(registry, showRenderAtom(execution.handle));
+          const body = yield* AtomRegistry.getResult(
+            registry,
+            showRenderAtom(execution.handles[0]),
+          );
           const payload: ShowCommand =
             body.state === 'rendered' ? { rendered: true } : { failed: body.reason };
           for (let attempt = 0; ; attempt++) {
             const outcome = yield* client
-              .sendToolCommand(ShowCommand, execution, payload)
+              .sendToolCommand(
+                ShowCommand,
+                { handle: execution.handles[0], executionId: id },
+                payload,
+              )
               .pipe(Effect.match({ onSuccess: () => ACCEPTED, onFailure: (error) => error }));
             const action = reportActionOf(outcome);
             switch (action.kind) {
@@ -125,7 +132,7 @@ export const showDriverAtom = clientRuntime
         const connected = registry.get(connectionAtom) === 'connected';
         for (const execution of unseenShows(view.executions, opened)) {
           opened.add(execution.executionId);
-          registry.set(showPanelAtom, { open: true, handle: execution.handle });
+          registry.set(showPanelAtom, { open: true, handle: execution.handles[0] });
         }
         const shows = view.executions.filter((execution) => execution.tool === showToolName);
         const open = new Set(shows.map((execution) => execution.executionId));

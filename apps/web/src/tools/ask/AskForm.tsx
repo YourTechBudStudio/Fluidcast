@@ -1,7 +1,8 @@
-import { ArrowRight, ArrowUp, Check, Clock } from 'lucide-react';
+import { ArrowRight, ArrowUp, Check, Clock, Hand } from 'lucide-react';
 import {
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -25,6 +26,8 @@ export interface AskFormProps {
   readonly disabled: boolean;
   /** Resolves `true` once the answer was accepted. The draft is kept otherwise. */
   readonly onSubmit: (answer: AskCommand) => Promise<boolean>;
+  /** Declines the question to say something else: the session's ordinary Interrupt. */
+  readonly onInterrupt: () => void;
   /** A control the moment calls for: Retry clip while open, or Interrupt once sent. */
   readonly extra?: ReactNode;
 }
@@ -37,7 +40,9 @@ const HINT: Record<AskInput['kind'], string> = {
 
 /**
  * One question in place of the composer, without chrome: the dock around it owns the surface. The question stays
- * put while the body below it swaps between the open form and the answer as sent. Free text is always available.
+ * put while the body below it swaps between the open form and the answer as sent. Free text is always available, and
+ * so is Interrupt: it declines the question without answering it, stops the narration, and hands back the composer
+ * for what the listener wants to say instead.
  */
 export function AskForm({
   input,
@@ -46,13 +51,14 @@ export function AskForm({
   narrating,
   disabled,
   onSubmit,
+  onInterrupt,
   extra,
 }: AskFormProps) {
   const [draft, setDraft] = useState<AskDraft>({ text: '', picked: [] });
   const [sending, setSending] = useState(false);
+  const box = useRef<HTMLTextAreaElement>(null);
   const blocked = disabled || sending || mode !== 'open';
   const options = input.kind === 'text' ? [] : input.options;
-  const described = options.some((option) => option.description);
   const multi = input.kind === 'multi';
   const sendable = answerForSend(input, draft);
 
@@ -60,6 +66,9 @@ export function AskForm({
     if (blocked || !next) return;
     setSending(true);
     void onSubmit(next).finally(() => setSending(false));
+  };
+  const interrupt = () => {
+    if (!blocked) onInterrupt();
   };
   const choose = (index: number) => {
     if (blocked) return;
@@ -120,11 +129,7 @@ export function AskForm({
               <div
                 role="group"
                 aria-label="Options"
-                className={
-                  described
-                    ? 'mt-3.5 grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-2 max-sm:grid-cols-1'
-                    : 'mt-3.5 flex flex-wrap gap-2 max-sm:flex-col'
-                }
+                className="mt-3.5 flex flex-wrap gap-2 max-sm:flex-col"
               >
                 {options.map((option, i) => {
                   const on = draft.picked.includes(i);
@@ -137,18 +142,14 @@ export function AskForm({
                       aria-keyshortcuts={i < 9 ? String(i + 1) : undefined}
                       onClick={() => choose(i)}
                       style={{ animationDelay: `${120 + i * 45}ms` }}
-                      className={`rise-in group relative flex min-h-11 cursor-pointer items-center gap-3 border text-left transition-[background-color,border-color,color,opacity] duration-(--duration-ui) ease-expo focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue aria-disabled:cursor-default aria-disabled:opacity-45 ${
-                        described
-                          ? 'items-start rounded-md px-3.5 py-3 max-sm:py-2.5'
-                          : 'rounded-full py-1.5 pr-4 pl-2 max-sm:rounded-md max-sm:pl-3.5'
-                      } ${
+                      className={`rise-in group flex min-h-11 cursor-pointer items-center gap-3 border text-left transition-[background-color,border-color,color,opacity] duration-(--duration-ui) ease-expo focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue aria-disabled:cursor-default aria-disabled:opacity-45 rounded-full py-1.5 pr-4 pl-2 max-sm:rounded-md max-sm:pl-3.5 ${
                         on
                           ? 'border-cyan/60 bg-cyan/12 text-fg'
                           : 'border-line/45 bg-subtle/55 text-fg hover:border-cyan/45 hover:bg-cyan/7'
                       }`}
                     >
                       <span
-                        className={`grid shrink-0 place-items-center ${described ? 'mt-0.5' : ''} ${multi ? '' : 'max-sm:hidden'}`}
+                        className={`grid shrink-0 place-items-center ${multi ? '' : 'max-sm:hidden'}`}
                       >
                         {multi ? (
                           <span
@@ -160,26 +161,16 @@ export function AskForm({
                           i < 9 && <Kbd>{i + 1}</Kbd>
                         )}
                       </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-[15.5px] font-semibold">{option.label}</span>
-                        {option.description && (
-                          <span className="mt-0.5 block text-[13.5px] leading-snug text-fg-subtle">
-                            {option.description}
-                          </span>
-                        )}
+                      <span className="min-w-0 flex-1 text-[15.5px] font-semibold">
+                        {option.label}
                       </span>
                       {input.kind === 'choice' && (
                         <ArrowRight
                           size={15}
                           strokeWidth={2}
                           aria-hidden
-                          className={`shrink-0 text-cyan opacity-0 transition-opacity duration-(--duration-ui) group-hover:opacity-100 group-focus-visible:opacity-100 max-sm:opacity-70 ${described ? 'mt-1' : ''}`}
+                          className="shrink-0 text-cyan opacity-0 transition-opacity duration-(--duration-ui) group-hover:opacity-100 group-focus-visible:opacity-100 max-sm:opacity-70"
                         />
-                      )}
-                      {multi && described && i < 9 && (
-                        <span className="absolute top-3 right-3.5 max-sm:hidden">
-                          <Kbd>{i + 1}</Kbd>
-                        </span>
                       )}
                     </button>
                   );
@@ -187,6 +178,7 @@ export function AskForm({
               </div>
             )}
             <FreeText
+              box={box}
               input={input}
               text={draft.text}
               disabled={disabled}
@@ -195,7 +187,18 @@ export function AskForm({
               onText={(text) => setDraft((current) => ({ ...current, text }))}
               onSend={() => submit(sendable)}
             />
-            {extra && <div className="mt-2.5 flex flex-wrap justify-end gap-1.5">{extra}</div>}
+            <div className="mt-2.5 flex flex-wrap items-center justify-end gap-1.5">
+              <Button
+                tone="ghost"
+                unavailable={blocked}
+                title="Skip this question and say something else instead"
+                icon={<Hand size={14} strokeWidth={1.9} aria-hidden />}
+                onClick={interrupt}
+              >
+                Interrupt
+              </Button>
+              {extra}
+            </div>
           </div>
         )}
       </Swap>
@@ -218,6 +221,7 @@ function AskingLabel({ mode }: { readonly mode: 'open' | 'sent' }) {
 
 /** The auto-growing text field and its send button: the Ask's always-present escape hatch. */
 function FreeText({
+  box,
   input,
   text,
   disabled,
@@ -226,6 +230,7 @@ function FreeText({
   onText,
   onSend,
 }: {
+  readonly box: RefObject<HTMLTextAreaElement | null>;
   readonly input: AskInput;
   readonly text: string;
   readonly disabled: boolean;
@@ -234,13 +239,12 @@ function FreeText({
   readonly onText: (text: string) => void;
   readonly onSend: () => void;
 }) {
-  const box = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-  }, [text]);
+  }, [box, text]);
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();

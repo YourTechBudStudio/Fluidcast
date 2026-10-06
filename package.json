@@ -9,6 +9,7 @@
     "backend:dev": "pnpm --filter '@fluidcast/backend^...' build && pnpm --filter @fluidcast/backend dev",
     "build": "pnpm -r --workspace-concurrency=1 --if-present build",
     "build:libs": "pnpm -r --workspace-concurrency=1 --filter '!@fluidcast/web' --if-present build",
+    "chatgpt:login": "pnpm --filter @fluidcast/backend chatgpt:login",
     "check": "pnpm lint && pnpm check:pure && pnpm typecheck && pnpm test && pnpm format:check",
     "check:pure": "node scripts/check-pure-exports.mjs",
     "fix": "pnpm lint:fix && pnpm format",
@@ -31,5 +32,5 @@
   "engines": {
     "node": ">=26 <27"
   },
-  "packageManager": "pnpm@12.3.4+sha512.961aa41fb077da3a04a441d9f8e15ebc0c96da8ef710b2eb67bf9ee7cb0610eabd48f1fd85f51cffe73846785fa0f87c56a3a872a1d893f8446741b5cce45457"
+  "packageManager": "pnpm@12.9.1"
 }

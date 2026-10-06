@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
-import { copyFor, haltedCopy } from './copy';
+import { copyFor, formatElapsed, haltedCopy } from './copy';
 import type { StatusMoment } from './presentation';
 
 const RED = { color: 'var(--color-red)', pulse: false, error: true } as const;
@@ -10,7 +10,6 @@ const DOT: Record<StatusMoment, { color: string; pulse: boolean; error?: true }>
   complete: { color: 'var(--color-cyan)', pulse: false },
   interrupted: { color: 'var(--color-cyan)', pulse: false },
   thinking: { color: 'var(--color-violet)', pulse: true },
-  mulling: { color: 'var(--color-violet)', pulse: true },
   waiting: { color: 'var(--color-violet)', pulse: true },
   asking: { color: 'var(--color-cyan)', pulse: false },
   askingText: { color: 'var(--color-cyan)', pulse: false },
@@ -31,29 +30,53 @@ const DOT: Record<StatusMoment, { color: string; pulse: boolean; error?: true }>
   superseded: { color: 'var(--color-fg-subtle)', pulse: false },
 };
 
+/** `Date.now()`, re-rendering every second while `on`. */
+function useNow(on: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!on) return;
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [on]);
+  return now;
+}
+
 /**
- * One quiet line above the composer, on both layers. It rotates its copy each time the player enters a moment. When a
- * tool halted the conversation, the line leads with what failed.
+ * One quiet line above the composer, on every layer. It rotates its copy each time the player enters a moment. When a
+ * tool halted the conversation, the line leads with what failed. While thinking it counts the elapsed time: from
+ * `thinkingSince` (when the earliest running worker started), else from when the line entered the moment.
  */
 export function StatusLine({
   moment,
   fault = null,
+  thinkingSince = null,
 }: {
   readonly moment: StatusMoment;
   readonly fault?: string | null;
+  readonly thinkingSince?: number | null;
 }) {
   // Widget-local rotation: how many times each moment has been entered. Adjusted during render when the moment changes (React's
   // "adjusting state when a prop changes" pattern), so the line never lags the moment by a commit. Computed only from state, so it is
   // idempotent under development mode's double render.
+  // `enteredAt` is when the line entered its moment.
   const [rotation, setRotation] = useState(() => ({
     moment,
     index: 0,
     entries: { [moment]: 0 } as Partial<Record<StatusMoment, number>>,
+    enteredAt: Date.now(),
   }));
   if (rotation.moment !== moment) {
     const index = (rotation.entries[moment] ?? -1) + 1;
-    setRotation({ moment, index, entries: { ...rotation.entries, [moment]: index } });
+    setRotation({
+      moment,
+      index,
+      entries: { ...rotation.entries, [moment]: index },
+      enteredAt: Date.now(),
+    });
   }
+  const thinking = rotation.moment === 'thinking';
+  const now = useNow(thinking);
   const text =
     rotation.moment === 'halted' ? haltedCopy(fault) : copyFor(rotation.moment, rotation.index);
 
@@ -75,6 +98,7 @@ export function StatusLine({
         className={`motion-safe:animate-[status-in_var(--duration-ui)_var(--ease-expo)] ${error ? 'text-red' : ''}`}
       >
         {text}
+        {thinking && ` · ${formatElapsed(now - (thinkingSince ?? rotation.enteredAt))}`}
       </span>
     </div>
   );
