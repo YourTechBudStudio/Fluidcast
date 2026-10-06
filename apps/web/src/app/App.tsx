@@ -185,7 +185,11 @@ export function App() {
               className={`relative w-full shrink-0 transition-[height] duration-(--duration-room) ease-expo motion-reduce:transition-none ${panelOpen && !phone ? 'h-[clamp(160px,32vh,360px)]' : 'h-[clamp(250px,46vh,460px)] max-sm:h-[clamp(170px,30vh,300px)]'}`}
             >
               <Visual id={visual} inputs={inputs} active={!sheetCovers && stageOpen} />
-              <TapToResume visible={moment === 'held'} onResume={playback.resume} />
+              <TapToResume
+                visible={moment === 'held' || moment === 'ready'}
+                label={moment === 'ready' ? 'Tap to start' : 'Tap to resume'}
+                onActivate={moment === 'ready' ? commands.start : playback.resume}
+              />
             </div>
             <div className="mt-[clamp(12px,3vh,36px)] flex w-full justify-center">
               <Subtitle line={presentation.subtitle} />

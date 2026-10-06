@@ -139,6 +139,19 @@ export const ToolContext = Schema.Struct({
 });
 export type ToolContext = typeof ToolContext.Type;
 
+/**
+ * Runtime-authored: integrator-supplied material for the model, named by `label` (a preloaded
+ * start's context). Read where it sits in the log; never the listener's words, never handed to the
+ * worker.
+ */
+export const LabeledContext = Schema.Struct({
+  type: Schema.Literal('context'),
+  id: ActionId,
+  label: Schema.String,
+  text: Schema.String,
+});
+export type LabeledContext = typeof LabeledContext.Type;
+
 /** Every conversation fact: user-, model-, and runtime-authored actions in one flat union (ADR 0002). */
 export const Action = Schema.Union([
   UserMessage,
@@ -151,6 +164,7 @@ export const Action = Schema.Union([
   ToolFaulted,
   ToolProgress,
   ToolContext,
+  LabeledContext,
 ]);
 export type Action = typeof Action.Type;
 

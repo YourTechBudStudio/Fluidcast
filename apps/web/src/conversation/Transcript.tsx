@@ -5,6 +5,7 @@ import {
   CircleHelp,
   CornerDownRight,
   Ellipsis,
+  FileText,
   OctagonX,
   Square,
   SquareTerminal,
@@ -112,6 +113,26 @@ function TimelineItem({
           <p className="mt-0.5 rounded-[6px_16px_16px_16px] border border-line/35 bg-elevated/70 px-3.5 py-2.5 text-fg">
             {row.text}
           </p>
+        </Row>
+      );
+    // Nothing has been sent yet: a dashed, fainter bubble until Tap to start.
+    case 'preloaded':
+      return (
+        <Row node={<Node kind="preloaded" />} first={first} last={last} turn>
+          <Head type="preloaded start">
+            <span className="font-semibold text-fg">You</span>
+            <Chip tone="violet">Preloaded</Chip>
+          </Head>
+          <p className="mt-0.5 rounded-[6px_16px_16px_16px] border border-dashed border-violet/40 bg-elevated/35 px-3.5 py-2.5 text-fg-muted">
+            {row.text}
+          </p>
+          {row.contextLabel !== null && (
+            <p className="mt-2 flex items-center gap-1.5 text-[13px] text-fg-subtle">
+              <FileText size={13} strokeWidth={1.8} aria-hidden />
+              Sent with context: {row.contextLabel.toLowerCase()}
+            </p>
+          )}
+          <p className="mt-2 text-[13px] text-fg-subtle">Sent when you tap to start.</p>
         </Row>
       );
     case 'speak': {
@@ -572,6 +593,7 @@ function Type({ children }: { readonly children: string }) {
 
 type NodeKind =
   | 'you'
+  | 'preloaded'
   | 'speaker'
   | 'continued'
   | 'interrupted'
@@ -612,6 +634,15 @@ function Node({
         <span
           aria-hidden
           className={`${base} bg-elevated text-fg-muted shadow-[0_0_0_1px_rgb(91_96_120/0.6)]`}
+        >
+          <User size={14} strokeWidth={1.8} />
+        </span>
+      );
+    case 'preloaded':
+      return (
+        <span
+          aria-hidden
+          className={`${base} bg-elevated text-fg-muted shadow-[0_0_0_1px_rgb(198_160_246/0.45)] [outline:1px_dashed_rgb(198_160_246/0.35)] outline-offset-2`}
         >
           <User size={14} strokeWidth={1.8} />
         </span>

@@ -5,6 +5,7 @@ import type { StatusMoment } from './presentation';
  * The status line shows the next line from a moment's pool each time the player enters it.
  */
 export const COPY: Record<StatusMoment, readonly string[]> = {
+  ready: ['Ready when you are.'],
   fresh: ['What’s on your mind?', 'Ask me anything.', 'Where should we start?'],
   // One word for every kind of thinking; the status line adds the elapsed time.
   thinking: ['Thinking'],

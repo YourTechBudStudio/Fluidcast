@@ -6,6 +6,7 @@ import type { StatusMoment } from './presentation';
 const RED = { color: 'var(--color-red)', pulse: false, error: true } as const;
 
 const DOT: Record<StatusMoment, { color: string; pulse: boolean; error?: true }> = {
+  ready: { color: 'var(--color-cyan)', pulse: false },
   fresh: { color: 'var(--color-cyan)', pulse: false },
   complete: { color: 'var(--color-cyan)', pulse: false },
   interrupted: { color: 'var(--color-cyan)', pulse: false },

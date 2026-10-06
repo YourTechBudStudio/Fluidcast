@@ -19,4 +19,6 @@ export interface ConversationCommands {
   readonly answerAsk: (execution: Execution, answer: AskCommand) => Promise<boolean>;
   /** Presents the previous line again. */
   readonly back: () => Promise<boolean>;
+  /** Sends the preloaded start, so the conversation begins. */
+  readonly start: () => Promise<boolean>;
 }

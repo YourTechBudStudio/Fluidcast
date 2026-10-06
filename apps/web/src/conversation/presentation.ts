@@ -30,6 +30,7 @@ import {
  * those can never disagree.
  */
 export type Moment =
+  | 'ready'
   | 'connecting'
   | 'reconnecting'
   | 'superseded'
@@ -80,6 +81,16 @@ export type ComposerMode = 'compose' | 'busy' | 'retry' | 'retryClip' | 'offline
 
 export type TimelineRow =
   | { readonly kind: 'user'; readonly id: string; readonly text: string }
+  /**
+   * A preloaded start waiting for Tap to start: its message, and the label of the context sent with it. The context's
+   * text is for the model only. After the tap, the message is an ordinary `user` row with the same ID.
+   */
+  | {
+      readonly kind: 'preloaded';
+      readonly id: string;
+      readonly text: string;
+      readonly contextLabel: string | null;
+    }
   | {
       readonly kind: 'speak';
       readonly id: string;
@@ -240,6 +251,9 @@ export function momentOf(
   if (presented === 'held') return 'held';
   if (presented === 'failed') return 'audioFailed';
   switch (view.phase) {
+    // A preloaded start waits for Tap to start.
+    case 'ready':
+      return 'ready';
     case 'generationFailed':
       return 'generationFailed';
     // A tool fault stopped the conversation for good.
@@ -265,6 +279,7 @@ export function momentOf(
 }
 
 const COMPOSER: Record<Moment, ComposerMode> = {
+  ready: 'offline',
   connecting: 'offline',
   reconnecting: 'offline',
   superseded: 'offline',
@@ -282,6 +297,7 @@ const COMPOSER: Record<Moment, ComposerMode> = {
 };
 
 const VISUAL: Record<Moment, VisualState> = {
+  ready: 'idle',
   connecting: 'offline',
   reconnecting: 'offline',
   superseded: 'offline',
@@ -340,6 +356,18 @@ function subtitleOf(
     case 'held':
     case 'fresh':
       return null;
+    case 'ready': {
+      // The preloaded message, under Tap to start. After the tap, your just-sent message takes over.
+      const message = view.start?.message;
+      return message
+        ? {
+            key: `preloaded:${message.id}`,
+            text: `“${message.text}”`,
+            tone: 'you',
+            label: 'Preloaded · Tap to start says',
+          }
+        : null;
+    }
     case 'speaking': {
       // A line appears when its audio starts. Until then the previous line of this turn stays, or your own message if
       // none has played yet. After Back, the presented line is an earlier one.
@@ -521,6 +549,7 @@ function timelineOf(
         break;
       }
       // Context is for the model only.
+      case 'context':
       case 'tool_context':
         break;
       case 'tool_faulted':
@@ -541,6 +570,13 @@ function timelineOf(
         absurd(action);
     }
   });
+  if (view.start !== null)
+    rows.push({
+      kind: 'preloaded',
+      id: view.start.message.id,
+      text: view.start.message.text,
+      contextLabel: view.start.context?.label ?? null,
+    });
   if (moment === 'thinking') rows.push({ kind: 'pending', label: 'Thinking…' });
   if (moment === 'waiting') rows.push({ kind: 'pending', label: 'More on the way…' });
   return rows;

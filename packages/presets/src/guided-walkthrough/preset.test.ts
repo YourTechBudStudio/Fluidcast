@@ -179,14 +179,14 @@ describe('guidedWalkthrough reminders', () => {
 
   it('reminds to forward first after an interrupting message', () => {
     assert.equal(
-      reminders({ _tag: 'UserMessage', text: 'Wait', interrupted: true }),
+      reminders({ _tag: 'UserMessage', text: 'Wait', interrupted: true, context: [] }),
       reminderTexts.interrupt,
     );
   });
 
   it('reminds to forward any other user message unless it is small talk', () => {
     assert.equal(
-      reminders({ _tag: 'UserMessage', text: 'Why?', interrupted: false }),
+      reminders({ _tag: 'UserMessage', text: 'Why?', interrupted: false, context: [] }),
       reminderTexts.message,
     );
   });

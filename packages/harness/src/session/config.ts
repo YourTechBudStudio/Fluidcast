@@ -40,4 +40,13 @@ export interface SessionConfig {
    * Tools supply none. Absent: no reminders.
    */
   readonly reminders?: Reminders;
+  /**
+   * A preloaded start, fixed by the application: the session waits in `ready` until a `Start`
+   * command submits `context` (if any) and then `message`, and only then generates. The listener
+   * cannot edit it. Building the session throws on a blank `message` or `label`.
+   */
+  readonly start?: {
+    readonly message: string;
+    readonly context?: { readonly label: string; readonly text: string };
+  };
 }

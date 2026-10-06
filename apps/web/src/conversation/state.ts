@@ -23,6 +23,7 @@ const EMPTY: ConversationView = {
   speakers: [],
   executions: [],
   pendingResults: [],
+  start: null,
   presented: undefined,
 };
 
@@ -137,6 +138,7 @@ const answerAskAtom = clientRuntime.fn(
     ),
 );
 const backAtom = clientRuntime.fn((_: void, get) => accepted(get, (client) => client.back()));
+const startAtom = clientRuntime.fn((_: void, get) => accepted(get, (client) => client.start()));
 
 /** The commands the UI sends. Each resolves `true` once the Harness accepted it. */
 export function useConversationCommands(): ConversationCommands {
@@ -145,6 +147,7 @@ export function useConversationCommands(): ConversationCommands {
   const retryGeneration = useAtomSet(retryGenerationAtom, { mode: 'promise' });
   const answerAsk = useAtomSet(answerAskAtom, { mode: 'promise' });
   const back = useAtomSet(backAtom, { mode: 'promise' });
+  const start = useAtomSet(startAtom, { mode: 'promise' });
   return useMemo(
     () => ({
       sendMessage,
@@ -152,8 +155,9 @@ export function useConversationCommands(): ConversationCommands {
       retryGeneration: () => retryGeneration(),
       answerAsk: (execution, answer) => answerAsk({ execution, answer }),
       back: () => back(),
+      start: () => start(),
     }),
-    [sendMessage, interrupt, retryGeneration, answerAsk, back],
+    [sendMessage, interrupt, retryGeneration, answerAsk, back, start],
   );
 }
 

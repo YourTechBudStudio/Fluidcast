@@ -51,6 +51,7 @@ export const stateOf = (
     (draft) => ({ ...draft, id: makeActionId() }) as PendingResult,
   ),
   replay: null,
+  start: null,
   speakers: extra.speakers ?? [{ id: 'host', name: 'Host' }],
   speech: { mimeType: 'audio/ogg' },
 });
@@ -58,6 +59,7 @@ export const stateOf = (
 export const speak = (text: string, speaker = 'host') =>
   ({ type: 'speak', speaker, text }) as const;
 export const user = (text: string) => ({ type: 'user_message', text }) as const;
+export const context = (label: string, text: string) => ({ type: 'context', label, text }) as const;
 export const interrupted = (during: 'speech' | 'wait') =>
   ({ type: 'interrupted', during }) as const;
 export const toolCall = (handle: string, tool: string, input: Record<string, unknown>) =>

@@ -5,6 +5,7 @@ import { showTool } from '@yourtechbudstudio/fluidcast-tool-show';
 
 import {
   actions,
+  context,
   errored,
   forwardCall,
   interrupted,
@@ -126,6 +127,23 @@ describe('conversationSince', () => {
       { kind: 'user', text: 'One.' },
       { kind: 'voice', speaker: undefined, text: 'Two.' },
     ]);
+  });
+
+  it("never hands off a preloaded start's context, only the conversation around it", () => {
+    const state = stateOf(
+      actions(
+        context('My last answer', 'SECRET-CONTEXT'),
+        user('Walk me through it.'),
+        speak('Sure, here is what I did.'),
+        forwardCall('call_1'),
+      ),
+    );
+    const { conversation, rendered } = handoffFor(state, undefined);
+    assert.deepEqual(conversation, [
+      { kind: 'user', text: 'Walk me through it.' },
+      { kind: 'voice', speaker: undefined, text: 'Sure, here is what I did.' },
+    ]);
+    assert.ok(!rendered.includes('SECRET-CONTEXT'));
   });
 
   it('starts after the last forward and stops at the new one, ignoring what follows it', () => {

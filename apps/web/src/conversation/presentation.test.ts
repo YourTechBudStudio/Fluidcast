@@ -101,6 +101,7 @@ const view = (partial: Partial<ConversationView>): ConversationView => ({
   speakers: [{ id: 'host', name: 'Host' }],
   executions: [],
   pendingResults: [],
+  start: null,
   presented: undefined,
   ...partial,
 });
@@ -879,5 +880,52 @@ describe('the Forward tool', () => {
     expect(rowOf(p.timeline, 'progress')).toEqual([
       { kind: 'progress', id: 'p1', text: "I'm reading the designs." },
     ]);
+  });
+});
+
+describe('a preloaded start', () => {
+  const message = { type: 'user_message', id: aid('m1'), text: 'Walk me through it.' } as const;
+  const context = {
+    type: 'context',
+    id: aid('x1'),
+    label: 'My last answer',
+    text: 'SECRET-CONTEXT',
+  } as const;
+
+  it('waits for Tap to start, previewing its message, with the composer off', () => {
+    const p = presentOf(view({ phase: 'ready', start: { message, context } }));
+    expect(p.moment).toBe('ready');
+    expect(p.status).toBe('ready');
+    expect(p.composer).toBe('offline');
+    expect(p.visual).toBe('idle');
+    expect(p.interruptible).toBe(false);
+    expect(p.canGoBack).toBe(false);
+    expect(p.subtitle).toEqual({
+      key: 'preloaded:m1',
+      text: '“Walk me through it.”',
+      tone: 'you',
+      label: 'Preloaded · Tap to start says',
+    });
+    expect(p.timeline).toEqual([
+      { kind: 'preloaded', id: 'm1', text: 'Walk me through it.', contextLabel: 'My last answer' },
+    ]);
+    // The context's text is for the model only.
+    expect(JSON.stringify(p.timeline)).not.toContain('SECRET-CONTEXT');
+  });
+
+  it('marks no context label when the start has none', () => {
+    const p = presentOf(view({ phase: 'ready', start: { message, context: null } }));
+    expect(rowOf(p.timeline, 'preloaded')).toEqual([
+      { kind: 'preloaded', id: 'm1', text: 'Walk me through it.', contextLabel: null },
+    ]);
+  });
+
+  it('becomes an ordinary message once sent, and its context makes no row', () => {
+    const p = presentOf(view({ actions: [context, message], phase: 'working' }));
+    expect(p.timeline).toEqual([
+      { kind: 'user', id: 'm1', text: 'Walk me through it.' },
+      { kind: 'pending', label: 'Thinking…' },
+    ]);
+    expect(p.subtitle).toMatchObject({ key: 'm1', tone: 'you' });
   });
 });
