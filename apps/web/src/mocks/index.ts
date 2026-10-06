@@ -1,0 +1,1 @@
+export { mockRoutes } from './routes';

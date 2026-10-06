@@ -7,7 +7,8 @@ The reference browser player: a voice-and-visual stage on top of the Client SDK,
 - Vite and React 19.
 - Styling: Tailwind v4, tokens in `src/styles.css` (`ui/tokens.ts` mirrors them for WebGL and SVG only).
 - Primitives: Base UI. Animation: `motion`. Icons: `lucide-react`.
-- State: Effect Atom only. No zustand, react-query or router.
+- State: Effect Atom only. No zustand or react-query.
+- Routing: React Router (`react-router`) in data mode, with `createBrowserRouter` in `app/Root.tsx`. Routes choose screens and hold no state of their own.
 - Visuals: raw WebGL. Per-frame audio analysis never goes through atoms or React state.
 
 ## Structure
@@ -15,13 +16,14 @@ The reference browser player: a voice-and-visual stage on top of the Client SDK,
 ```text
 src/
   main.tsx        # Entry
-  app/            # Root composition, layout, shortcuts, persisted preferences
+  app/            # Root composition, routes, layout, shortcuts, persisted preferences
   client/         # The page's one Client SDK instance and its transport
   conversation/   # Atoms from the client's view, commands, presentation, composer, transcript
   playback/       # The audio player, its controls and subtitle
   tools/          # Tool rendering (Show, Ask), unaware of the conversation
   visuals/        # WebGL visuals and audio analysis
   ui/             # Shared primitives, tokens and motion
+  mocks/          # Throwaway, presentation-only mocks under /mocks; deleted once their story is implemented
 ```
 
 - Each module publishes through `index.ts`. Allowed dependencies between modules are enforced by `tests/architecture.test.mjs`.

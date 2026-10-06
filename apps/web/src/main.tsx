@@ -2,7 +2,7 @@ import { RegistryProvider } from '@effect/atom-react';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { App } from './app';
+import { Root } from './app';
 
 import './styles.css';
 
@@ -15,7 +15,7 @@ if (!rootElement) {
 createRoot(rootElement).render(
   <StrictMode>
     <RegistryProvider>
-      <App />
+      <Root />
     </RegistryProvider>
   </StrictMode>,
 );

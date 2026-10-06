@@ -33,6 +33,7 @@
     "motion": "^13.4.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "react-router": "^8.4.0",
     "scheduler": "^0.27.0"
   },
   "devDependencies": {
