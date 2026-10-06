@@ -8,8 +8,8 @@ import { askToolName } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 import { showToolName } from '@yourtechbudstudio/fluidcast-tool-show/schema';
 
 /*
- * The Guided Walkthrough's worked examples, reconstructed from the evaluated prompt: rendered by
- * Core, they reproduce its Examples section byte for byte, except the interrupted question, which
+ * The Guided Walkthrough's worked examples, reconstructed from the evaluated prompt, with two
+ * changes: speech after each screen walks the listener through it, and the interrupted question
  * shows an interrupt cancelling the question rather than the evaluated interrupted answer. Handles
  * number each example's tool calls in order, so results name the call they answer.
  */
@@ -53,6 +53,17 @@ const answered = (handle: string, text: string, answer: AskCommand): ExampleStep
   result: { question: text, answer },
 });
 
+/** A segment's screen, spoken: a lead-in, the screen, then its highlights while the listener looks at it. */
+const walkThrough = (
+  lead: string,
+  screen: ExampleStep,
+  highlights?: string,
+): ReadonlyArray<ExampleStep> => [
+  say(lead),
+  screen,
+  ...(highlights === undefined ? [] : [say(highlights)]),
+];
+
 /** A long forward result walked through one segment at a time, its questions asked along the way, then forwarded. */
 const nightlyJobs: Example = [
   user('Can you check which nightly jobs we still need?'),
@@ -62,24 +73,28 @@ const nightlyJobs: Example = [
     "The run logs are still loading. Here's what I've confirmed so far.\n\n- Six jobs run every night, 95 minutes in total.\n- The longest is the search reindex, at 50 minutes.\n\nOne question while I wait: does anyone outside our team rely on the report emails?",
     "The logs are back. Done: I audited the six nightly jobs. Nothing is changed yet.\n\n**Three can go.** The thumbnail rebuild is redundant, because thumbnails are built on upload now. The stale session sweep does nothing useful any more: sessions expire on their own after a day. The temp file cleanup still targets the folder we removed last month, so all it does is log an error every night. I'd archive its script rather than delete it; push back if you'd rather it's gone for good. Dropping all three saves about 40 minutes a night.\n\n**One can shrink.** The report job sends three emails where one would do. Merging them is simple, but finance filters on the old subject lines, so they'd need a heads-up before we switch.\n\n**Two stay.** The search reindex is still our only full reindex, and the backup copy is what every restore depends on.\n\nShould I drop the three now, or after the release? My question about the report emails still stands.\n\nNext, I'll merge the report emails into one.",
   ]),
-  say('While the logs loaded, I confirmed the basics.'),
-  show(
-    'call_2',
-    'So far',
-    '**6 jobs** a night · **95 min** in total\n\nLongest: search reindex, **50 min**',
+  ...walkThrough(
+    'While the logs loaded, I confirmed the basics.',
+    show(
+      'call_2',
+      'So far',
+      '**6 jobs** a night · **95 min** in total\n\nLongest: search reindex, **50 min**',
+    ),
+    'Six jobs run every night, ninety-five minutes in all, and the search reindex is the longest, at fifty.',
   ),
   choice('call_3', 'Does anyone outside our team rely on the report emails?', ['Yes', 'No']),
   answered('call_3', 'Does anyone outside our team rely on the report emails?', {
     kind: 'choice',
     choice: 'No',
   }),
-  say(
+  ...walkThrough(
     "The logs are back. I audited all six jobs, and nothing's changed yet. Three of them can go.",
-  ),
-  show(
-    'call_4',
-    'Three can go',
-    "- **Thumbnail rebuild** → redundant: thumbnails are built on upload now\n- **Session sweep** → useless: sessions expire on their own after a day\n- **Temp cleanup** → its folder was removed last month; it only logs an error nightly → I'd archive its script, not delete it\n\nDropping all three saves **~40 min a night**.",
+    show(
+      'call_4',
+      'Three can go',
+      "- **Thumbnail rebuild** → redundant: thumbnails are built on upload now\n- **Session sweep** → useless: sessions expire on their own after a day\n- **Temp cleanup** → its folder was removed last month; it only logs an error nightly → I'd archive its script, not delete it\n\nDropping all three saves **~40 min a night**.",
+    ),
+    "The thumbnail rebuild and the session sweep have nothing left to do, and the temp cleanup only logs an error, so I'd archive it. Together that's about forty minutes a night.",
   ),
   choice('call_5', 'Archive the temp cleanup script, or delete it for good?', [
     'Archive it',
@@ -89,11 +104,14 @@ const nightlyJobs: Example = [
     kind: 'choice',
     choice: 'Archive it',
   }),
-  say('Okay. Of the other three, one can shrink, with one catch, and two stay.'),
-  show(
-    'call_6',
-    'Shrink one, keep two',
-    '**Shrink**\n- **Report emails** → 3 a night where 1 would do; merging is simple\n- Catch: finance filters on the old subject lines → heads-up before we switch\n\n**Keep**\n- **Search reindex** → still the only full reindex\n- **Backup copy** → every restore depends on it',
+  ...walkThrough(
+    'Okay. Of the other three, one can shrink, with one catch, and two stay.',
+    show(
+      'call_6',
+      'Shrink one, keep two',
+      '**Shrink**\n- **Report emails** → 3 a night where 1 would do; merging is simple\n- Catch: finance filters on the old subject lines → heads-up before we switch\n\n**Keep**\n- **Search reindex** → still the only full reindex\n- **Backup copy** → every restore depends on it',
+    ),
+    'The report job can send one email instead of three, but finance needs a heads-up first. The search reindex and the backup copy both stay.',
   ),
   choice('call_7', 'Should I drop the three jobs now, or after the release?', [
     'Now',
@@ -103,8 +121,10 @@ const nightlyJobs: Example = [
     kind: 'text',
     text: 'Whatever you think is best.',
   }),
-  say("Okay. One last thing: what's next."),
-  show('call_8', 'Next', 'Merge the three report emails into one.'),
+  ...walkThrough(
+    "Okay. One last thing: what's next.",
+    show('call_8', 'Next', 'Merge the three report emails into one.'),
+  ),
   choice('call_9', 'Ready to send your answer?', ['Continue']),
   answered('call_9', 'Ready to send your answer?', { kind: 'choice', choice: 'Continue' }),
   forward('call_10'),
@@ -119,11 +139,14 @@ const nightlyBackup: Example = [
   replied('call_1', [
     "Here's how the nightly backup is chained.\n\n- The backup starts only after the search reindex finishes.\n- The reindex has no time limit.\n- A backup that hasn't started by 6 am is skipped until the next night.\n\nQuick check before I go on: if the reindex hangs one night, what happens to that night's backup?",
   ]),
-  say("The backup hangs off the reindex. Here's the chain."),
-  show(
-    'call_2',
-    'Backup chain',
-    'Reindex finishes → backup starts\n\nReindex: **no time limit**\n\nNot started by **6 am** → skipped until the next night',
+  ...walkThrough(
+    "The backup hangs off the reindex. Here's the chain.",
+    show(
+      'call_2',
+      'Backup chain',
+      'Reindex finishes → backup starts\n\nReindex: **no time limit**\n\nNot started by **6 am** → skipped until the next night',
+    ),
+    "The backup starts only once the reindex finishes, and the reindex has no time limit. If the backup hasn't started by six, it waits for the next night.",
   ),
   question('call_3', "If the reindex hangs one night, what happens to that night's backup?"),
   answered('call_3', "If the reindex hangs one night, what happens to that night's backup?", {

@@ -5,7 +5,7 @@ Read the first section of judge-rubric.md ("What Fluidcast is for", "What you ge
 Decide which walkthrough the listener (a tired developer who would otherwise read the reply) would rather get, weighing in this order:
 
 1. **Fidelity**: every point and every worker question reaches the listener without distortion or invented content. A worker's offer or invitation ('I can also…', 'want me to…', 'say the word if…') is a worker question: putting it to the listener is not an invented question, and showing it only before a Continue loses it. A walkthrough that loses a core point or a question, distorts something, or adds its own decisions loses unless the other is as bad or worse.
-2. **Cognitive burden**: one idea at a time, compressed and well-structured screens, speech that orients instead of reading the screen.
+2. **Cognitive burden**: one idea at a time, compressed and well-structured screens, speech that introduces each screen and gives its highlights, so the listener skims instead of reading it all.
 3. **Speed**: gets the listener to understanding with less listening and fewer needless steps.
 4. **Engagement**: feels like a sharp colleague talking you through it.
 

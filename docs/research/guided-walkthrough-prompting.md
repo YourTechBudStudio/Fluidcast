@@ -64,6 +64,20 @@ After the loop, a small check (8 cases × 2 runs, plus the routing cases) replac
 
 Untested next steps with the best evidence: fold the example's closing "Next" line into the last question and drop its final Continue; extend the answer reminder so the voice never says what an answer decides; replace the example's closing "One moment." with a strictly neutral hold; separate a pasted listener message from the worker's reply in the forward result.
 
+## Walk-through speech
+
+The tuned prompt's speech only named each section ("Here's what I'd cut"), 24 words per segment, because the rubric rewarded speech that orients and never reads the screen. Used live, that left the listener reading every screen in full: the breakdown helped, the speech did not lower the effort. The target changed: after each screen, speech gives its highlights so the listener only skims it. Reading parts of the screen out is fine; explaining or adding reasons is not.
+
+Three changes to `detailed`, with role, forwarding, reminders and tools untouched:
+
+- The segment bullet: introduce each screen in one short line, show it, then walk the listener through it while they look at it.
+- The Speaking section states the goal (the listener skims the screen instead of reading it all) and sizes speech at about one short sentence per block, in screen order.
+- Each example screen is followed by one walk-through line that names its items.
+
+A mini eval (7 cases × 1 run, scripted Continue listener, no judges) against the previous `detailed`: screens walked through 6/34 → 36/36, speech per screen 25 → 64 words, all runs finished. Step-by-step teaching replies drew 90–100-word walk-throughs that retell the screen, and two possible leaks appeared once each (previewing the next segment, a promise after the last answer). The held-out results above measure the earlier speech; fidelity under the longer speech is not yet measured.
+
+The lesson matches the loop's: the examples set the shape (Qwen copied the walk-through line almost exactly), and a stated goal ("so they can skim the screen") generalized where a length limit had not.
+
 ## Lessons about the measurement
 
 - Freeze the scripted listener and rubric before tuning, or re-measure the incumbent whenever either changes; both changed several times here, which is why dev gains cannot be summed.

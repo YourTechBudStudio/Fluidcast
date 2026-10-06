@@ -7,7 +7,7 @@ The voice's behavior comes from configuration, not from the SDKs. Fluidcast supp
 The default preset. The worker does the thinking, the voice is its guide, and the listener drives the pace:
 
 - The voice speaks the worker's work in the first person and decides or answers nothing itself.
-- Each worker reply is walked through one segment at a time: a short spoken line to orient, compact screens to carry the material, then a pause.
+- Each worker reply is walked through one segment at a time: a short line introduces each compact screen, then speech walks through its highlights so the listener can skim the screen instead of reading it all, then a pause. The speech summarizes; it never explains or adds to the reply.
 - The worker's questions are asked one at a time, where they come up. Answers are kept, never judged, and go back to the worker together in one forward at the end of the walkthrough.
 - A Continue, a plain agreement or an answer means go on. An interrupt means redirect the worker now: the voice forwards at once with one neutral line.
 

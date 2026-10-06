@@ -10,7 +10,7 @@ This is how we measured and improved the voice's behavior: the method, the rules
 A good walkthrough gets every point and question of the worker's reply to the listener, with less effort than reading the reply, without being much slower, and engagingly. In priority order:
 
 1. **Fidelity**: nothing lost, distorted or invented. Every worker question reaches the listener with a way to answer it; offers and soft invitations ("say the word if…") are questions.
-2. **Cognitive burden**: one idea at a time, screens that compress meaningfully (not copies of the reply), speech that orients instead of reading the screen.
+2. **Cognitive burden**: one idea at a time, screens that compress meaningfully (not copies of the reply), speech that introduces each screen and then gives its highlights, so the listener skims the screen instead of reading it all.
 3. **Speed** against reading the raw reply.
 4. **Engagement**: it feels like a sharp colleague talking you through it.
 
@@ -146,24 +146,25 @@ When a judge note, a flag, an analyst finding or your own reading of a walkthrou
 3. Record the change in the table below with the edge case that prompted it.
 4. Don't compare numbers across a change: re-baseline the champion first.
 
-| Change                                                                                                                               | Edge case that prompted it                                                                      |
-| ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| Runner keeps the actions that closed and retries once on a broken reply                                                              | A stray quote under enforced JSON ended runs early; production does the same retry              |
-| Runner redoes runs that ended in provider errors; runners verify their counts                                                        | A server restart and a runner that stopped early left gaps that were silently judged or skipped |
-| Worker replies kept as their real message list                                                                                       | Multi-message replies lost their boundaries, hiding interim notes the voice skipped             |
-| Listener v2: realistic answer per gold question, one deferral per case, stricter Continue detection, cap scales with questions       | "I'd go with what you recommend" on every question and first-option picks distorted results     |
-| Listener v3: no in-order fallback; invented approval questions get a plain yes; matches recorded                                     | Invented questions received real answers, so the real questions were never asked                |
-| Rubric v1.1: reactions, "that's settled" declarations, invented option descriptions and promises after forwarding count as additions | Judges counted these inconsistently                                                             |
-| Rubric v1.2: a question shown in the same response as the forward counts as missing                                                  | The listener could never answer it, yet it was credited                                         |
-| Rubric v1.3: grading the listener's answer is an addition; screens score real compression; narration not scored                      | "Exactly right!" passed; same-length rewording scored as compression                            |
-| Rubric v1.4: points scored first; screens and burden capped when compression drops content; invitations need an ask                  | A tight screen budget scored +5 while losing content                                            |
-| Rubric v1.5: each question needs its own answer slot; questions asked where they come up                                             | "What are your answers to these six?" was credited for all six                                  |
-| Recall gates and a pairwise fidelity veto                                                                                            | The composite promoted a variant that lost content                                              |
-| Judge-free answered share as a gate                                                                                                  | Judges and the listener disagreed on which questions were really asked                          |
-| Case-clustered, seeded bootstrap                                                                                                     | Runs of one case fail together; unseeded intervals moved between invocations                    |
-| Recall pre-gate at screen; candidates also screened on their target cases                                                            | Full runs were spent on candidates already losing content; targets were never measured          |
-| Clean forward excludes holds that keep presenting or decide; agreement-only interrupts dropped; plain-agreement cases added          | "Got it. Next up…" passed as a forward; the product owner never interrupts just to agree        |
-| Latency gate removed                                                                                                                 | Not a priority for now (product owner)                                                          |
+| Change                                                                                                                               | Edge case that prompted it                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| Runner keeps the actions that closed and retries once on a broken reply                                                              | A stray quote under enforced JSON ended runs early; production does the same retry                                        |
+| Runner redoes runs that ended in provider errors; runners verify their counts                                                        | A server restart and a runner that stopped early left gaps that were silently judged or skipped                           |
+| Worker replies kept as their real message list                                                                                       | Multi-message replies lost their boundaries, hiding interim notes the voice skipped                                       |
+| Listener v2: realistic answer per gold question, one deferral per case, stricter Continue detection, cap scales with questions       | "I'd go with what you recommend" on every question and first-option picks distorted results                               |
+| Listener v3: no in-order fallback; invented approval questions get a plain yes; matches recorded                                     | Invented questions received real answers, so the real questions were never asked                                          |
+| Rubric v1.1: reactions, "that's settled" declarations, invented option descriptions and promises after forwarding count as additions | Judges counted these inconsistently                                                                                       |
+| Rubric v1.2: a question shown in the same response as the forward counts as missing                                                  | The listener could never answer it, yet it was credited                                                                   |
+| Rubric v1.3: grading the listener's answer is an addition; screens score real compression; narration not scored                      | "Exactly right!" passed; same-length rewording scored as compression                                                      |
+| Rubric v1.4: points scored first; screens and burden capped when compression drops content; invitations need an ask                  | A tight screen budget scored +5 while losing content                                                                      |
+| Rubric v1.6: speech introduces each screen, then gives its highlights; reading parts of the screen is fine, explaining is not        | Listening live, the product owner still read every screen in full: one orienting line per screen did not lower the effort |
+| Rubric v1.5: each question needs its own answer slot; questions asked where they come up                                             | "What are your answers to these six?" was credited for all six                                                            |
+| Recall gates and a pairwise fidelity veto                                                                                            | The composite promoted a variant that lost content                                                                        |
+| Judge-free answered share as a gate                                                                                                  | Judges and the listener disagreed on which questions were really asked                                                    |
+| Case-clustered, seeded bootstrap                                                                                                     | Runs of one case fail together; unseeded intervals moved between invocations                                              |
+| Recall pre-gate at screen; candidates also screened on their target cases                                                            | Full runs were spent on candidates already losing content; targets were never measured                                    |
+| Clean forward excludes holds that keep presenting or decide; agreement-only interrupts dropped; plain-agreement cases added          | "Got it. Next up…" passed as a forward; the product owner never interrupts just to agree                                  |
+| Latency gate removed                                                                                                                 | Not a priority for now (product owner)                                                                                    |
 
 ## What worked and what didn't
 

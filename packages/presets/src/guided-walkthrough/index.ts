@@ -5,7 +5,9 @@ import { forwarding, role, speaking, walkingThrough } from './instructions.ts';
 import { reminders } from './reminders.ts';
 
 /**
- * - `detailed` (default, the measured one): the protocol, the speaking style and worked examples.
+ * - `detailed` (default, tuned on Qwen): the protocol, the speaking style and worked examples.
+ *   After each screen, speech walks the listener through its highlights, so they skim the screen
+ *   instead of reading it all.
  * - `compact` (untested): the protocol only (role, walking through, forwarding), for models that
  *   need less tuning.
  */

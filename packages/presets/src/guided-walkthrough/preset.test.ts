@@ -35,10 +35,18 @@ const section = (text: string, start: string, end?: string): string => {
 const progressBullet =
   '- While you wait, a `<tool_progress>` from `forward_agent` says what you are doing: say it in one short first-person line, then keep waiting for its result.';
 
+const segmentBullet =
+  '- A segment is one to three compact `show`s. Introduce each in one short line, `show` it, then walk the listener through it while they look at it.';
+const evaluatedSegmentBullet =
+  '- A segment is one to three compact `show`s, each after a sentence or two of speech.';
+
+/** The examples' walk-through lines: a speak right before an `ask`, which follows a screen. */
+const walkThroughSpeech =
+  /,\{"type":"speak","speaker":"host","text":"(?:[^"\\]|\\.)*"\}(?=,\{"type":"ask")/g;
+
 /*
  * The detailed preset, rendered by Core with the real tools, against the evaluated prompt
- * (`fixtures/evaluated-detailed.txt`). Every evaluated section appears verbatim. The expected
- * differences:
+ * (`fixtures/evaluated-detailed.txt`). The expected differences:
  * 1. `<speakers>` sits after `## Speaking`, not between `## Forwarding` and `## Speaking`: Core
  *    puts the instructions first, whole.
  * 2. Core's mechanics bullets lead `## Tool rules`.
@@ -47,6 +55,8 @@ const progressBullet =
  * 4. `## Forwarding` ends with the added progress bullet.
  * 5. The interrupted-question example shows an interrupt cancelling the question (a notice, then
  *    the listener's message) instead of an interrupted answer, which Ask no longer has.
+ * 6. Walk-through speech: the segment bullet, a new `## Speaking` section, and a speak after each
+ *    example screen that walks the listener through it.
  */
 describe('the detailed Guided Walkthrough', () => {
   const evaluated = fixture('evaluated-detailed.txt');
@@ -56,20 +66,25 @@ describe('the detailed Guided Walkthrough', () => {
     assert.equal(rendered, fixture('rendered-detailed.txt'));
   });
 
-  it('has the evaluated instruction sections verbatim, plus the progress bullet', () => {
-    for (const [start, end] of [
-      ['## Role', '## Walking through'],
-      ['## Walking through', '## Forwarding'],
-    ] as const) {
-      assert.equal(section(rendered, start, end), section(evaluated, start, end), start);
-    }
+  it('has the evaluated role and forwarding, plus the progress bullet, and walk-through speech', () => {
     assert.equal(
-      section(rendered, '## Speaking', '<speakers>'),
-      section(evaluated, '## Speaking', '## Tool rules'),
+      section(rendered, '## Role', '## Walking through'),
+      section(evaluated, '## Role', '## Walking through'),
+    );
+    assert.equal(
+      section(rendered, '## Walking through', '## Forwarding'),
+      section(evaluated, '## Walking through', '## Forwarding').replace(
+        evaluatedSegmentBullet,
+        segmentBullet,
+      ),
     );
     assert.equal(
       section(rendered, '## Forwarding', '## Speaking'),
       `${section(evaluated, '## Forwarding', '<speakers>')}\n${progressBullet}`,
+    );
+    assert.match(
+      section(rendered, '## Speaking', '<speakers>'),
+      /Speech gives them its highlights/,
     );
     assert.equal(
       section(rendered, '<speakers>', '## Tool rules'),
@@ -77,7 +92,7 @@ describe('the detailed Guided Walkthrough', () => {
     );
   });
 
-  it('has the evaluated tool lines, output-format types and examples verbatim, but the interrupted question', () => {
+  it('has the evaluated tool lines, output-format types and examples, but the interrupted question and walk-through speech', () => {
     const evaluatedRules = section(evaluated, '## Tool rules', '## Output format').split('\n');
     const renderedRules = section(rendered, '## Tool rules', '## Output format').split('\n');
     assert.deepEqual(renderedRules.slice(-3), evaluatedRules.slice(1));
@@ -88,8 +103,10 @@ describe('the detailed Guided Walkthrough', () => {
     const declined =
       '<notice>The user interrupted to say something.</notice>\n<user_message>Wait, why not just fix the database instead?</user_message>';
     assert.ok(evaluated.includes(answered));
+    const renderedExamples = section(rendered, '## Examples');
+    assert.equal(renderedExamples.match(walkThroughSpeech)?.length, 4);
     assert.equal(
-      section(rendered, '## Examples'),
+      renderedExamples.replace(walkThroughSpeech, ''),
       section(evaluated, '## Examples').replace(answered, declined),
     );
   });
@@ -103,6 +120,7 @@ describe('guidedWalkthrough profiles', () => {
     assert.doesNotMatch(prompt, /## Speaking|## Examples/);
     assert.ok(compact.instructions.endsWith(progressBullet));
     assert.ok(compact.instructions.startsWith('## Role\n'));
+    assert.ok(compact.instructions.includes(segmentBullet));
   });
 
   it('defaults to detailed', () => {

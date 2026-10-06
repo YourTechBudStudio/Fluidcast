@@ -6,7 +6,7 @@ Voice behavior for Fluidcast sessions. The SDKs carry only mechanics; a preset s
 
 The agent behind the `forward_agent` tool does the thinking, and the voice walks the listener through its work one segment at a time. It has two profiles:
 
-- `detailed` (default): the protocol, a fuller speaking style and worked examples. Tuned and checked on held-out cases with Qwen3.8-27B (medium reasoning, temperature 0.3, server-enforced JSON).
+- `detailed` (default): the protocol, a fuller speaking style and worked examples. Tuned and checked on held-out cases with Qwen3.8-27B (medium reasoning, temperature 0.3, server-enforced JSON). Its walk-through speech, which gives each screen's highlights, was added later and checked only in a 7-case mini eval.
 - `compact`: the protocol alone, for more capable models. Untested; the next thing to try is GPT-6.1 Sol.
 
 ## Usage
