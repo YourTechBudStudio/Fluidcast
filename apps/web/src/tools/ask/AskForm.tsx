@@ -1,4 +1,4 @@
-import { ArrowRight, ArrowUp, Check, Clock, Hand, Pencil } from 'lucide-react';
+import { ArrowRight, ArrowUp, Check, Clock, CornerDownLeft, Hand, Pencil } from 'lucide-react';
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -198,7 +198,13 @@ export function AskForm({
                 onClick={() => choose(0)}
                 className="mt-3.5 min-h-12 w-full rounded-sm"
               >
-                Continue <Kbd>↵</Kbd>
+                Continue
+                <kbd
+                  aria-hidden
+                  className="grid place-items-center rounded-[4px] bg-scrim/12 px-1 py-0.5 text-scrim/65 shadow-[inset_0_0_0_1px_rgb(20_22_34/0.18)]"
+                >
+                  <CornerDownLeft size={12} strokeWidth={2.2} />
+                </kbd>
               </Button>
             ) : (
               <FreeText
