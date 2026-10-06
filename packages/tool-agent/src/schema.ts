@@ -72,10 +72,13 @@ export const forwardErrorParts = (
 export const WorkerStatus = Schema.Literals(['idle', 'working', 'failed']);
 export type WorkerStatus = typeof WorkerStatus.Type;
 
-/** The worker as the Worker view shows it, sent whenever its status changes. */
+/**
+ * The worker as the Worker view shows it, sent whenever its status or session ID changes.
+ * `sessionId` is the agent's, `null` until a new worker's agent reports it.
+ */
 export const WorkerSummary = Schema.TaggedStruct('WorkerSummary', {
   status: WorkerStatus,
-  sessionId: Schema.String,
+  sessionId: Schema.NullOr(Schema.String),
 });
 export type WorkerSummary = typeof WorkerSummary.Type;
 
@@ -121,7 +124,6 @@ export type TranscriptEntry = typeof TranscriptEntry.Type;
 
 /** The first message of a transcript stream: every entry so far. */
 export const TranscriptSnapshot = Schema.TaggedStruct('TranscriptSnapshot', {
-  sessionId: Schema.String,
   entries: Schema.Array(TranscriptEntry),
 });
 /** Entries appended after the snapshot, in order. */

@@ -7,6 +7,7 @@ import { ToolFault } from '@yourtechbudstudio/fluidcast-harness';
 
 import {
   background,
+  init,
   rateLimit,
   result,
   say,
@@ -20,8 +21,8 @@ import { initialTurnState, step, type TrackerInput, type TrackerOutput } from '.
 type Input = SDKMessage | { readonly elapsed: number };
 
 /** Runs inputs in order and returns every output, with the final state. */
-const track = (inputs: ReadonlyArray<Input>) => {
-  let current = initialTurnState;
+const track = (inputs: ReadonlyArray<Input>, newSession = false) => {
+  let current = initialTurnState(newSession);
   const outputs: Array<TrackerOutput> = [];
   for (const input of inputs) {
     const tracked: TrackerInput =
@@ -213,5 +214,24 @@ describe('turn tracker', () => {
       outputs.map((output) => (output._tag === 'Entry' ? output.entry._tag : output._tag)),
       ['toolCall', 'toolResult'],
     );
+  });
+
+  it("reports a new session's ID from its first init frame, before any entry", () => {
+    const sessionId = 'b0a1c2d3-0000-4000-8000-000000000001';
+    const { outputs, state: last } = track(
+      [init(sessionId), state('running'), say('Hi.'), init('another-id')],
+      true,
+    );
+    assert.deepEqual(
+      outputs.map((output) => (output._tag === 'Entry' ? output.entry._tag : output._tag)),
+      ['SessionStarted', 'text'],
+    );
+    assert.deepEqual(outputs[0], { _tag: 'SessionStarted', sessionId });
+    assert.equal(last.reportSession, false);
+  });
+
+  it("reports nothing for a resumed session's init frame", () => {
+    const { outputs } = track([init('b0a1c2d3-0000-4000-8000-000000000001')], false);
+    assert.deepEqual(outputs, []);
   });
 });

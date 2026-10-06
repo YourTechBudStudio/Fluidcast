@@ -52,6 +52,9 @@ export const result = (
     ...(extra.startupFailure === undefined ? {} : { startup_failure_reason: extra.startupFailure }),
   });
 
+export const init = (sessionId: string) =>
+  frame({ type: 'system', subtype: 'init', session_id: sessionId });
+
 export const state = (value: 'idle' | 'running' | 'requires_action') =>
   frame({ type: 'system', subtype: 'session_state_changed', state: value });
 

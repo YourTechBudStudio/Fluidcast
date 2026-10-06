@@ -77,9 +77,13 @@ describe('Worker stream messages', () => {
       Schema.decodeSync(WorkerSummaryJson)(Schema.encodeSync(WorkerSummaryJson)(summary)),
       summary,
     );
+    const pending = { ...summary, sessionId: null };
+    assert.deepEqual(
+      Schema.decodeSync(WorkerSummaryJson)(Schema.encodeSync(WorkerSummaryJson)(pending)),
+      pending,
+    );
     const snapshot = {
       _tag: 'TranscriptSnapshot' as const,
-      sessionId: 's',
       entries: [
         {
           _tag: 'prompt' as const,

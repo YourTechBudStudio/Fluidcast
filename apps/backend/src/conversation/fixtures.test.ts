@@ -33,13 +33,12 @@ export const unusedProviders = Layer.merge(
 );
 
 /** A worker whose status and transcript emit once and then never end, like a live worker's. */
-export const fakeWorkerHandle = (sessionId = 'worker-session'): WorkerHandle => {
+export const fakeWorkerHandle = (sessionId: string | null = 'worker-session'): WorkerHandle => {
   const idle: WorkerSummary = { _tag: 'WorkerSummary', status: 'idle', sessionId };
   return {
-    sessionId,
     status: Stream.concat(Stream.make(idle), Stream.never),
     transcript: Stream.concat(
-      Stream.make({ _tag: 'TranscriptSnapshot', sessionId, entries: [] } as const),
+      Stream.make({ _tag: 'TranscriptSnapshot', entries: [] } as const),
       Stream.never,
     ),
   };
@@ -110,6 +109,7 @@ export const conversationConfig = (
     environment: {},
     claude: {},
     claudeConfigDir: '/nonexistent-claude-config',
+    claudeExecutable: '/nonexistent/claude',
   },
   ...overrides,
 });

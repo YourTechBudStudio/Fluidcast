@@ -262,9 +262,10 @@ describe('buildSession', () => {
 describe('workerOptions', () => {
   const configured = { ...worker, claude: { model: 'opus', effort: 'high' as const } };
 
-  it('gives a new session the workers model and effort, in auto permission mode', () => {
+  it('gives a new session the installed claude and the workers model and effort, in auto permission mode', () => {
     assert.deepEqual(workerOptions(configured), {
       cwd: worker.cwd,
+      executable: worker.claudeExecutable,
       permissionMode: 'auto',
       environment: worker.environment,
       model: 'opus',
@@ -272,13 +273,19 @@ describe('workerOptions', () => {
     });
     assert.deepEqual(workerOptions(worker), {
       cwd: worker.cwd,
+      executable: worker.claudeExecutable,
       permissionMode: 'auto',
       environment: worker.environment,
     });
   });
 
   it('gives a continued session no model, and its recorded effort, else the configured one', () => {
-    const base = { cwd: worker.cwd, permissionMode: 'auto', environment: worker.environment };
+    const base = {
+      cwd: worker.cwd,
+      executable: worker.claudeExecutable,
+      permissionMode: 'auto',
+      environment: worker.environment,
+    };
     assert.deepEqual(workerOptions(configured, { effort: 'max' }), { ...base, effort: 'max' });
     assert.deepEqual(workerOptions(configured, { effort: undefined }), { ...base, effort: 'high' });
     assert.deepEqual(workerOptions(worker, { effort: undefined }), base);

@@ -23,6 +23,11 @@ export type QueryFunction = (params: {
 }) => AsyncIterable<SDKMessage> & { readonly close: () => void };
 
 export interface ConnectOptions {
+  /**
+   * The installed `claude` executable, absolute: the SDK checks that it exists. Required, so the SDK
+   * never falls back to its bundled one.
+   */
+  readonly executable: string;
   readonly model?: string | undefined;
   readonly effort?: EffortLevel | undefined;
   readonly permissionMode?: PermissionMode | undefined;
@@ -31,15 +36,16 @@ export interface ConnectOptions {
 }
 
 export interface WorkerConnection {
-  readonly sessionId: string;
-  readonly resume: boolean;
   readonly cwd: string;
+  /** The session to continue; `undefined`: a new session, whose ID Claude Code chooses. */
+  readonly resume: string | undefined;
 }
 
 /** The query options of one worker. */
 export const queryOptions = (options: ConnectOptions, worker: WorkerConnection): Options => ({
   cwd: worker.cwd,
-  ...(worker.resume ? { resume: worker.sessionId } : { sessionId: worker.sessionId }),
+  pathToClaudeCodeExecutable: options.executable,
+  ...(worker.resume === undefined ? {} : { resume: worker.resume }),
   ...(options.model === undefined ? {} : { model: options.model }),
   ...(options.effort === undefined ? {} : { effort: options.effort }),
   permissionMode: options.permissionMode ?? 'auto',
@@ -87,6 +93,7 @@ const graceDelay = '1 second';
  */
 export const runTracker = (
   frames: Stream.Stream<SDKMessage, ToolFault>,
+  initial: TurnState,
 ): Stream.Stream<WorkerEvent, ToolFault> =>
   Stream.callback<WorkerEvent, ToolFault>((events) =>
     Effect.gen(function* () {
@@ -129,7 +136,7 @@ export const runTracker = (
           }
           return yield* loop(next);
         });
-      yield* loop(initialTurnState);
+      yield* loop(initial);
     }),
   );
 
@@ -160,6 +167,7 @@ export const connectWith =
           Stream.fromAsyncIterable(readOnly(frames), exited).pipe(
             Stream.concat(Stream.fail(exited())),
           ),
+          initialTurnState(worker.resume === undefined),
         );
       }),
     );

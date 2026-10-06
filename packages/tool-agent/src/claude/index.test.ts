@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { claudeWorker } from './index.ts';
 
 describe('claudeWorker', () => {
-  const { composeMessage } = claudeWorker({ cwd: '/work' });
+  const { composeMessage } = claudeWorker({ cwd: '/work', executable: '/usr/local/bin/claude' });
 
   it('leaves the prompt unchanged without modifiers', () => {
     assert.equal(composeMessage('Plan it.', []), 'Plan it.');

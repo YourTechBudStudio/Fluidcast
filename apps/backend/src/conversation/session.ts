@@ -54,6 +54,8 @@ export interface ConversationConfig {
     readonly claude: { readonly model?: string; readonly effort?: ClaudeEffort };
     /** Where Claude Code keeps sessions: `CLAUDE_CONFIG_DIR`, else `<home>/.claude`. */
     readonly claudeConfigDir: string;
+    /** The installed `claude`, found on the real environment's `PATH`, else the bare name. */
+    readonly claudeExecutable: string;
   };
   /** An absolute path to append each generation to (`debug.generationLog`). Off when absent. */
   readonly generationLog?: string;
@@ -82,6 +84,7 @@ export const workerOptions = (
 ): ClaudeWorkerOptions => {
   const base = {
     cwd: worker.cwd,
+    executable: worker.claudeExecutable,
     permissionMode: 'auto',
     environment: worker.environment,
   } as const;

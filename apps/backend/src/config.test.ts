@@ -272,6 +272,31 @@ preset: { voice: { name: alloy, instructions: calm } }
     assert.equal(fallback.conversation.worker.claudeConfigDir, '/home/me/.claude');
   });
 
+  it('runs the first executable claude on the real PATH, else the bare name', async () => {
+    const bin = mkdtempSync(join(tmpdir(), 'fluidcast-bin-'));
+    try {
+      const empty = join(bin, 'empty');
+      const notExecutable = join(bin, 'plain');
+      const installed = join(bin, 'installed');
+      const shadowed = join(bin, 'later');
+      for (const directory of [empty, notExecutable, installed, shadowed]) mkdirSync(directory);
+      mkdirSync(join(empty, 'claude'));
+      writeFileSync(join(notExecutable, 'claude'), '', { mode: 0o644 });
+      writeFileSync(join(installed, 'claude'), '', { mode: 0o755 });
+      writeFileSync(join(shadowed, 'claude'), '', { mode: 0o755 });
+      const found = await loaded(validYaml, {
+        ...keys,
+        PATH: [empty, notExecutable, installed, shadowed].join(':'),
+      });
+      assert.equal(found.conversation.worker.claudeExecutable, join(installed, 'claude'));
+      // Only the real environment counts: a .env PATH is never searched.
+      const missing = await loaded(validYaml, { ...keys, PATH: empty }, `PATH=${installed}\n`);
+      assert.equal(missing.conversation.worker.claudeExecutable, 'claude');
+    } finally {
+      rmSync(bin, { recursive: true });
+    }
+  });
+
   it("loads fluidcast.example.yaml's workers block once uncommented", async () => {
     const example = readFileSync(
       new URL('../../../fluidcast.example.yaml', import.meta.url),

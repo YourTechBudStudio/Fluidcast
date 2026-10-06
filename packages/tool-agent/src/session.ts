@@ -69,11 +69,13 @@ type Opening =
   | { readonly _tag: 'Refused'; readonly failure: ToolFault };
 
 interface WorkerState {
-  readonly sessionId: string;
+  /**
+   * The agent's session ID: the preloaded one from the start, else `undefined` until the connection
+   * reports it (`SessionStarted`).
+   */
+  readonly sessionId: string | undefined;
   readonly cwd: string;
-  /** Preloaded: the first connection resumes. */
-  readonly resume: boolean;
-  /** A reader has been forked. */
+  /** A reader has been forked: once in the worker's life. */
   readonly connected: boolean;
   /** The last forward call whose message was sent. */
   readonly lastHandle: string | undefined;
@@ -115,7 +117,7 @@ export const statusOf = (worker: WorkerState): WorkerStatus =>
 const summaryOf = (worker: WorkerState): WorkerSummary => ({
   _tag: 'WorkerSummary',
   status: statusOf(worker),
-  sessionId: worker.sessionId,
+  sessionId: worker.sessionId ?? null,
 });
 
 /** The per-iteration context: the worker's state, or nothing while it is idle. */
@@ -148,7 +150,6 @@ export interface WorkerSession {
   ) => Effect.Effect<ForwardResult, ToolError | ToolFault>;
   readonly context: Effect.Effect<string | undefined>;
   readonly faults: Stream.Stream<ToolFault>;
-  readonly sessionId: string;
   readonly status: Stream.Stream<WorkerSummary>;
   readonly transcript: Stream.Stream<TranscriptMessage>;
 }
@@ -166,9 +167,8 @@ export const makeWorkerSession = (
     const attached =
       options.sessionId === undefined ? undefined : yield* type.attach(options.sessionId);
     const state = yield* SubscriptionRef.make<WorkerState>({
-      sessionId: options.sessionId ?? uuidv7(),
+      sessionId: options.sessionId,
       cwd: attached?.cwd ?? type.cwd,
-      resume: attached !== undefined,
       connected: false,
       lastHandle: undefined,
       activity: 'settled',
@@ -179,7 +179,6 @@ export const makeWorkerSession = (
       transcript: attached?.history ?? [],
       openings: new Map(),
     });
-    const sessionId = (yield* SubscriptionRef.get(state)).sessionId;
 
     /** Applies one decision atomically; the caller runs the effects it planned. */
     const decide = <A>(decision: (current: WorkerState) => readonly [A, WorkerState]) =>
@@ -218,20 +217,17 @@ export const makeWorkerSession = (
       );
 
     // Interruption (the session's scope closing) runs no handler: `catch` and `catchDefect` do not
-    // catch it.
+    // catch it. A worker connects exactly once (`connected`), so an ID known at connect time is a
+    // preloaded session to resume, and an unknown one is a new session: its `SessionStarted` can
+    // only arrive after this.
     const connect = (worker: WorkerState) =>
-      type
-        .connect(
-          { sessionId: worker.sessionId, resume: worker.resume, cwd: worker.cwd },
-          Stream.fromQueue(inbox),
-        )
-        .pipe(
-          Stream.runForEach(onEvent),
-          // An adapter must not end on its own.
-          Effect.andThen(Effect.fail(new ToolFault({ reason: 'WorkerEnded' }))),
-          Effect.catch(onFault),
-          Effect.catchDefect(() => onFault(new ToolFault({ reason: 'WorkerDefect' }))),
-        );
+      type.connect({ cwd: worker.cwd, resume: worker.sessionId }, Stream.fromQueue(inbox)).pipe(
+        Stream.runForEach(onEvent),
+        // An adapter must not end on its own.
+        Effect.andThen(Effect.fail(new ToolFault({ reason: 'WorkerEnded' }))),
+        Effect.catch(onFault),
+        Effect.catchDefect(() => onFault(new ToolFault({ reason: 'WorkerDefect' }))),
+      );
 
     /**
      * Places a reached forward call: a new busy period (`call.executionId`) or the open one. Runs
@@ -395,7 +391,7 @@ export const makeWorkerSession = (
 
     const status: Stream.Stream<WorkerSummary> = SubscriptionRef.changes(state).pipe(
       Stream.map(summaryOf),
-      Stream.changesWith((a, b) => a.status === b.status),
+      Stream.changesWith((a, b) => a.status === b.status && a.sessionId === b.sessionId),
     );
 
     // Every emission is the whole append-only array, so a skipped value loses no entries.
@@ -405,7 +401,7 @@ export const makeWorkerSession = (
         (): number | undefined => undefined,
         (seen, entries): readonly [number, ReadonlyArray<TranscriptMessage>] => {
           if (seen === undefined) {
-            return [entries.length, [{ _tag: 'TranscriptSnapshot', sessionId, entries }]];
+            return [entries.length, [{ _tag: 'TranscriptSnapshot', entries }]];
           }
           const added = entries.slice(seen);
           return [
@@ -423,7 +419,6 @@ export const makeWorkerSession = (
         Effect.map((current) => renderContext(statusOf(current))),
       ),
       faults: Stream.fromQueue(faultQueue),
-      sessionId,
       status,
       transcript,
     };
@@ -436,6 +431,9 @@ const applyEvent = (
 ): readonly [Effect.Effect<void>, WorkerState] => {
   const period = current.period;
   switch (event._tag) {
+    // Identity only: neither activity nor the transcript.
+    case 'SessionStarted':
+      return [Effect.void, { ...current, sessionId: event.sessionId }];
     case 'Entry': {
       const { entry } = event;
       const topLevel = entry.parentToolUseId === null;

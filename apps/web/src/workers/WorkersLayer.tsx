@@ -5,7 +5,7 @@ import { type ReactNode, useLayoutEffect, useRef } from 'react';
 import type { WorkerStatus } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 
 import { Button, Kbd, useReducedMotion } from '../ui';
-import { CopySessionId } from './CopySessionId';
+import { CopySessionId, PendingSessionId } from './CopySessionId';
 import { workerAtom, workerTranscriptAtom, type WorkersConnection } from './state';
 import { WorkerTranscript } from './WorkerTranscript';
 
@@ -55,7 +55,12 @@ export function WorkersLayer({ onClose }: { readonly onClose: () => void }) {
           </h2>
           {summary && <WorkerState status={summary.status} />}
           <div className="ml-auto flex items-center gap-1">
-            {summary && <CopySessionId id={summary.sessionId} />}
+            {summary &&
+              (summary.sessionId === null ? (
+                <PendingSessionId />
+              ) : (
+                <CopySessionId id={summary.sessionId} />
+              ))}
             <Button
               tone="ghost"
               aria-label="Close worker"

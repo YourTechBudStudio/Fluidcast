@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { parseEnv } from 'node:util';
 
 import { Effect, FileSystem, Path, Redacted, Schema } from 'effect';
@@ -110,12 +110,14 @@ export const loadConfig = (
     const directory = paths.dirname(file);
     const relativeToConfig = (target: string) => paths.resolve(directory, target);
     const home = options.homeDirectory ?? homedir();
+    const real = options.environment ?? process.env;
     const worker = workerConfig(
       parsed,
-      options.environment ?? process.env,
+      real,
       directory,
       home,
       relativeToConfig,
+      yield* findExecutable(fs, paths, real['PATH'], 'claude'),
     );
     return yield* resolve(parsed, environment, relativeToConfig, worker, home).pipe(
       Effect.catch((message) => fail(message)),
@@ -165,11 +167,33 @@ const apiKeyEnvFor = (file: ConfigFile, type: ProviderType): string =>
   file.providers?.[type]?.apiKeyEnv ?? defaultApiKeyEnv[type];
 
 /**
+ * The first executable regular file named `name` in the `PATH` directories, as an absolute path,
+ * like a shell's lookup.
+ */
+const findExecutable = (
+  fs: FileSystem.FileSystem,
+  paths: Path.Path,
+  searchPath: string | undefined,
+  name: string,
+): Effect.Effect<string | undefined> =>
+  Effect.gen(function* () {
+    for (const directory of (searchPath ?? '').split(delimiter)) {
+      if (directory === '') continue;
+      const candidate = paths.resolve(directory, name);
+      const info = yield* fs.stat(candidate).pipe(Effect.option);
+      if (info._tag === 'Some' && info.value.type === 'File' && (info.value.mode & 0o111) !== 0) {
+        return candidate;
+      }
+    }
+    return undefined;
+  });
+
+/**
  * Where a new worker runs (`workers.cwd`, else the config file's directory), the `workers.claude`
  * settings, and the environment it gets: the real environment (never `.env` values) minus the
  * variables holding the configured providers' keys. Credential hygiene, not isolation. Claude
- * Code's config directory also comes from the real environment, because that is what the in-process
- * SDK readers and the worker process see.
+ * Code's config directory and executable also come from the real environment, because that is
+ * what the in-process SDK readers and the worker process see.
  */
 const workerConfig = (
   file: ConfigFile,
@@ -177,6 +201,7 @@ const workerConfig = (
   directory: string,
   home: string,
   relativeToConfig: (path: string) => string,
+  claudeExecutable: string | undefined,
 ): ConversationConfig['worker'] => {
   const providerKeyNames = new Set(
     [file.llm.provider.type, file.tts.provider.type]
@@ -191,6 +216,8 @@ const workerConfig = (
       ...(claude?.effort === undefined ? {} : { effort: claude.effort }),
     },
     claudeConfigDir: nonEmpty(real['CLAUDE_CONFIG_DIR']) ?? join(home, '.claude'),
+    // Not installed: the bare name fails the SDK's existence check, so the worker faults at startup.
+    claudeExecutable: claudeExecutable ?? 'claude',
     environment: Object.freeze(
       Object.fromEntries(
         Object.entries(definedOnly(real)).filter(([name]) => !providerKeyNames.has(name)),
