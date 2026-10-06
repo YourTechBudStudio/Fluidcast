@@ -12,7 +12,7 @@ On reconnection, the client can request a cursor reset and resume playback rathe
 
 Tools that need the user, such as Show and Ask, run on the backend and wait for the client. Each execution has its own identity, and the client's typed commands to a running tool carry it, so stale replies from an earlier execution are rejected. Clients import tool schemas from the tool packages; the Client SDK only carries commands.
 
-The Harness exports two derived signals as pure functions over session state, which the Client SDK makes subscribable. **Presentation** (thinking, speaking, or idle) drives the player. **Attention** (working, needs you, idle, or error) tells applications whether the user is needed, independently of Away; see the [interaction model](../product/interaction-model.md). Stepping away and resuming are commands.
+The Harness exports two derived signals as pure functions over session state, which the Client SDK makes subscribable. **Presentation** (thinking, speaking, or idle) drives the player. **Attention** (working, needs you, idle, or error) tells applications whether the user is needed, independently of Away; see the [interaction model](../product/interaction-model.md). Starting a preloaded session, stepping away and resuming are commands.
 
 ## Audio
 

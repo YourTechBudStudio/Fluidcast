@@ -4,7 +4,8 @@ A quiet player does not necessarily mean work is complete: the worker may still 
 
 ## Player controls
 
-- **Away/resume:** Step away and come back without abandoning background work. Nothing plays while away, and the next response is prepared once outstanding work returns. A session can start away, so starting it is resuming it.
+- **Start:** A session can open with its first message already prepared by the application, such as one that continues an existing worker session. The user starts it with a tap; the first response is generated then.
+- **Away/resume:** Step away and come back without abandoning background work. Nothing plays while away, and the next response is prepared once outstanding work returns.
 - **Next:** Skip ahead while preserving execution of intervening tools.
 - **Back:** Return to the previous speech without executing actions in reverse. Replaying speech does not rerun the worker's work; replayable presentation tools can show content again during forward playback.
 - **Interrupt:** Redirect immediately, discarding presentation that has not happened yet. The worker keeps working; corrections reach it as new messages that steer its current work. While a forward is pending, the user interrupts before typing.
