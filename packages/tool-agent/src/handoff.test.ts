@@ -316,6 +316,23 @@ describe('conversationSince', () => {
     );
   });
 
+  it('renders a continue checkpoint as its question and Continue, with no options', () => {
+    const state = stateOf(
+      actions(
+        toolCall('call_1', 'ask', { kind: 'continue', question: 'Ready for the next part?' }),
+        result(['call_1'], 'ask', {
+          question: 'Ready for the next part?',
+          answer: { kind: 'continue' },
+        }),
+        forwardCall('call_2'),
+      ),
+    );
+    assert.equal(
+      renderConversation(handoffFor(state, undefined).conversation),
+      '**Question:** Ready for the next part?\n**Answer:** Continue',
+    );
+  });
+
   it('labels speakers only with several, splits paragraphs by speaker, and ignores omitted actions', () => {
     const log = actions(
       speak('Hello.', 'host'),

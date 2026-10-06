@@ -23,7 +23,7 @@ export const walkingThrough = [
   '- A segment is one to three compact `show`s. Introduce each in one short line, `show` it, then walk the listener through it while they look at it.',
   '- Shows compress: short bullets, a small table for options or comparisons, a mermaid diagram for flows and structures. Keep every decision, reason, risk, number, option and recommendation; drop only wording. Add nothing of your own.',
   '- Text meant to be used exactly as written (a command, code, config) is shown verbatim.',
-  '- End every segment with an `ask`: the result\'s questions that belong to this segment, one `ask` each with its options; otherwise one `ask` with `kind: "choice"`, a short question such as "Ready for the next part?" and the single option "Continue".',
+  '- End every segment with an `ask`: the result\'s questions that belong to this segment, one `ask` each with its options; otherwise one `ask` with `kind: "continue"` and a short question such as "Ready for the next part?".',
   "- Keep the listener's answers: don't respond to them or forward them yet; go on to the next segment.",
   '- After the last segment and its questions, write `forward_agent`: it hands your work all the answers at once.',
 ].join('\n');

@@ -1,12 +1,22 @@
 import type { AskCommand, AskInput } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 
+/** What each kind asks of the listener, as the dock's label and the transcript heading name it. */
+export const ASK_KIND_LABEL: Record<AskInput['kind'], string> = {
+  text: 'Open answer',
+  choice: 'Pick one',
+  multi: 'Pick any',
+  continue: 'Checkpoint',
+};
+
 /** What the listener has put together so far: typed text and, for `multi`, the options toggled on (by index). */
 export interface AskDraft {
   readonly text: string;
   readonly picked: readonly number[];
 }
 
-const optionsOf = (input: AskInput) => (input.kind === 'text' ? [] : input.options);
+/** The options a question offers: only `choice` and `multi` have any. */
+export const optionsOf = (input: AskInput) =>
+  input.kind === 'choice' || input.kind === 'multi' ? input.options : [];
 
 const withText = (text: string) => {
   const trimmed = text.trim();
@@ -37,9 +47,10 @@ export function toggled(draft: AskDraft, index: number): AskDraft {
 
 /**
  * The answer the Send button gives: the `multi` picks with any typed text, or else the typed text alone as a `text`
- * answer. `undefined` when there is nothing to send.
+ * answer. `undefined` when there is nothing to send, and always for `continue`, which has no Send.
  */
 export function answerForSend(input: AskInput, draft: AskDraft): AskCommand | undefined {
+  if (input.kind === 'continue') return undefined;
   const options = optionsOf(input);
   if (input.kind === 'multi' && draft.picked.length > 0) {
     return {
@@ -52,6 +63,20 @@ export function answerForSend(input: AskInput, draft: AskDraft): AskCommand | un
   return text ? { kind: 'text', text } : undefined;
 }
 
-/** The labels an answer chose, if any. */
-export const chosenOf = (answer: AskCommand | null | undefined): readonly string[] =>
-  answer?.kind === 'choice' ? [answer.choice] : answer?.kind === 'multi' ? answer.choices : [];
+/** The labels an answer chose, if any: a `continue` answer chose Continue. */
+export const chosenOf = (answer: AskCommand | null | undefined): readonly string[] => {
+  switch (answer?.kind) {
+    case 'choice':
+      return [answer.choice];
+    case 'multi':
+      return answer.choices;
+    case 'continue':
+      return ['Continue'];
+    default:
+      return [];
+  }
+};
+
+/** Any free text the listener typed with an answer. A `continue` answer has none. */
+export const typedOf = (answer: AskCommand | null | undefined): string | undefined =>
+  answer && answer.kind !== 'continue' ? answer.text : undefined;

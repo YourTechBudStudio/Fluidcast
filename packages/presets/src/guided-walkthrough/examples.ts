@@ -46,6 +46,12 @@ const question = (handle: string, text: string): ExampleStep => ({
   handle,
   input: { kind: 'text', question: text },
 });
+const continueAsk = (handle: string, text: string): ExampleStep => ({
+  type: 'tool_call',
+  tool: askToolName,
+  handle,
+  input: { kind: 'continue', question: text },
+});
 const answered = (handle: string, text: string, answer: AskCommand): ExampleStep => ({
   type: 'tool_result',
   tool: askToolName,
@@ -125,8 +131,8 @@ const nightlyJobs: Example = [
     "Okay. One last thing: what's next.",
     show('call_8', 'Next', 'Merge the three report emails into one.'),
   ),
-  choice('call_9', 'Ready to send your answer?', ['Continue']),
-  answered('call_9', 'Ready to send your answer?', { kind: 'choice', choice: 'Continue' }),
+  continueAsk('call_9', 'Ready to send your answer?'),
+  answered('call_9', 'Ready to send your answer?', { kind: 'continue' }),
   forward('call_10'),
   say('One moment.'),
 ];
@@ -165,7 +171,7 @@ const greeting: Example = [
 
 /** A question the listener declines by interrupting: what they say instead is forwarded at once. */
 const interruptedQuestion: Example = [
-  choice('call_1', 'Ready for the fixes?', ['Continue']),
+  continueAsk('call_1', 'Ready for the fixes?'),
   { type: 'interrupted', during: 'wait' },
   user('Wait, why not just fix the database instead?'),
   forward('call_2'),

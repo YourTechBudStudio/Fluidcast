@@ -15,24 +15,6 @@ export const reminderTexts = {
     'Forward this first unless it is small talk; you know only what `forward_agent` results told you.',
 } as const;
 
-/** An answer that asks for the next segment, chosen or typed. */
-const continuePattern = /^\s*(continue|next|go on|keep going)\b/i;
-
-/**
- * Whether an answer is a Continue, as the evaluation judged it: a chosen label or a typed answer
- * that matches. Text typed beside a choice, and any multi answer, never count.
- */
-const isContinue = (answer: AskResult['answer']): boolean => {
-  switch (answer.kind) {
-    case 'choice':
-      return continuePattern.test(answer.choice);
-    case 'text':
-      return continuePattern.test(answer.text);
-    case 'multi':
-      return false;
-  }
-};
-
 /**
  * The Guided Walkthrough's reminder for the newest input: a pure function of the event, recognising
  * tools by name. Results of any other tool get none.
@@ -45,5 +27,5 @@ export const reminders = (event: ReminderEvent): string | undefined => {
   if (event.tool !== askToolName) return undefined;
   // Core decoded it with the Ask tool's `result` schema.
   const { answer } = event.result as AskResult;
-  return isContinue(answer) ? reminderTexts.continue : reminderTexts.answer;
+  return answer.kind === 'continue' ? reminderTexts.continue : reminderTexts.answer;
 };

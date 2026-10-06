@@ -232,6 +232,8 @@ const renderAnswer = (answer: AskCommand | undefined): string => {
       const added = answer.text?.trim() ?? '';
       return added === '' ? chosen : `${chosen} — they added: ${added}`;
     }
+    case 'continue':
+      return 'Continue';
   }
 };
 
@@ -253,7 +255,7 @@ export const renderEntry = (entry: ConversationEntry): string => {
     }
     case 'question': {
       const lines = [`**Question:** ${entry.input.question}`];
-      if (entry.input.kind !== 'text') {
+      if (entry.input.kind === 'choice' || entry.input.kind === 'multi') {
         lines.push(`Options: ${entry.input.options.map((option) => option.label).join(' · ')}`);
       }
       lines.push(`**Answer:** ${renderAnswer(entry.answer)}`);

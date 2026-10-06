@@ -40,6 +40,34 @@ const segmentBullet =
 const evaluatedSegmentBullet =
   '- A segment is one to three compact `show`s, each after a sentence or two of speech.';
 
+const continueAskClause =
+  'otherwise one `ask` with `kind: "continue"` and a short question such as "Ready for the next part?".';
+const evaluatedContinueAskClause =
+  'otherwise one `ask` with `kind: "choice"`, a short question such as "Ready for the next part?" and the single option "Continue".';
+
+const askGuideline =
+  '- Use `ask` for one question that needs the listener\'s answer. `ask` blocks: the conversation waits for the answer, which arrives as a `<tool_result>`. `kind: "continue"` is a checkpoint the listener only acknowledges with a Continue button; every other kind can also be answered in the listener\'s own words.';
+const evaluatedAskGuideline =
+  "- Use `ask` for one question that needs the listener's answer. `ask` blocks: the conversation waits for the answer, which arrives as a `<tool_result>`. The listener can always answer in their own words.";
+
+/** The `Ask` type's last branch, `multi`, and the `continue` branch that now follows it. */
+const evaluatedAskTypeEnd = '    label: string;\n  }[];\n};\n\n/** Starts your work';
+const askTypeEnd =
+  '    label: string;\n  }[];\n} | {\n  type: "ask";\n  kind: "continue";\n  /** Exactly one question. */\n  question: string;\n};\n\n/** Starts your work';
+
+/** An example's Continue checkpoint, as a `continue` ask and as the evaluated single-option choice. */
+const continueAsk = (question: string) =>
+  `{"type":"ask","kind":"continue","question":"${question}"}`;
+const evaluatedContinueAsk = (question: string) =>
+  `{"type":"ask","kind":"choice","question":"${question}","options":[{"label":"Continue"}]}`;
+const continueQuestions = ['Ready to send your answer?', 'Ready for the fixes?'];
+
+/** Replaces `from` with `to` in `text`, asserting that `from` occurs exactly once. */
+const swap = (text: string, from: string, to: string): string => {
+  assert.equal(text.split(from).length, 2, `expected exactly one ${from}`);
+  return text.replace(from, () => to);
+};
+
 /** The examples' walk-through lines: a speak right before an `ask`, which follows a screen. */
 const walkThroughSpeech =
   /,\{"type":"speak","speaker":"host","text":"(?:[^"\\]|\\.)*"\}(?=,\{"type":"ask")/g;
@@ -57,6 +85,10 @@ const walkThroughSpeech =
  *    the listener's message) instead of an interrupted answer, which Ask no longer has.
  * 6. Walk-through speech: the segment bullet, a new `## Speaking` section, and a speak after each
  *    example screen that walks the listener through it.
+ * 7. The `continue` Ask kind: the segment-ending ask bullet asks with `kind: "continue"` instead of a
+ *    choice with the single option "Continue"; the `Ask` type gains a `continue` branch; the `ask`
+ *    guideline names it; and the examples' two Continue asks use it. Their results still read
+ *    `Answer: Continue`.
  */
 describe('the detailed Guided Walkthrough', () => {
   const evaluated = fixture('evaluated-detailed.txt');
@@ -73,9 +105,14 @@ describe('the detailed Guided Walkthrough', () => {
     );
     assert.equal(
       section(rendered, '## Walking through', '## Forwarding'),
-      section(evaluated, '## Walking through', '## Forwarding').replace(
-        evaluatedSegmentBullet,
-        segmentBullet,
+      swap(
+        swap(
+          section(evaluated, '## Walking through', '## Forwarding'),
+          evaluatedSegmentBullet,
+          segmentBullet,
+        ),
+        evaluatedContinueAskClause,
+        continueAskClause,
       ),
     );
     assert.equal(
@@ -92,12 +129,19 @@ describe('the detailed Guided Walkthrough', () => {
     );
   });
 
-  it('has the evaluated tool lines, output-format types and examples, but the interrupted question and walk-through speech', () => {
+  it('has the evaluated tool lines, output-format types and examples, but the interrupted question, walk-through speech and the continue kind', () => {
     const evaluatedRules = section(evaluated, '## Tool rules', '## Output format').split('\n');
     const renderedRules = section(rendered, '## Tool rules', '## Output format').split('\n');
-    assert.deepEqual(renderedRules.slice(-3), evaluatedRules.slice(1));
+    assert.ok(evaluatedRules.includes(evaluatedAskGuideline));
+    assert.deepEqual(
+      renderedRules.slice(-3),
+      evaluatedRules.slice(1).map((line) => (line === evaluatedAskGuideline ? askGuideline : line)),
+    );
     assert.equal(renderedRules.length, 1 + 5 + 3);
-    assert.equal(section(rendered, '```ts', '```\n'), section(evaluated, '```ts', '```\n'));
+    assert.equal(
+      section(rendered, '```ts', '```\n'),
+      swap(section(evaluated, '```ts', '```\n'), evaluatedAskTypeEnd, askTypeEnd),
+    );
     const answered =
       '<tool_result call="call_1" tool="ask">Question: Ready for the fixes?\nThe listener interrupted to say: Wait, why not just fix the database instead?</tool_result>';
     const declined =
@@ -105,9 +149,15 @@ describe('the detailed Guided Walkthrough', () => {
     assert.ok(evaluated.includes(answered));
     const renderedExamples = section(rendered, '## Examples');
     assert.equal(renderedExamples.match(walkThroughSpeech)?.length, 4);
-    assert.equal(
-      renderedExamples.replace(walkThroughSpeech, ''),
-      section(evaluated, '## Examples').replace(answered, declined),
+    const evaluatedExamples = continueQuestions.reduce(
+      (text, question) => swap(text, evaluatedContinueAsk(question), continueAsk(question)),
+      swap(section(evaluated, '## Examples'), answered, declined),
+    );
+    assert.equal(renderedExamples.replace(walkThroughSpeech, ''), evaluatedExamples);
+    assert.ok(
+      renderedExamples.includes(
+        '<tool_result call="call_9" tool="ask">Question: Ready to send your answer?\nAnswer: Continue</tool_result>',
+      ),
     );
   });
 });
@@ -161,13 +211,14 @@ describe('guidedWalkthrough reminders', () => {
     );
   });
 
-  it('reminds to present the next segment after a Continue, chosen or typed', () => {
-    assert.equal(reminders(ask({ kind: 'choice', choice: 'Continue' })), reminderTexts.continue);
-    assert.equal(reminders(ask({ kind: 'text', text: '  go on, please' })), reminderTexts.continue);
-    assert.equal(reminders(ask({ kind: 'text', text: 'Keep going' })), reminderTexts.continue);
+  it('reminds to present the next segment after a continue answer', () => {
+    assert.equal(reminders(ask({ kind: 'continue' })), reminderTexts.continue);
   });
 
-  it('treats any other answer as an answer, including a choice with "continue" typed beside it', () => {
+  it('treats any other answer as an answer, however it reads', () => {
+    assert.equal(reminders(ask({ kind: 'choice', choice: 'Continue' })), reminderTexts.answer);
+    assert.equal(reminders(ask({ kind: 'text', text: '  go on, please' })), reminderTexts.answer);
+    assert.equal(reminders(ask({ kind: 'text', text: 'next' })), reminderTexts.answer);
     assert.equal(reminders(ask({ kind: 'choice', choice: 'Yes' })), reminderTexts.answer);
     assert.equal(
       reminders(ask({ kind: 'choice', choice: 'Yes', text: 'continue' })),
