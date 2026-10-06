@@ -1,3 +1,4 @@
+import type { EffortLevel } from '@anthropic-ai/claude-agent-sdk';
 import { Schema } from 'effect';
 
 import { Voice } from '@yourtechbudstudio/fluidcast-core/speech';
@@ -70,8 +71,41 @@ export const PresetSection = Schema.Struct({
 });
 export type PresetSection = typeof PresetSection.Type;
 
+/**
+ * Claude Code's effort levels, one key per level of the SDK's `EffortLevel`. The `satisfies` fails
+ * to compile if the SDK gains or drops a level, so `ClaudeEffort` cannot drift from it.
+ */
+const effortLevels = {
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'xhigh',
+  max: 'max',
+} as const satisfies { readonly [Level in EffortLevel]: Level };
+
+/** Claude Code's effort levels. Kept identical to the SDK's `EffortLevel`, which is checked above. */
+export const ClaudeEffort = Schema.Literals(Object.values(effortLevels));
+export type ClaudeEffort = typeof ClaudeEffort.Type;
+
+/**
+ * `workers`: the agent behind `forward_agent`. `cwd` (relative to the config file, default its
+ * directory), `claude.model` and `claude.effort` apply to new sessions. A continued session keeps
+ * its own model and directory, and its recorded effort, falling back to `claude.effort`.
+ */
+export const WorkersSection = Schema.Struct({
+  cwd: Schema.optionalKey(Schema.NonEmptyString),
+  claude: Schema.optionalKey(
+    Schema.Struct({
+      model: Schema.optionalKey(Schema.NonEmptyString),
+      effort: Schema.optionalKey(ClaudeEffort),
+    }),
+  ),
+});
+export type WorkersSection = typeof WorkersSection.Type;
+
 /** The conversation slice's config sections. */
 export const ConversationSections = {
   llm: LlmSection,
   preset: PresetSection,
+  workers: Schema.optionalKey(WorkersSection),
 };

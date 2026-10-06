@@ -4,7 +4,7 @@
 
 The harness cursor determines when actions take effect. Speech waits for playback completion; a tool starts when reached and then runs in the background while subsequent actions proceed. Tools are never executed early merely because they have been generated.
 
-An **iteration** is one generation call. An **agentic turn** begins with user input (or supplied starting context) and spans iterations until playback and tool work are finished and no eligible tool responses remain to be submitted. There is no explicit conversation-end action: completion is derived from outstanding work, not declared by the model.
+An **iteration** is one generation call. An **agentic turn** begins with user input (including a preloaded start) and spans iterations until playback and tool work are finished and no eligible tool responses remain to be submitted. There is no explicit conversation-end action: completion is derived from outstanding work, not declared by the model.
 
 ## Normal continuation
 
@@ -19,7 +19,11 @@ After generation and playback finish, with the user present and connected:
 
 Progress updates exist to fill silence. Each stands alone, so one arriving while anything is playing or generating is dropped rather than queued. While a tool call is pending, the user must interrupt before sending a message.
 
-Tool outcomes wait as session state until the harness submits them; only then do they enter the conversation log, so the log reads exactly as the model saw it ([ADR 0002](../adrs/0002-conversation-as-an-action-log.md)). A successful response-free tool can finish the turn without another iteration. The harness assembles input from user messages, tool responses, and queued key-value context. Context alone does not trigger continuation. A session can begin from starting input: an optional message and labeled context supplied by the application.
+Tool outcomes wait as session state until the harness submits them; only then do they enter the conversation log, so the log reads exactly as the model saw it ([ADR 0002](../adrs/0002-conversation-as-an-action-log.md)). A successful response-free tool can finish the turn without another iteration. The harness assembles input from user messages, tool responses, and queued key-value context. Context alone does not trigger continuation.
+
+## Preloaded start
+
+An application can create a session with a **preloaded start**: a first user message, optionally with labeled context the voice reads alongside it, such as the last reply of a resumed worker. It is part of session state, so clients can show the session as ready to start. Nothing is generated until a Start command sends it; the message then begins the first agentic turn like any other user input.
 
 ## Playback and history
 
@@ -31,7 +35,7 @@ Rewinding and interrupting may intentionally erase generated actions that never 
 
 ## Away
 
-**Away** holds presentation while work continues. The cursor passes instant actions but stops at the next speak without playing it, and progress updates are dropped. Once every outstanding tool has returned, the harness generates the next response so resuming is immediate. The user can step away at any moment, including while a question is open. A session created Away waits for the user to start it by resuming.
+**Away** holds presentation while work continues. The cursor passes instant actions but stops at the next speak without playing it, and progress updates are dropped. Once every outstanding tool has returned, the harness generates the next response so resuming is immediate. The user can step away at any moment, including while a question is open.
 
 ## Failures and retry
 

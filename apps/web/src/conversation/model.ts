@@ -19,4 +19,8 @@ export interface ConversationCommands {
   readonly answerAsk: (execution: Execution, answer: AskCommand) => Promise<boolean>;
   /** Presents the previous line again. */
   readonly back: () => Promise<boolean>;
+  /** Sends the preloaded start, so the conversation begins. */
+  readonly start: () => Promise<boolean>;
+  /** Ends this backend session. Resolves `true` once the backend confirmed it; the page then leaves the session. */
+  readonly reset: () => Promise<boolean>;
 }

@@ -3,15 +3,16 @@ import { Atom } from 'effect/unstable/reactivity';
 
 import * as FluidcastClient from '@yourtechbudstudio/fluidcast-client';
 
+import { sessionIdAtom } from './session';
 import { httpTransport } from './transport';
 
 /**
- * The page's one Client SDK instance over the HTTP transport. Conversation and playback atoms run on it.
- *
- * Kept alive for the page's lifetime: the Harness allows a single subscriber, so a second instance (for
- * example from StrictMode mounting twice, or every consumer briefly unmounting) would open a new
- * subscription and supersede this one.
+ * One Client per backend session. Each session has its own atom registry (see `app/Root.tsx`). Disposing it closes
+ * this Client's subscription and prefetches. Within a registry it stays alive, because a second Client would supersede
+ * the subscription.
  */
 export const clientRuntime = Atom.keepAlive(
-  Atom.runtime(FluidcastClient.layer().pipe(Layer.provide(httpTransport))),
+  Atom.runtime((get) =>
+    FluidcastClient.layer().pipe(Layer.provide(httpTransport(get(sessionIdAtom)))),
+  ),
 );

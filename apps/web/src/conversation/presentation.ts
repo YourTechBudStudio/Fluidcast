@@ -1,4 +1,5 @@
 import { absurd } from 'effect/Function';
+import { AsyncResult } from 'effect/unstable/reactivity';
 
 import type { TransportError } from '@yourtechbudstudio/fluidcast-client';
 import type { Execution, ExecutionId } from '@yourtechbudstudio/fluidcast-harness/protocol';
@@ -30,6 +31,7 @@ import {
  * those can never disagree.
  */
 export type Moment =
+  | 'ready'
   | 'connecting'
   | 'reconnecting'
   | 'superseded'
@@ -72,14 +74,48 @@ export type FailureStatus =
  * not reach the backend. A failed send changes nothing else, because the conversation did not change; connection
  * moments still take priority. One refinement only changes the copy: `askingText`, `asking` for a question answered
  * in the listener's own words.
+ *
+ * Reset adds two: `resetting` while a Reset is pending or has succeeded (the session is ending, so it wins even over
+ * the connection dropping as a result), and `resetFailed` when the backend did not confirm one.
  */
-export type StatusMoment = Exclude<Moment, 'audioFailed'> | FailureStatus | 'askingText';
+export type StatusMoment =
+  | Exclude<Moment, 'audioFailed'>
+  | FailureStatus
+  | 'askingText'
+  | 'resetting'
+  | 'resetFailed';
+
+/**
+ * Reset as the player shows it. `pending` holds from the press until the registry is disposed: while the request runs,
+ * and after it succeeded, until the status stream takes the page back to the mode screen.
+ */
+export interface ResetState {
+  readonly pending: boolean;
+  readonly failure: TransportError | null;
+}
+
+/**
+ * Whether a Reset is pending, from its request's result (`true` once the backend confirmed it): while the request runs,
+ * and after it succeeded. A confirmed Reset always ends in the registry's disposal, so it never needs clearing.
+ */
+export const resetPendingOf = (result: AsyncResult.AsyncResult<boolean, unknown>): boolean =>
+  result.waiting || (AsyncResult.isSuccess(result) && result.value);
 
 /** Which controls the composer offers. */
 export type ComposerMode = 'compose' | 'busy' | 'retry' | 'retryClip' | 'offline';
 
 export type TimelineRow =
   | { readonly kind: 'user'; readonly id: string; readonly text: string }
+  /**
+   * A preloaded start waiting for Tap to start: its message, and the label of the context sent with it. The context's
+   * text is for the model only. After the tap, the message is an ordinary `user` row with the same ID.
+   */
+  | {
+      readonly kind: 'preloaded';
+      readonly id: string;
+      readonly text: string;
+      readonly contextLabel: string | null;
+    }
   | {
       readonly kind: 'speak';
       readonly id: string;
@@ -190,6 +226,8 @@ export interface Presentation {
   readonly fault: string | null;
   /** The Show the Show button opens, if there has been one. */
   readonly latestShow: string | null;
+  /** A Reset is pending or succeeded: Reset and Tap to start do nothing until the page leaves the session. */
+  readonly resetPending: boolean;
   /**
    * While thinking, when the open Forward execution started (epoch milliseconds), so the status line counts the whole
    * time the worker has been busy; `null` when the worker is not running or the moment is not `thinking`.
@@ -240,6 +278,9 @@ export function momentOf(
   if (presented === 'held') return 'held';
   if (presented === 'failed') return 'audioFailed';
   switch (view.phase) {
+    // A preloaded start waits for Tap to start.
+    case 'ready':
+      return 'ready';
     case 'generationFailed':
       return 'generationFailed';
     // A tool fault stopped the conversation for good.
@@ -265,6 +306,7 @@ export function momentOf(
 }
 
 const COMPOSER: Record<Moment, ComposerMode> = {
+  ready: 'offline',
   connecting: 'offline',
   reconnecting: 'offline',
   superseded: 'offline',
@@ -282,6 +324,7 @@ const COMPOSER: Record<Moment, ComposerMode> = {
 };
 
 const VISUAL: Record<Moment, VisualState> = {
+  ready: 'idle',
   connecting: 'offline',
   reconnecting: 'offline',
   superseded: 'offline',
@@ -340,6 +383,18 @@ function subtitleOf(
     case 'held':
     case 'fresh':
       return null;
+    case 'ready': {
+      // The preloaded message, under Tap to start. After the tap, your just-sent message takes over.
+      const message = view.start?.message;
+      return message
+        ? {
+            key: `preloaded:${message.id}`,
+            text: `“${message.text}”`,
+            tone: 'you',
+            label: 'Preloaded · Tap to start says',
+          }
+        : null;
+    }
     case 'speaking': {
       // A line appears when its audio starts. Until then the previous line of this turn stays, or your own message if
       // none has played yet. After Back, the presented line is an earlier one.
@@ -521,6 +576,7 @@ function timelineOf(
         break;
       }
       // Context is for the model only.
+      case 'context':
       case 'tool_context':
         break;
       case 'tool_faulted':
@@ -541,6 +597,13 @@ function timelineOf(
         absurd(action);
     }
   });
+  if (view.start !== null)
+    rows.push({
+      kind: 'preloaded',
+      id: view.start.message.id,
+      text: view.start.message.text,
+      contextLabel: view.start.context?.label ?? null,
+    });
   if (moment === 'thinking') rows.push({ kind: 'pending', label: 'Thinking…' });
   if (moment === 'waiting') rows.push({ kind: 'pending', label: 'More on the way…' });
   return rows;
@@ -579,8 +642,12 @@ function statusOf(
   playback: PlaybackStatus,
   sendFailure: TransportError | null,
   unresolvedShows: ReadonlySet<ExecutionId>,
+  reset: ResetState,
 ): StatusMoment {
+  // The session is ending at the listener's request: a connection dropping now is that, not a fault.
+  if (reset.pending) return 'resetting';
   if (connection === 'connected') {
+    if (reset.failure) return 'resetFailed';
     if (sendFailure) return transportStatus(sendFailure, 'sendUnreachable');
     // A Show report the Harness would not accept: out of sync for as long as that execution stays open.
     if (view.executions.some((e) => unresolvedShows.has(e.executionId))) return 'outOfSync';
@@ -622,12 +689,13 @@ export function present(
   playback: PlaybackStatus,
   sendFailure: TransportError | null,
   unresolvedShows: ReadonlySet<ExecutionId>,
+  reset: ResetState,
 ): Presentation {
   const moment = momentOf(view, connection, playback);
   const composer = COMPOSER[moment];
   return {
     moment,
-    status: statusOf(view, moment, connection, playback, sendFailure, unresolvedShows),
+    status: statusOf(view, moment, connection, playback, sendFailure, unresolvedShows, reset),
     composer,
     visual: VISUAL[moment],
     held: moment === 'held',
@@ -638,6 +706,7 @@ export function present(
     canGoBack: canGoBackOf(view, connection),
     fault: view.actions.findLast((a) => a.type === 'tool_faulted')?.error.message ?? null,
     latestShow: latestShowHandle(view) ?? null,
+    resetPending: reset.pending,
     thinkingSince: moment === 'thinking' ? (forwardThinkingSince(view) ?? null) : null,
   };
 }

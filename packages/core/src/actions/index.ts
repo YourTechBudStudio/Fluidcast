@@ -5,6 +5,7 @@ export {
   GenerationFailed,
   Interrupted,
   isModelAuthored,
+  LabeledContext,
   ModelSpeak,
   Speak,
   SpeakerProfile,

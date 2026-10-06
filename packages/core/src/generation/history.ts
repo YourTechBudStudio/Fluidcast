@@ -34,6 +34,7 @@ type Run =
  *
  * A `tool_context` renders nothing in place. The latest one per tool, when not empty, closes the
  * input as `<context tool="…">`, in `tools` order, so the current context always comes last.
+ * A `context` renders in place as `<context label="…">`.
  *
  * The newest input (the latest tool results or user message in the final user run) is followed by
  * its reminder, if `options.reminders` gives one, as `<reminder>…</reminder>`. Older
@@ -189,6 +190,8 @@ const envelope = (
       return `<tool_error ${callsAttribute(action.handles)} tool="${escapeAttribute(action.tool)}">${escapeXml(action.message)}</tool_error>`;
     case 'tool_progress':
       return `<tool_progress ${callsAttribute(action.handles)} tool="${escapeAttribute(action.tool)}">${escapeXml(action.text)}</tool_progress>`;
+    case 'context':
+      return `<context label="${escapeAttribute(action.label)}">${escapeXml(action.text)}</context>`;
     case 'tool_context':
       // Rendered once, at the end of the input.
       return undefined;

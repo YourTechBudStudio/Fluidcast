@@ -1,4 +1,5 @@
 import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { parseEnv } from 'node:util';
 
 import { Effect, FileSystem, Path, Redacted, Schema } from 'effect';
@@ -108,8 +109,14 @@ export const loadConfig = (
 
     const directory = paths.dirname(file);
     const relativeToConfig = (target: string) => paths.resolve(directory, target);
-    const worker = workerConfig(parsed, options.environment ?? process.env, directory);
     const home = options.homeDirectory ?? homedir();
+    const worker = workerConfig(
+      parsed,
+      options.environment ?? process.env,
+      directory,
+      home,
+      relativeToConfig,
+    );
     return yield* resolve(parsed, environment, relativeToConfig, worker, home).pipe(
       Effect.catch((message) => fail(message)),
     );
@@ -158,21 +165,32 @@ const apiKeyEnvFor = (file: ConfigFile, type: ProviderType): string =>
   file.providers?.[type]?.apiKeyEnv ?? defaultApiKeyEnv[type];
 
 /**
- * Where the worker runs and the environment it gets: the real environment (never `.env` values)
- * minus the variables holding the configured providers' keys. Credential hygiene, not isolation.
+ * Where a new worker runs (`workers.cwd`, else the config file's directory), the `workers.claude`
+ * settings, and the environment it gets: the real environment (never `.env` values) minus the
+ * variables holding the configured providers' keys. Credential hygiene, not isolation. Claude
+ * Code's config directory also comes from the real environment, because that is what the in-process
+ * SDK readers and the worker process see.
  */
 const workerConfig = (
   file: ConfigFile,
   real: Environment,
   directory: string,
+  home: string,
+  relativeToConfig: (path: string) => string,
 ): ConversationConfig['worker'] => {
   const providerKeyNames = new Set(
     [file.llm.provider.type, file.tts.provider.type]
       .filter(isApiKeyProvider)
       .map((type) => apiKeyEnvFor(file, type)),
   );
+  const claude = file.workers?.claude;
   return {
-    cwd: directory,
+    cwd: file.workers?.cwd === undefined ? directory : relativeToConfig(file.workers.cwd),
+    claude: {
+      ...(claude?.model === undefined ? {} : { model: claude.model }),
+      ...(claude?.effort === undefined ? {} : { effort: claude.effort }),
+    },
+    claudeConfigDir: nonEmpty(real['CLAUDE_CONFIG_DIR']) ?? join(home, '.claude'),
     environment: Object.freeze(
       Object.fromEntries(
         Object.entries(definedOnly(real)).filter(([name]) => !providerKeyNames.has(name)),
@@ -267,6 +285,11 @@ const resolve = (
   homeDirectory: string,
 ): Effect.Effect<Config, string, FileSystem.FileSystem> =>
   Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const cwd = yield* fs.stat(worker.cwd).pipe(Effect.option);
+    if (cwd._tag === 'None' || cwd.value.type !== 'Directory') {
+      return yield* Effect.fail(`workers.cwd ${worker.cwd} is not a directory.`);
+    }
     const llm = yield* llmConfig(file, environment, homeDirectory);
     const ttsConnection = yield* connection(file, environment, file.tts.provider.type);
 

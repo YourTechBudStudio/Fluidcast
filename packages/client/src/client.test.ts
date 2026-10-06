@@ -49,6 +49,7 @@ const state = (actions: ReadonlyArray<Action>, cursor: number): SessionState => 
   executions: [],
   pendingResults: [],
   replay: null,
+  start: null,
   speakers: [{ id: 'host', name: 'Host' }],
   speech: { mimeType: 'audio/ogg' },
 });
@@ -403,6 +404,41 @@ describe('Client', () => {
         );
         // The actions stay those up to the cursor.
         assert.equal(Option.getOrThrow(replaying).actions.length, 4);
+      }),
+    ));
+
+  it('exposes the pending start, and start() sends Start', () =>
+    run(
+      Effect.gen(function* () {
+        const { client, connect, sent } = yield* setup({ url: true });
+        const connection = yield* connect;
+        const message = { type: 'user_message', id: ActionId.make('m'), text: 'M' } as const;
+        const context = { type: 'context', id: ActionId.make('c'), label: 'L', text: 'T' } as const;
+        yield* connection.send({
+          _tag: 'Snapshot',
+          state: { ...state([], 0), generation: 'idle', start: { message, context } },
+        });
+        const ready = Option.getOrThrow(yield* eventually(client.view.get, Option.isSome));
+        assert.equal(ready.phase, 'ready');
+        assert.deepEqual(ready.start, { message, context });
+        assert.deepEqual(ready.actions, []);
+
+        yield* client.start();
+        assert.deepEqual(yield* sent, [{ _tag: 'Start' }]);
+
+        yield* connection.send(
+          { _tag: 'GenerationChanged', generation: 'running' },
+          { _tag: 'StartSubmitted' },
+        );
+        const started = Option.getOrThrow(
+          yield* eventually(
+            client.view.get,
+            (value) => Option.isSome(value) && value.value.start === null,
+          ),
+        );
+        assert.equal(started.phase, 'working');
+        // The cursor has not moved past the context yet: the view holds the actions up to it.
+        assert.deepEqual(started.actions, [context]);
       }),
     ));
 

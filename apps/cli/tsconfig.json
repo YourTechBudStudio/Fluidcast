@@ -1,9 +1,0 @@
-{
-  "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": "@yourtechbudstudio/fluidcast-typescript-config/node.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "allowImportingTsExtensions": true
-  },
-  "include": ["src/**/*.ts", "scripts/**/*.ts"]
-}

@@ -8,8 +8,10 @@ import { Schema } from 'effect';
 import {
   Action,
   ActionId,
+  LabeledContext,
   ToolErrored,
   ToolResult,
+  UserMessage,
   type Speak,
 } from '@yourtechbudstudio/fluidcast-core/actions';
 
@@ -55,6 +57,13 @@ export type Execution = typeof Execution.Type;
 export const PendingResult = Schema.Union([ToolResult, ToolErrored]);
 export type PendingResult = typeof PendingResult.Type;
 
+/** A preloaded start waiting for `Start`: its message, and the context read before it. */
+export const PendingStart = Schema.Struct({
+  message: UserMessage,
+  context: Schema.NullOr(LabeledContext),
+});
+export type PendingStart = typeof PendingStart.Type;
+
 /**
  * The session state that snapshots carry and events fold into.
  * - `cursor` is the index of the current action; `actions.length` means "at the end". It is the
@@ -64,6 +73,8 @@ export type PendingResult = typeof PendingResult.Type;
  *   submitted, so the log reads exactly as the model saw it.
  * - `replay` is the speak being re-presented behind the cursor after `Back`, or null. It is always
  *   below `cursor`.
+ * - `start` is a preloaded start waiting for `Start`. Like `pendingResults`, it is beside the log
+ *   until submitted.
  * - `speakers` and `speech` are fixed by the session's config and never change.
  */
 export const SessionState = Schema.Struct({
@@ -74,6 +85,7 @@ export const SessionState = Schema.Struct({
   executions: Schema.Array(Execution),
   pendingResults: Schema.Array(PendingResult),
   replay: Schema.NullOr(Schema.Int),
+  start: Schema.NullOr(PendingStart),
   speakers: Schema.Array(SpeakerLabel),
   speech: Schema.Struct({ mimeType: Schema.String }),
 });
@@ -82,9 +94,10 @@ export type SessionState = typeof SessionState.Type;
 /**
  * The phase a player presents. Always derived (`derivePhase`), never stored. `working`: the system
  * is busy and nothing is playing. `waiting`: a blocking tool waits on the user. `halted` is
- * terminal: a tool fault stopped the conversation.
+ * terminal: a tool fault stopped the conversation. `ready`: a preloaded start waits for `Start`.
  */
 export const Phase = Schema.Literals([
+  'ready',
   'idle',
   'speaking',
   'waiting',
@@ -124,6 +137,8 @@ export const ToolCompleted = Schema.TaggedStruct('ToolCompleted', { executionId:
 export const ResultQueued = Schema.TaggedStruct('ResultQueued', { result: PendingResult });
 /** Every pending result was submitted to the model: they are appended to the log in order. */
 export const ResultsSubmitted = Schema.TaggedStruct('ResultsSubmitted', {});
+/** The preloaded start was submitted: its context, then its message, are appended to the log. */
+export const StartSubmitted = Schema.TaggedStruct('StartSubmitted', {});
 /** The replay position moved, or ended (`null`). Any outstanding playback is cleared. */
 export const ReplayMoved = Schema.TaggedStruct('ReplayMoved', {
   replay: Schema.NullOr(Schema.Int),
@@ -140,6 +155,7 @@ export const SessionEvent = Schema.Union([
   ToolCompleted,
   ResultQueued,
   ResultsSubmitted,
+  StartSubmitted,
   ReplayMoved,
 ]);
 export type SessionEvent = typeof SessionEvent.Type;
@@ -173,6 +189,8 @@ export const ToolCommand = Schema.TaggedStruct('ToolCommand', {
 });
 /** Re-presents the previous speak; forward replay follows. */
 export const Back = Schema.TaggedStruct('Back', {});
+/** Submits the preloaded start (phase `ready`); generation begins after it. */
+export const Start = Schema.TaggedStruct('Start', {});
 
 export const Command = Schema.Union([
   SendMessage,
@@ -181,12 +199,20 @@ export const Command = Schema.Union([
   RetryGeneration,
   ToolCommand,
   Back,
+  Start,
 ]);
 export type Command = typeof Command.Type;
 
 /** The command is not valid in the current phase. */
 export class CommandRejected extends Schema.TaggedError<CommandRejected>()('CommandRejected', {
-  command: Schema.Literals(['SendMessage', 'Interrupt', 'RetryGeneration', 'ToolCommand', 'Back']),
+  command: Schema.Literals([
+    'SendMessage',
+    'Interrupt',
+    'RetryGeneration',
+    'ToolCommand',
+    'Back',
+    'Start',
+  ]),
   phase: Phase,
 }) {}
 
@@ -246,6 +272,15 @@ export const reduce = (state: SessionState, event: SessionEvent): SessionState =
       return { ...state, pendingResults: [...state.pendingResults, event.result] };
     case 'ResultsSubmitted':
       return { ...state, actions: [...state.actions, ...state.pendingResults], pendingResults: [] };
+    case 'StartSubmitted': {
+      if (state.start === null) return state;
+      const { message, context } = state.start;
+      return {
+        ...state,
+        actions: [...state.actions, ...(context === null ? [] : [context]), message],
+        start: null,
+      };
+    }
     case 'ReplayMoved':
       return { ...state, replay: event.replay, playback: null };
   }
@@ -285,13 +320,15 @@ export const presentedSpeak = (state: SessionState): Speak | undefined => {
 };
 
 /**
- * The phase a player presents, first match wins. `working`: the system is busy (generating,
+ * The phase a player presents, first match wins. `ready`: a preloaded start waits, so nothing
+ * else applies yet. `working`: the system is busy (generating,
  * starting a call, holding results or running tools) and nothing is playing. `waiting`: a blocking
  * tool waits on the user. An interrupt cancels a blocking execution and leaves the others and
  * pending results for the user's next message, so the turn reads `idle`.
  */
 export const derivePhase = (state: SessionState): Phase => {
   if (isHalted(state)) return 'halted';
+  if (state.start !== null) return 'ready';
   const current = currentAction(state);
   if (current?.type === 'speak') return 'speaking';
   if (blockingExecution(state) !== undefined) return 'waiting';

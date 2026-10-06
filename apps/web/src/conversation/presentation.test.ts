@@ -1,3 +1,4 @@
+import { AsyncResult } from 'effect/unstable/reactivity';
 import { describe, expect, it } from 'vitest';
 
 import { TransportError } from '@yourtechbudstudio/fluidcast-client';
@@ -8,7 +9,7 @@ import type { AskCommand, AskInput } from '@yourtechbudstudio/fluidcast-tool-ask
 
 import type { PlaybackStatus } from '../playback';
 import type { Action, Connection, ConversationView } from './model';
-import { present, type TimelineRow } from './presentation';
+import { present, resetPendingOf, type ResetState, type TimelineRow } from './presentation';
 import { showCorrectionOf } from './tools';
 
 // Fixtures: a view is built from its actions, like the Client SDK's projection.
@@ -101,12 +102,14 @@ const view = (partial: Partial<ConversationView>): ConversationView => ({
   speakers: [{ id: 'host', name: 'Host' }],
   executions: [],
   pendingResults: [],
+  start: null,
   presented: undefined,
   ...partial,
 });
 
 const idle: PlaybackStatus = { kind: 'idle' };
 const none: ReadonlySet<ExecutionId> = new Set();
+const noReset: ResetState = { pending: false, failure: null };
 
 const presentOf = (
   v: ConversationView,
@@ -115,6 +118,7 @@ const presentOf = (
     readonly playback?: PlaybackStatus;
     readonly sendFailure?: TransportError | null;
     readonly unresolved?: ReadonlySet<ExecutionId>;
+    readonly reset?: ResetState;
   } = {},
 ) =>
   present(
@@ -123,6 +127,7 @@ const presentOf = (
     options.playback ?? idle,
     options.sendFailure ?? null,
     options.unresolved ?? none,
+    options.reset ?? noReset,
   );
 
 const rowOf = <K extends TimelineRow['kind']>(rows: readonly TimelineRow[], kind: K) =>
@@ -879,5 +884,105 @@ describe('the Forward tool', () => {
     expect(rowOf(p.timeline, 'progress')).toEqual([
       { kind: 'progress', id: 'p1', text: "I'm reading the designs." },
     ]);
+  });
+});
+
+describe('a preloaded start', () => {
+  const message = { type: 'user_message', id: aid('m1'), text: 'Walk me through it.' } as const;
+  const context = {
+    type: 'context',
+    id: aid('x1'),
+    label: 'My last answer',
+    text: 'SECRET-CONTEXT',
+  } as const;
+
+  it('waits for Tap to start, previewing its message, with the composer off', () => {
+    const p = presentOf(view({ phase: 'ready', start: { message, context } }));
+    expect(p.moment).toBe('ready');
+    expect(p.status).toBe('ready');
+    expect(p.composer).toBe('offline');
+    expect(p.visual).toBe('idle');
+    expect(p.interruptible).toBe(false);
+    expect(p.canGoBack).toBe(false);
+    expect(p.subtitle).toEqual({
+      key: 'preloaded:m1',
+      text: '“Walk me through it.”',
+      tone: 'you',
+      label: 'Preloaded · Tap to start says',
+    });
+    expect(p.timeline).toEqual([
+      { kind: 'preloaded', id: 'm1', text: 'Walk me through it.', contextLabel: 'My last answer' },
+    ]);
+    // The context's text is for the model only.
+    expect(JSON.stringify(p.timeline)).not.toContain('SECRET-CONTEXT');
+  });
+
+  it('marks no context label when the start has none', () => {
+    const p = presentOf(view({ phase: 'ready', start: { message, context: null } }));
+    expect(rowOf(p.timeline, 'preloaded')).toEqual([
+      { kind: 'preloaded', id: 'm1', text: 'Walk me through it.', contextLabel: null },
+    ]);
+  });
+
+  it('becomes an ordinary message once sent, and its context makes no row', () => {
+    const p = presentOf(view({ actions: [context, message], phase: 'working' }));
+    expect(p.timeline).toEqual([
+      { kind: 'user', id: 'm1', text: 'Walk me through it.' },
+      { kind: 'pending', label: 'Thinking…' },
+    ]);
+    expect(p.subtitle).toMatchObject({ key: 'm1', tone: 'you' });
+  });
+});
+
+describe('Reset in the status line', () => {
+  const healthy = view({ actions: [user('u1'), speak('s1')] });
+  const failure = new TransportError({ reason: 'ServerError', status: 500 });
+
+  it('reads resetFailed while connected, leaving the moment and the composer unchanged', () => {
+    const before = presentOf(healthy);
+    const failed = presentOf(healthy, { reset: { pending: false, failure } });
+    expect(failed.status).toBe('resetFailed');
+    expect(failed.moment).toBe(before.moment);
+    expect(failed.composer).toBe(before.composer);
+    expect(failed.resetPending).toBe(false);
+  });
+
+  it('wins over a failed send', () => {
+    const sendFailure = new TransportError({ reason: 'Unreachable' });
+    expect(presentOf(healthy, { sendFailure, reset: { pending: false, failure } }).status).toBe(
+      'resetFailed',
+    );
+  });
+
+  it('reads resetting while pending, over an earlier failure', () => {
+    const p = presentOf(healthy, { reset: { pending: true, failure } });
+    expect(p.status).toBe('resetting');
+    expect(p.resetPending).toBe(true);
+    expect(p.moment).toBe(presentOf(healthy).moment);
+  });
+
+  it('reads resetting while pending or succeeded even as the connection drops', () => {
+    // A succeeded Reset stays pending until the page leaves the session: the dropped connection is its doing.
+    const p = presentOf(healthy, {
+      connection: 'reconnecting',
+      reset: { pending: true, failure: null },
+    });
+    expect(p.status).toBe('resetting');
+    expect(p.moment).toBe('reconnecting');
+  });
+
+  it('is pending while the request runs and after it succeeded, but not after it failed', () => {
+    expect(resetPendingOf(AsyncResult.initial())).toBe(false);
+    expect(resetPendingOf(AsyncResult.initial(true))).toBe(true);
+    expect(resetPendingOf(AsyncResult.success(true))).toBe(true);
+    expect(resetPendingOf(AsyncResult.success(false))).toBe(false);
+    // Pressing Reset again after a failure: waiting on the earlier result.
+    expect(resetPendingOf(AsyncResult.waiting(AsyncResult.success(false)))).toBe(true);
+  });
+
+  it('lets a lost connection explain a failed Reset', () => {
+    expect(
+      presentOf(healthy, { connection: 'reconnecting', reset: { pending: false, failure } }).status,
+    ).toBe('reconnecting');
   });
 });

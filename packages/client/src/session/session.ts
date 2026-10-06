@@ -31,6 +31,8 @@ export interface ConversationView {
   readonly executions: SessionState['executions'];
   /** Completed tool outcomes the model has not read yet. They join `actions` when submitted. */
   readonly pendingResults: SessionState['pendingResults'];
+  /** A preloaded start waiting for `start()`, or `null`: show its message as preloaded. */
+  readonly start: SessionState['start'];
   /** The speak being presented: at the replay position while replaying, else at the cursor. */
   readonly presented: Speak | undefined;
 }
@@ -89,6 +91,7 @@ export const makeSession = (transport: Transport['Service'], audio: Audio) =>
             speakers: state.speakers,
             executions: state.executions,
             pendingResults: state.pendingResults,
+            start: state.start,
             presented: presentedSpeak(state),
           }),
         );
@@ -184,6 +187,7 @@ export const makeSession = (transport: Transport['Service'], audio: Audio) =>
       interrupt: () => sendPlain({ _tag: 'Interrupt' }),
       retry: () => sendPlain({ _tag: 'RetryGeneration' }),
       back: () => sendPlain({ _tag: 'Back' }),
+      start: () => sendPlain({ _tag: 'Start' }),
       finished: (playbackId: PlaybackId): Effect.Effect<void, CommandRejected | TransportError> =>
         sendPlain({ _tag: 'PlaybackFinished', playbackId }),
       sendToolCommand: <C>(

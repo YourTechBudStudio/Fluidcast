@@ -4,26 +4,30 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/unstab
 
 import { routes, SpeechFailure, speechStatus } from '@fluidcast/app-contract';
 import { audioMimeType, type AudioFormat } from '@yourtechbudstudio/fluidcast-core/speech';
-import { Session } from '@yourtechbudstudio/fluidcast-harness';
+
+import { liveSession, noSessionResponse } from '../conversation/index.ts';
 
 const failureJson = HttpServerResponse.schemaJson(SpeechFailure);
 
 /**
- * `GET /api/speech/:actionId`: streams the speak's audio as the provider produces it.
+ * `GET /api/session/:sessionId/speech/:actionId`: streams the speak's audio as the provider
+ * produces it.
  *
- * The first chunk is pulled before any header is sent, so an unknown action is a `404` and a
- * synthesis failure before audio starts is a `502`. A failure after that aborts the connection,
- * because ending the response normally would make a truncated clip look complete.
+ * The first chunk is pulled before any header is sent, so a session that is not live or an unknown
+ * action is a `404` and a synthesis failure before audio starts is a `502`. A failure after that
+ * aborts the connection, because ending the response normally would make a truncated clip look
+ * complete. For the same reason the clip is not bound to the session's end: a clip already
+ * streaming at Reset finishes, or ends when its client aborts.
  */
 export const speechRoutes = (format: AudioFormat) =>
   HttpRouter.add(
     'GET',
     routes.speech,
     Effect.gen(function* () {
-      const session = yield* Session;
-      const { actionId } = yield* HttpRouter.schemaPathParams(
-        Schema.Struct({ actionId: Schema.String }),
+      const { sessionId, actionId } = yield* HttpRouter.schemaPathParams(
+        Schema.Struct({ sessionId: Schema.String, actionId: Schema.String }),
       );
+      const { session } = yield* liveSession(sessionId);
       const annotate = Effect.annotateLogs({ actionId });
 
       // Scoped to the request, which stays open until the response body has been written.
@@ -53,6 +57,7 @@ export const speechRoutes = (format: AudioFormat) =>
       return HttpServerResponse.stream(body, { contentType: audioMimeType[format] });
     }).pipe(
       Effect.catchTags({
+        NoSession: noSessionResponse,
         SpeechNotFound: (error) =>
           Effect.logInfo('speech: not found').pipe(
             Effect.annotateLogs({ actionId: error.actionId }),

@@ -219,6 +219,24 @@ describe('renderHistory', () => {
     ]);
   });
 
+  it('renders a context in place, escaped, before its message and before tool contexts', () => {
+    const history: ReadonlyArray<Action> = [
+      { type: 'context', id: id(), label: 'My "last" answer', text: 'a < b' },
+      { type: 'user_message', id: id(), text: 'Walk me through it.' },
+      { type: 'tool_context', id: id(), tool: 'note', text: 'idle' },
+    ];
+    assert.deepEqual(renderHistory(history, [note]), [
+      {
+        role: 'user',
+        content: [
+          '<context label="My &quot;last&quot; answer">a &lt; b</context>',
+          '<user_message>Walk me through it.</user_message>',
+          '<context tool="note">idle</context>',
+        ].join('\n'),
+      },
+    ]);
+  });
+
   it('adds a user run for the context when the history ends with the assistant', () => {
     const history: ReadonlyArray<Action> = [
       { type: 'tool_context', id: id(), tool: 'note', text: 'busy' },
@@ -381,10 +399,34 @@ describe('renderHistory reminders', () => {
       assert.ok(!lastInput(renderHistory(history, [note], { reminders }))?.includes('<reminder>'));
     }
     assert.deepEqual(seen, [
-      { _tag: 'UserMessage', text: 'Plain', interrupted: false },
-      { _tag: 'UserMessage', text: 'Wait', interrupted: true },
-      { _tag: 'UserMessage', text: 'Again', interrupted: false },
+      { _tag: 'UserMessage', text: 'Plain', interrupted: false, context: [] },
+      { _tag: 'UserMessage', text: 'Wait', interrupted: true, context: [] },
+      { _tag: 'UserMessage', text: 'Again', interrupted: false, context: [] },
     ]);
+  });
+
+  it('reports the labels of the context read with the newest message', () => {
+    const reminders = (event: ReminderEvent) =>
+      event._tag === 'UserMessage' ? `Context: ${event.context.join('|')}.` : undefined;
+    const started: ReadonlyArray<Action> = [
+      { type: 'context', id: id(), label: 'First', text: 'A' },
+      { type: 'context', id: id(), label: 'Second', text: 'B' },
+      { type: 'user_message', id: id(), text: 'Go' },
+    ];
+    assert.ok(
+      lastInput(renderHistory(started, [note], { reminders }))?.endsWith(
+        '<reminder>Context: First|Second.</reminder>',
+      ),
+    );
+    const later: ReadonlyArray<Action> = [
+      ...started,
+      { type: 'speak', id: id(), speaker: 'host', text: 'Sure.' },
+      { type: 'user_message', id: id(), text: 'Next' },
+    ];
+    assert.equal(
+      lastInput(renderHistory(later, [note], { reminders })),
+      '<user_message>Next</user_message>\n<reminder>Context: .</reminder>',
+    );
   });
 
   it('passes each tool result, decoded, to the reminders, and drops blank text', () => {

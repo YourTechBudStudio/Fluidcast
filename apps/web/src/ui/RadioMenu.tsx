@@ -16,6 +16,8 @@ export interface RadioMenuProps<V extends string> {
   readonly onChange: (value: V) => void;
   /** Trigger content; the trigger itself is a 44 px ghost button. */
   readonly trigger: ReactNode;
+  /** Extra trigger classes, such as tighter padding on phones. */
+  readonly className?: string;
 }
 
 /** A compact "pick one" menu: a quiet trigger and a glass popup of radio items. Keyboard and screen-reader behaviour come from Base UI. */
@@ -25,12 +27,13 @@ export function RadioMenu<V extends string>({
   options,
   onChange,
   trigger,
+  className = '',
 }: RadioMenuProps<V>) {
   return (
     <Menu.Root>
       <Menu.Trigger
         aria-label={label}
-        className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center gap-2 rounded-md px-3 text-sm text-fg-muted transition-colors duration-(--duration-ui) ease-expo hover:bg-elevated/45 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue data-popup-open:bg-elevated/70 data-popup-open:text-fg"
+        className={`inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center gap-2 rounded-md px-3 text-sm text-fg-muted transition-colors duration-(--duration-ui) ease-expo hover:bg-elevated/45 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue data-popup-open:bg-elevated/70 data-popup-open:text-fg ${className}`}
       >
         {trigger}
       </Menu.Trigger>

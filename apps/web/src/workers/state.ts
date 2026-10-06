@@ -8,7 +8,7 @@ import type {
   WorkerSummary,
 } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 
-import { watchTranscript, watchWorker } from '../client';
+import { sessionIdAtom, watchTranscript, watchWorker } from '../client';
 
 /**
  * - `connecting`: nothing has arrived yet;
@@ -103,18 +103,22 @@ export const connections = <M>(
   );
 };
 
-/** A feed's atom. It connects only while something reads it, and disconnects when nothing does. */
+/**
+ * A feed's atom for this registry's backend session. It connects only while something reads it, and disconnects when
+ * nothing does. After a Reset it reconnects into `404`s until its registry is disposed, moments later.
+ */
 const feedAtom = <A, M>(
-  connect: () => Stream.Stream<M, TransportError>,
+  connect: (sessionId: string) => Stream.Stream<M, TransportError>,
   apply: (current: A | undefined, message: M) => A | undefined,
 ) => {
   const states = Atom.make(
-    connections(connect).pipe(
-      Stream.scan(
-        (): FeedState<A> => initialFeed,
-        (state, event: FeedEvent<M>) => foldFeed(state, event, apply),
+    (get) =>
+      connections(() => connect(get(sessionIdAtom))).pipe(
+        Stream.scan(
+          (): FeedState<A> => initialFeed,
+          (state, event: FeedEvent<M>) => foldFeed(state, event, apply),
+        ),
       ),
-    ),
     { initialValue: initialFeed as FeedState<A> },
   );
   return Atom.make((get): WorkersFeed<A> =>

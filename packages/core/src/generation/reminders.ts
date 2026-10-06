@@ -17,6 +17,8 @@ export type ReminderEvent =
       readonly text: string;
       /** The message follows an interruption notice: the listener cut in to say it. */
       readonly interrupted: boolean;
+      /** The labels of the `context` entries read just before this message, in log order. */
+      readonly context: ReadonlyArray<string>;
     };
 
 /**
@@ -50,15 +52,19 @@ export const newestReminder = (
 
   if (action.type === 'user_message') {
     let interrupted = false;
+    const context: Array<string> = [];
     for (let index = newest - 1; index >= runStart; index--) {
-      const type = history[index]?.type;
-      if (type === 'user_message') break;
-      if (type === 'interrupted') {
+      const earlier = history[index];
+      if (earlier?.type === 'user_message') break;
+      if (earlier?.type === 'context') context.unshift(earlier.label);
+      if (earlier?.type === 'interrupted') {
         interrupted = true;
         break;
       }
     }
-    const text = present(reminders?.({ _tag: 'UserMessage', text: action.text, interrupted }));
+    const text = present(
+      reminders?.({ _tag: 'UserMessage', text: action.text, interrupted, context }),
+    );
     return text === undefined ? undefined : { after: newest, text };
   }
 

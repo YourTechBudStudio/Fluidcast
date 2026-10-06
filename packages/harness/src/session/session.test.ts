@@ -5,7 +5,14 @@ import { Cause, Effect, Exit, Fiber, Layer, Queue, Ref, Schema, Scope, Stream } 
 import { TestClock } from 'effect/testing';
 import { LanguageModel, type Prompt, type Response } from 'effect/unstable/ai';
 
-import { makeActionId, type Action, type Speak } from '@yourtechbudstudio/fluidcast-core/actions';
+import {
+  makeActionId,
+  type Action,
+  type LabeledContext,
+  type Speak,
+  type UserMessage,
+} from '@yourtechbudstudio/fluidcast-core/actions';
+import type { ReminderEvent } from '@yourtechbudstudio/fluidcast-core/generation';
 import {
   SpeechSynthesizer,
   type SpeechError,
@@ -67,11 +74,13 @@ const scriptedModel = Effect.gen(function* () {
     readonly prompt: Ref.Ref<ReadonlyArray<{ role: string; text: string }> | undefined>;
     readonly exit: Ref.Ref<Exit.Exit<unknown, unknown> | undefined>;
   }>();
+  const calls = yield* Ref.make(0);
   const model = yield* LanguageModel.make({
     generateText: () => Effect.die('unused'),
     streamText: (options) =>
       Stream.unwrap(
         Effect.gen(function* () {
+          yield* Ref.update(calls, (count) => count + 1);
           const turn = yield* Queue.take(pending);
           yield* Ref.set(turn.prompt, options.prompt.content.map(flatten));
           return Stream.fromQueue(turn.parts).pipe(
@@ -99,7 +108,8 @@ const scriptedModel = Effect.gen(function* () {
     };
     return result;
   });
-  return { model, turn };
+  /** How many times the model was called, scripted or not. */
+  return { model, turn, calls: Ref.get(calls) };
 });
 
 const flatten = (message: Prompt.Message) => ({
@@ -138,14 +148,16 @@ const setupWith = (
   tools: SessionConfig['tools'],
   examples?: SessionConfig['examples'],
   reminders?: SessionConfig['reminders'],
+  start?: SessionConfig['start'],
 ) =>
   Effect.gen(function* () {
-    const { model, turn } = yield* scriptedModel;
+    const { model, turn, calls } = yield* scriptedModel;
     const { service, state } = yield* make({
       ...config,
       tools,
       ...(examples === undefined ? {} : { examples }),
       ...(reminders === undefined ? {} : { reminders }),
+      ...(start === undefined ? {} : { start }),
     }).pipe(
       Effect.provide(
         Layer.merge(
@@ -156,7 +168,7 @@ const setupWith = (
     );
     const command = (next: Command) => service.command(next);
     const waitFor = (done: (state: SessionState) => boolean) => eventually(state, done);
-    return { session: service, state, command, waitFor, turn };
+    return { session: service, state, command, waitFor, turn, calls };
   });
 
 /** Builds a speech-only session with a scripted model, plus helpers. */
@@ -1902,9 +1914,171 @@ const emptyState: SessionState = {
   executions: [],
   pendingResults: [],
   replay: null,
+  start: null,
   speakers: [],
   speech: { mimeType: 'audio/ogg' },
 };
+
+describe('Session preloaded start', () => {
+  const start = { message: 'M', context: { label: 'L', text: 'T' } };
+  /** Records each reminder event, and reminds `R` about every listener message. */
+  const recording = () => {
+    const seen: Array<ReminderEvent> = [];
+    const reminders = (event: ReminderEvent) => {
+      seen.push(event);
+      return event._tag === 'UserMessage' ? 'R' : undefined;
+    };
+    return { seen, reminders };
+  };
+
+  it('snapshots ready with the message and context, and an empty log', () =>
+    run(
+      Effect.gen(function* () {
+        const { session } = yield* setupWith([], undefined, undefined, start);
+        const subscription = yield* subscribe(session);
+        const [snapshot] = yield* subscription.messages;
+        assert.equal(snapshot?._tag, 'Snapshot');
+        const { state } = snapshot;
+        assert.equal(derivePhase(state), 'ready');
+        assert.equal(state.start?.message.text, 'M');
+        assert.equal(state.start?.context?.label, 'L');
+        assert.equal(state.start?.context?.text, 'T');
+        assert.deepEqual(state.actions, []);
+      }),
+    ));
+
+  it('generates nothing before Start, even when subscribed', () =>
+    run(
+      Effect.gen(function* () {
+        const { session, state, calls } = yield* setupWith([], undefined, undefined, start);
+        yield* subscribe(session);
+        yield* Effect.sleep('50 millis');
+        assert.equal(yield* calls, 0);
+        const current = yield* state;
+        assert.equal(current.generation, 'idle');
+        assert.equal(derivePhase(current), 'ready');
+      }),
+    ));
+
+  it('rejects every other command while ready', () =>
+    run(
+      Effect.gen(function* () {
+        const { session, state, command } = yield* setupWith([], undefined, undefined, start);
+        yield* subscribe(session);
+        assert.deepEqual(
+          yield* rejection(command({ _tag: 'SendMessage', text: 'Hi' })),
+          new CommandRejected({ command: 'SendMessage', phase: 'ready' }),
+        );
+        assert.deepEqual(
+          yield* rejection(command({ _tag: 'Interrupt' })),
+          new CommandRejected({ command: 'Interrupt', phase: 'ready' }),
+        );
+        assert.deepEqual(
+          yield* rejection(command({ _tag: 'RetryGeneration' })),
+          new CommandRejected({ command: 'RetryGeneration', phase: 'ready' }),
+        );
+        assert.deepEqual(
+          yield* rejection(command({ _tag: 'Back' })),
+          new CommandRejected({ command: 'Back', phase: 'ready' }),
+        );
+        assert.deepEqual(
+          yield* rejection(
+            command({
+              _tag: 'ToolCommand',
+              handle: 'call_1',
+              executionId: ExecutionId.make('e'),
+              payload: null,
+            }),
+          ),
+          new ToolCommandRejected({ executionId: 'e', reason: 'stale' }),
+        );
+        const before = yield* state;
+        yield* command({ _tag: 'PlaybackFinished', playbackId: PlaybackId.make('p') });
+        assert.deepEqual(yield* state, before);
+        assert.equal(derivePhase(before), 'ready');
+      }),
+    ));
+
+  it('Start submits the context, then the message, and generates', () =>
+    run(
+      Effect.gen(function* () {
+        const { seen, reminders } = recording();
+        const { session, state, command, turn } = yield* setupWith([], undefined, reminders, start);
+        const subscription = yield* subscribe(session);
+        const pending = (yield* state).start;
+        assert.ok(pending?.context);
+        const model = yield* turn;
+
+        yield* command({ _tag: 'Start' });
+        const prompt = yield* model.prompt;
+        assert.equal(
+          prompt.findLast((message) => message.role === 'user')?.text,
+          '<context label="L">T</context>\n<user_message>M</user_message>\n<reminder>R</reminder>',
+        );
+        yield* subscription.waitFor(
+          (message): message is Extract<SubscriptionMessage, { _tag: 'StartSubmitted' }> =>
+            message._tag === 'StartSubmitted',
+        );
+        const tags = (yield* subscription.messages).slice(1, 3).map((message) => message._tag);
+        assert.deepEqual(tags, ['GenerationChanged', 'StartSubmitted']);
+        const current = yield* state;
+        assert.equal(current.start, null);
+        assert.equal(current.generation, 'running');
+        assert.equal(current.cursor, 2);
+        assert.deepEqual(current.actions, [pending.context, pending.message]);
+        assert.deepEqual(seen, [
+          { _tag: 'UserMessage', text: 'M', interrupted: false, context: ['L'] },
+        ]);
+        yield* assertAgreement(subscription, state);
+
+        yield* model.say(`[${line('host', 'Here is what I did.')}]`);
+        yield* model.end;
+        yield* subscription.waitFor(isPlaybackRequest);
+        yield* assertAgreement(subscription, state);
+      }),
+    ));
+
+  it('rejects a second Start', () =>
+    run(
+      Effect.gen(function* () {
+        const { command, turn } = yield* setupWith([], undefined, undefined, start);
+        yield* turn;
+        yield* command({ _tag: 'Start' });
+        assert.deepEqual(
+          yield* rejection(command({ _tag: 'Start' })),
+          new CommandRejected({ command: 'Start', phase: 'working' }),
+        );
+      }),
+    ));
+
+  it('rejects Start in a session without one', () =>
+    run(
+      Effect.gen(function* () {
+        const { command } = yield* setup;
+        assert.deepEqual(
+          yield* rejection(command({ _tag: 'Start' })),
+          new CommandRejected({ command: 'Start', phase: 'idle' }),
+        );
+      }),
+    ));
+
+  it('throws on a blank message or label', () =>
+    run(
+      Effect.gen(function* () {
+        for (const blank of [
+          { message: '  ' },
+          { message: 'M', context: { label: ' ', text: 'T' } },
+        ]) {
+          const exit = yield* Effect.exit(setupWith([], undefined, undefined, blank));
+          assert.ok(Exit.isFailure(exit) && Cause.hasDies(exit.cause));
+          assert.match(
+            String(Cause.squash(exit.cause)),
+            /A preloaded start needs a message and a context label/,
+          );
+        }
+      }),
+    ));
+});
 
 describe('derivePhase', () => {
   const id = () => makeActionId();
@@ -2002,6 +2176,49 @@ describe('derivePhase', () => {
     };
     assert.equal(derivePhase({ ...emptyState, ...busy, actions: [faulted], cursor: 1 }), 'halted');
     assert.equal(derivePhase({ ...emptyState, actions: [speak], cursor: 1 }), 'idle');
+  });
+
+  it('is ready while a start is pending, unless halted', () => {
+    const pending = {
+      message: { type: 'user_message', id: id(), text: 'M' },
+      context: null,
+    } as const;
+    assert.equal(derivePhase({ ...emptyState, start: pending }), 'ready');
+    const faulted: Action = {
+      type: 'tool_faulted',
+      id: id(),
+      handles: [],
+      tool: 'fetch',
+      error: { tag: 'x', message: 'x' },
+    };
+    assert.equal(
+      derivePhase({ ...emptyState, start: pending, actions: [faulted], cursor: 1 }),
+      'halted',
+    );
+  });
+});
+
+describe('reduce StartSubmitted', () => {
+  const message: UserMessage = { type: 'user_message', id: makeActionId(), text: 'M' };
+  const context: LabeledContext = { type: 'context', id: makeActionId(), label: 'L', text: 'T' };
+
+  it('appends the context, then the message, and clears the start', () => {
+    const next = reduce({ ...emptyState, start: { message, context } }, { _tag: 'StartSubmitted' });
+    assert.deepEqual(next.actions, [context, message]);
+    assert.equal(next.start, null);
+  });
+
+  it('appends only the message when there is no context', () => {
+    const next = reduce(
+      { ...emptyState, start: { message, context: null } },
+      { _tag: 'StartSubmitted' },
+    );
+    assert.deepEqual(next.actions, [message]);
+    assert.equal(next.start, null);
+  });
+
+  it('leaves a state without a start unchanged', () => {
+    assert.equal(reduce(emptyState, { _tag: 'StartSubmitted' }), emptyState);
   });
 });
 

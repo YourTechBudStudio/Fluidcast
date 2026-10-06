@@ -1,4 +1,4 @@
-import { Duration, Stream } from 'effect';
+import { Duration, Effect, Stream } from 'effect';
 import { HttpServerResponse } from 'effect/unstable/http';
 
 import { heartbeatIntervalMillis } from '@fluidcast/app-contract';
@@ -23,3 +23,14 @@ export const sseResponse = <E>(messages: Stream.Stream<string, E>) => {
     headers: { 'cache-control': 'no-cache', 'x-accel-buffering': 'no' },
   });
 };
+
+/** Logs a stream's connection, with the route only, never its content. */
+export const logConnection =
+  (route: string) =>
+  <A, E, R>(stream: Stream.Stream<A, E, R>) =>
+    stream.pipe(
+      Stream.onStart(Effect.logInfo(`${route}: subscribed`)),
+      Stream.onExit((exit) =>
+        Effect.logInfo(exit._tag === 'Success' ? `${route}: ended` : `${route}: disconnected`),
+      ),
+    );

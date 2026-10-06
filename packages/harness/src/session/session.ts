@@ -143,6 +143,13 @@ export const make = (config: SessionConfig) =>
         throw new Error(`Tool "${tool.name}" assigns calls, so it must not replay`);
       }
     }
+    const preloaded = config.start;
+    if (
+      preloaded !== undefined &&
+      (preloaded.message.trim() === '' || preloaded.context?.label.trim() === '')
+    ) {
+      throw new Error('A preloaded start needs a message and a context label');
+    }
     const languageModel = yield* LanguageModel.LanguageModel;
     const synthesizer = yield* SpeechSynthesizer;
 
@@ -158,6 +165,17 @@ export const make = (config: SessionConfig) =>
       executions: [],
       pendingResults: [],
       replay: null,
+      // Its action IDs are assigned once, so the preloaded message keeps its ID in the log.
+      start:
+        preloaded === undefined
+          ? null
+          : {
+              message: { type: 'user_message', id: makeActionId(), text: preloaded.message },
+              context:
+                preloaded.context === undefined
+                  ? null
+                  : { type: 'context', id: makeActionId(), ...preloaded.context },
+            },
       speakers: config.speakers.map(({ id, name }) => ({ id, name })),
       speech: { mimeType: audioMimeType[config.speechFormat] },
     });
@@ -634,18 +652,19 @@ export const make = (config: SessionConfig) =>
     });
 
     /**
-     * Starts another iteration: the only submission path for a message, a progress update, a retry
-     * and continuation, so a queued outcome is submitted exactly once, before any new input.
-     * `running` comes first, so no event prefix reads as a finished turn. Context is recorded after
-     * the input, so it closes it.
+     * Starts another iteration: the only submission path for a message, a preloaded start
+     * (`'start'`), a progress update, a retry and continuation, so a queued outcome is submitted
+     * exactly once, before any new input. `running` comes first, so no event prefix reads as a
+     * finished turn. Tool context is recorded after the input, so it closes it.
      */
-    const beginIteration = (input?: UserMessage | ToolProgress) =>
+    const beginIteration = (input?: UserMessage | ToolProgress | 'start') =>
       Effect.gen(function* () {
         yield* emit({ _tag: 'GenerationChanged', generation: 'running' });
         if ((yield* Ref.get(state)).pendingResults.length > 0) {
           yield* emit({ _tag: 'ResultsSubmitted' });
         }
-        if (input !== undefined) yield* append(input);
+        if (input === 'start') yield* emit({ _tag: 'StartSubmitted' });
+        else if (input !== undefined) yield* append(input);
         yield* recordContext;
         yield* settle;
         const history = effectiveActions(yield* Ref.get(state));
@@ -762,6 +781,10 @@ export const make = (config: SessionConfig) =>
             yield* emit({ _tag: 'ReplayMoved', replay: target });
             if (yield* subscribed) yield* requestPlayback;
             return;
+          }
+          case 'Start': {
+            if (phase !== 'ready') return yield* reject(command._tag, current);
+            return yield* beginIteration('start');
           }
           case 'ToolCommand': {
             if (phase === 'halted') return yield* reject(command._tag, current);

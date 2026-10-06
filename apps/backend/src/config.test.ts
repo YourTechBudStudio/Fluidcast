@@ -227,6 +227,67 @@ preset: { voice: { name: alloy, instructions: calm } }
     assert.deepEqual(config.conversation.worker.environment, { PATH: '/usr/bin' });
   });
 
+  it('reads the workers section: the Claude model and effort for new sessions', async () => {
+    const config = await loaded(
+      `${validYaml}workers: { claude: { model: opus, effort: xhigh } }\n`,
+      keys,
+    );
+    assert.deepEqual(config.conversation.worker.claude, { model: 'opus', effort: 'xhigh' });
+    assert.deepEqual((await loaded(validYaml, keys)).conversation.worker.claude, {});
+  });
+
+  it('resolves workers.cwd relative to the config, and defaults to its directory', async () => {
+    assert.equal((await loaded(validYaml, keys)).conversation.worker.cwd, directories.at(-1));
+    const config = await loaded(`${validYaml}workers: { cwd: .. }\n`, keys);
+    assert.equal(config.conversation.worker.cwd, join(directories.at(-1)!, '..'));
+  });
+
+  it('rejects a workers.cwd that is not a directory', async () => {
+    assert.match(
+      await failure(`${validYaml}workers: { cwd: ./missing }\n`, keys),
+      /workers\.cwd .*missing is not a directory\./,
+    );
+    assert.match(
+      await failure(`${validYaml}workers: { cwd: ./fluidcast.yaml }\n`, keys),
+      /is not a directory/,
+    );
+  });
+
+  it('rejects an effort Claude Code does not have', async () => {
+    assert.match(
+      await failure(`${validYaml}workers: { claude: { effort: turbo } }\n`, keys),
+      /is invalid/,
+    );
+  });
+
+  it("finds Claude Code's sessions in CLAUDE_CONFIG_DIR, else in ~/.claude", async () => {
+    const custom = await loaded(validYaml, { ...keys, CLAUDE_CONFIG_DIR: '/claude-config' });
+    assert.equal(custom.conversation.worker.claudeConfigDir, '/claude-config');
+    const fallback = await loaded(
+      validYaml,
+      { ...keys, CLAUDE_CONFIG_DIR: '' },
+      undefined,
+      '/home/me',
+    );
+    assert.equal(fallback.conversation.worker.claudeConfigDir, '/home/me/.claude');
+  });
+
+  it("loads fluidcast.example.yaml's workers block once uncommented", async () => {
+    const example = readFileSync(
+      new URL('../../../fluidcast.example.yaml', import.meta.url),
+      'utf8',
+    );
+    const block = /^# workers:\n(?:#.*\n)*/m.exec(example)?.[0];
+    assert.ok(block !== undefined);
+    const uncommented = block
+      .split('\n')
+      .map((line) => line.replace(/^# ?/, ''))
+      .join('\n');
+    const config = await loaded(`${validYaml}${uncommented}`, keys);
+    assert.deepEqual(config.conversation.worker.claude, { model: 'opus', effort: 'high' });
+    assert.equal(config.conversation.worker.cwd, directories.at(-1));
+  });
+
   it('names the missing key variable without leaking other values', async () => {
     const message = await failure(validYaml, {
       FLUIDCAST_OPENAI_COMPATIBLE_API_KEY: 'k',

@@ -29,7 +29,8 @@ const analysis = createAnalysis();
 const inMenu = (target: EventTarget | null) =>
   target instanceof Element && target.closest('[role="menu"]') !== null;
 
-export function App() {
+/** The player for one backend session. It renders inside that session's own atom registry (see `Root.tsx`). */
+export function Player() {
   useAtomMount(showDriverAtom);
   const presentation = useAtomValue(presentationAtom);
   const commands = useConversationCommands();
@@ -166,6 +167,11 @@ export function App() {
             onToggle: (target) => switchLayer(layer === target ? 'stage' : target),
             workersRef: workersButton,
           }}
+          reset={{
+            onReset: () => void commands.reset(),
+            pending: presentation.resetPending,
+            failed: presentation.status === 'resetFailed',
+          }}
         />
       </div>
       <main className="relative col-start-1 row-start-2 flex min-h-0 max-sm:overflow-hidden">
@@ -185,7 +191,12 @@ export function App() {
               className={`relative w-full shrink-0 transition-[height] duration-(--duration-room) ease-expo motion-reduce:transition-none ${panelOpen && !phone ? 'h-[clamp(160px,32vh,360px)]' : 'h-[clamp(250px,46vh,460px)] max-sm:h-[clamp(170px,30vh,300px)]'}`}
             >
               <Visual id={visual} inputs={inputs} active={!sheetCovers && stageOpen} />
-              <TapToResume visible={moment === 'held'} onResume={playback.resume} />
+              <TapToResume
+                visible={moment === 'held' || moment === 'ready'}
+                label={moment === 'ready' ? 'Tap to start' : 'Tap to resume'}
+                onActivate={moment === 'ready' ? () => void commands.start() : playback.resume}
+                unavailable={moment === 'ready' && presentation.resetPending}
+              />
             </div>
             <div className="mt-[clamp(12px,3vh,36px)] flex w-full justify-center">
               <Subtitle line={presentation.subtitle} />

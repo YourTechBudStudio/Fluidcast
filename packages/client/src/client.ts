@@ -47,6 +47,8 @@ export class Client extends Context.Service<
     readonly retry: () => Effect.Effect<void, CommandRejected | TransportError>;
     /** Re-presents the previous line; forward replay follows. */
     readonly back: () => Effect.Effect<void, CommandRejected | TransportError>;
+    /** Sends the preloaded start (phase `ready`); generation begins after it. */
+    readonly start: () => Effect.Effect<void, CommandRejected | TransportError>;
     /**
      * Encodes `payload` with the tool package's command schema and sends it to that execution. The
      * Harness validates it against the execution's own schema, and rejects it as `invalid` (the
