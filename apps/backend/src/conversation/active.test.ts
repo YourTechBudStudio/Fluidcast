@@ -59,7 +59,7 @@ describe('ActiveSession', () => {
       Effect.gen(function* () {
         const active = yield* ActiveSession;
         const id = yield* startNew;
-        const second = yield* Effect.flip(active.start({ mode: 'new' }));
+        const second = yield* Effect.flip(active.start({ mode: 'new', agent: 'claude' }));
         assert.equal(second._tag, 'SessionActive');
         assert.deepEqual(yield* currentStatus, { _tag: 'Active', id });
         assert.deepEqual(log.started, ['new']);
@@ -124,7 +124,9 @@ describe('ActiveSession', () => {
     await withActive(
       build,
       Effect.gen(function* () {
-        const failure = yield* Effect.flip((yield* ActiveSession).start({ mode: 'new' }));
+        const failure = yield* Effect.flip(
+          (yield* ActiveSession).start({ mode: 'new', agent: 'claude' }),
+        );
         assert.deepEqual(failure._tag === 'StartFailed' && failure.reason, 'NoAnswer');
         assert.deepEqual(log.closed, [0]);
         assert.deepEqual(yield* currentStatus, { _tag: 'NoSession' });
@@ -151,7 +153,7 @@ describe('ActiveSession', () => {
       gated,
       Effect.gen(function* () {
         const active = yield* ActiveSession;
-        const fiber = yield* Effect.forkChild(active.start({ mode: 'new' }));
+        const fiber = yield* Effect.forkChild(active.start({ mode: 'new', agent: 'claude' }));
         yield* Deferred.await(building);
         // The interrupt waits for the uninterruptible start, which finishes once released.
         const interrupting = yield* Effect.forkChild(Fiber.interrupt(fiber));

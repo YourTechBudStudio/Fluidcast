@@ -23,12 +23,14 @@ import { conversationConfig, fakeSources, storedMessage, unusedModel } from './f
 import { continueContextLabel, continueMessage, continueReminders } from './modes.ts';
 import {
   buildSession,
-  claudeSources,
+  claudeWorkerOptions,
+  codexWorkerOptions,
   type ConversationConfig,
-  type SessionSources,
+  parseSessionId,
   referenceSessionConfig,
+  referenceSources,
   referenceTools,
-  workerOptions,
+  type SessionSources,
 } from './session.ts';
 
 const worker = conversationConfig().worker;
@@ -39,7 +41,7 @@ describe('referenceTools', () => {
     const tools = await Effect.runPromise(
       Effect.gen(function* () {
         const forward = yield* forwardAgentTool({
-          worker: claudeSources.claudeWorker(workerOptions(worker)),
+          worker: referenceSources.claudeWorker(claudeWorkerOptions(worker)),
         });
         return referenceTools(forward.tool);
       }).pipe(Effect.provideServiceEffect(LanguageModel.LanguageModel, unusedModel), Effect.scoped),
@@ -78,7 +80,7 @@ describe('buildSession', () => {
   const builds = (
     conversation: ConversationConfig,
     starts = 1,
-    request: StartRequest = { mode: 'new' },
+    request: StartRequest = { mode: 'new', agent: 'claude' },
     sources: SessionSources = fakeSources({}).sources,
   ) => {
     let count = 0;
@@ -101,10 +103,14 @@ describe('buildSession', () => {
   };
 
   /** The first snapshot's state of a built session. */
-  const snapshot = (request: StartRequest, sources: SessionSources) =>
+  const snapshot = (
+    request: StartRequest,
+    sources: SessionSources,
+    conversation: ConversationConfig = conversationConfig(),
+  ) =>
     Effect.runPromise(
       Effect.gen(function* () {
-        const built = yield* buildSession(conversationConfig(), 'opus', request, sources);
+        const built = yield* buildSession(conversation, 'opus', request, sources);
         const first = yield* Stream.runHead(built.session.subscribe());
         if (first._tag === 'None' || first.value._tag !== 'Snapshot') {
           return assert.fail('expected a snapshot');
@@ -140,7 +146,13 @@ describe('buildSession', () => {
     );
 
   const storedId = '0198f1a2-3b4c-7d5e-8f60-123456789abc';
-  const continueRequest = { mode: 'continue', sessionId: ` ${storedId} ` } as const;
+  const continueRequest = {
+    mode: 'continue',
+    agent: 'claude',
+    sessionId: ` ${storedId} `,
+  } as const;
+  const codexContinue = { ...continueRequest, agent: 'codex' } as const;
+  const thread = { model: 'gpt-x', effort: undefined, lastAnswer: 'The Codex answer.' };
   const stored = [
     storedMessage('user', 'Question'),
     storedMessage('assistant', [{ type: 'text', text: 'The answer.' }]),
@@ -192,9 +204,22 @@ describe('buildSession', () => {
     const conversation = conversationConfig({
       worker: { ...worker, claude: { model: 'opus', effort: 'high' } },
     });
-    await builds(conversation, 1, { mode: 'new' }, sources);
-    assert.deepEqual(workers, [workerOptions(conversation.worker)]);
+    await builds(conversation, 1, { mode: 'new', agent: 'claude' }, sources);
+    assert.deepEqual(workers, [claudeWorkerOptions(conversation.worker)]);
     assert.equal(workers[0]?.model, 'opus');
+  });
+
+  it('gives a new Codex brainstorm a fresh Codex worker with its workers model and effort', async () => {
+    const { sources, workers, codexWorkers, threadReads } = fakeSources({});
+    const conversation = conversationConfig({
+      worker: { ...worker, codex: { model: 'gpt-x', effort: 'ultra' } },
+    });
+    await builds(conversation, 1, { mode: 'new', agent: 'codex' }, sources);
+    assert.deepEqual(workers, []);
+    assert.deepEqual(threadReads, []);
+    assert.deepEqual(codexWorkers, [
+      { cwd: worker.cwd, environment: worker.environment, model: 'gpt-x', effort: 'ultra' },
+    ]);
   });
 
   it('snapshots a continued session ready, with the last answer as the preloaded context', async () => {
@@ -208,7 +233,7 @@ describe('buildSession', () => {
       { label: continueContextLabel, text: 'The answer.' },
     );
     // No effort is recorded under the fake config directory, and none is configured.
-    assert.deepEqual(workers, [workerOptions(worker, { effort: undefined })]);
+    assert.deepEqual(workers, [claudeWorkerOptions(worker, { effort: undefined })]);
     assert.equal('model' in workers[0]!, false);
   });
 
@@ -232,10 +257,60 @@ describe('buildSession', () => {
     }
   });
 
+  it('continues a Codex thread: its last answer preloaded, read with the worker environment', async () => {
+    const { sources, workers, codexWorkers, threadReads } = fakeSources({ thread });
+    const conversation = conversationConfig({
+      worker: { ...worker, environment: { PATH: '/bin' } },
+    });
+    const state = await snapshot(codexContinue, sources, conversation);
+    assert.equal(derivePhase(state), 'ready');
+    assert.equal(state.start?.context?.text, 'The Codex answer.');
+    assert.deepEqual(threadReads, [{ threadId: storedId, environment: { PATH: '/bin' } }]);
+    assert.deepEqual(workers, []);
+    // No model, even though the thread reports one: the resumed thread keeps its own.
+    assert.deepEqual(codexWorkers, [{ cwd: worker.cwd, environment: { PATH: '/bin' } }]);
+  });
+
+  it('resumes a Codex thread with its recorded effort, else the configured one', async () => {
+    const conversation = conversationConfig({
+      worker: { ...worker, codex: { model: 'gpt-y', effort: 'low' } },
+    });
+    const recorded = fakeSources({ thread: { ...thread, effort: 'xhigh' } });
+    await builds(conversation, 1, codexContinue, recorded.sources);
+    assert.deepEqual(
+      recorded.codexWorkers.map((options) => [options.model, options.effort]),
+      [[undefined, 'xhigh']],
+    );
+    const fallback = fakeSources({ thread });
+    await builds(conversation, 1, codexContinue, fallback.sources);
+    assert.deepEqual(
+      fallback.codexWorkers.map((options) => [options.model, options.effort]),
+      [[undefined, 'low']],
+    );
+  });
+
+  it('maps each Codex Continue failure to its reason', async () => {
+    const cases = [
+      [{ ...codexContinue, sessionId: 'nope' }, fakeSources({ thread }), 'InvalidSessionId'],
+      [codexContinue, fakeSources({ thread: 'fail' }), 'SessionUnreadable'],
+      [codexContinue, fakeSources({ thread: { ...thread, lastAnswer: undefined } }), 'NoAnswer'],
+      [
+        codexContinue,
+        fakeSources({ thread, attachFailure: 'SessionUnreadable' }),
+        'SessionUnreadable',
+      ],
+    ] as const;
+    for (const [request, { sources, threadReads }, reason] of cases) {
+      assert.equal(await failureOf(request, sources), reason);
+      // An invalid ID never reaches the reader.
+      if (reason === 'InvalidSessionId') assert.deepEqual(threadReads, []);
+    }
+  });
+
   it('maps each Continue failure to its reason', async () => {
     const cases = [
       [
-        { mode: 'continue', sessionId: 'nope' },
+        { mode: 'continue', agent: 'claude', sessionId: 'nope' },
         fakeSources({ messages: stored }),
         'InvalidSessionId',
       ],
@@ -259,36 +334,66 @@ describe('buildSession', () => {
   });
 });
 
-describe('workerOptions', () => {
+describe('parseSessionId', () => {
+  const id = '0198f1a2-3b4c-7d5e-8f60-123456789abc';
+
+  it('trims a UUID', () => {
+    assert.equal(parseSessionId(`  ${id}\n`), id);
+  });
+
+  it('rejects anything else', () => {
+    for (const text of ['', 'nope', `${id}x`, '../../etc/passwd', `${id} ${id}`]) {
+      assert.equal(parseSessionId(text), undefined);
+    }
+  });
+});
+
+describe('claudeWorkerOptions', () => {
   const configured = { ...worker, claude: { model: 'opus', effort: 'high' as const } };
+  const base = {
+    cwd: worker.cwd,
+    executable: worker.claudeExecutable,
+    permissionMode: 'auto',
+    environment: worker.environment,
+  };
 
   it('gives a new session the installed claude and the workers model and effort, in auto permission mode', () => {
-    assert.deepEqual(workerOptions(configured), {
-      cwd: worker.cwd,
-      executable: worker.claudeExecutable,
-      permissionMode: 'auto',
-      environment: worker.environment,
-      model: 'opus',
-      effort: 'high',
-    });
-    assert.deepEqual(workerOptions(worker), {
-      cwd: worker.cwd,
-      executable: worker.claudeExecutable,
-      permissionMode: 'auto',
-      environment: worker.environment,
-    });
+    assert.deepEqual(claudeWorkerOptions(configured), { ...base, model: 'opus', effort: 'high' });
+    assert.deepEqual(claudeWorkerOptions(worker), base);
   });
 
   it('gives a continued session no model, and its recorded effort, else the configured one', () => {
-    const base = {
-      cwd: worker.cwd,
-      executable: worker.claudeExecutable,
-      permissionMode: 'auto',
-      environment: worker.environment,
-    };
-    assert.deepEqual(workerOptions(configured, { effort: 'max' }), { ...base, effort: 'max' });
-    assert.deepEqual(workerOptions(configured, { effort: undefined }), { ...base, effort: 'high' });
-    assert.deepEqual(workerOptions(worker, { effort: undefined }), base);
+    assert.deepEqual(claudeWorkerOptions(configured, { effort: 'max' }), {
+      ...base,
+      effort: 'max',
+    });
+    assert.deepEqual(claudeWorkerOptions(configured, { effort: undefined }), {
+      ...base,
+      effort: 'high',
+    });
+    assert.deepEqual(claudeWorkerOptions(worker, { effort: undefined }), base);
+  });
+});
+
+describe('codexWorkerOptions', () => {
+  const configured = { ...worker, codex: { model: 'gpt-x', effort: 'ultra' } };
+  const base = { cwd: worker.cwd, environment: worker.environment };
+
+  it('gives a new session the workers model and effort, which is any string', () => {
+    assert.deepEqual(codexWorkerOptions(configured), { ...base, model: 'gpt-x', effort: 'ultra' });
+    assert.deepEqual(codexWorkerOptions(worker), base);
+  });
+
+  it('gives a continued session no model, and its recorded effort, else the configured one', () => {
+    assert.deepEqual(codexWorkerOptions(configured, { effort: 'minimal' }), {
+      ...base,
+      effort: 'minimal',
+    });
+    assert.deepEqual(codexWorkerOptions(configured, { effort: undefined }), {
+      ...base,
+      effort: 'ultra',
+    });
+    assert.deepEqual(codexWorkerOptions(worker, { effort: undefined }), base);
   });
 });
 

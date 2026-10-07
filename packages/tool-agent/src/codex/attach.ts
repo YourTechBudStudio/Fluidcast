@@ -9,7 +9,7 @@ import type { TranscriptEntry } from '../schema.ts';
 import { WorkerSetupError } from '../worker.ts';
 import type { OpenTransport } from './process.ts';
 import { itemOf, ThreadReadResponse, TurnsPage, type Item } from './protocol.ts';
-import { initialize, makeRpc, type Rpc } from './rpc.ts';
+import { initialize, makeRpc, type Rpc, RpcFailure } from './rpc.ts';
 import { historyEntries, lastAnswer, spawnedThreads } from './transcript.ts';
 
 /** `thread/turns/list` on a thread that has no turns yet. */
@@ -41,7 +41,7 @@ const threadItems = (rpc: Rpc, threadId: string) =>
   );
 
 /** A stored thread as one read: its record and its items, in a fresh app-server. */
-const readThread = <A, E>(
+const readThread = <A, E extends { readonly _tag: string }>(
   open: OpenTransport,
   threadId: string,
   read: (rpc: Rpc) => Effect.Effect<A, E>,
@@ -53,6 +53,19 @@ const readThread = <A, E>(
       return yield* read(rpc);
     }),
   ).pipe(
+    // The one record of why: Codex's message for a refused request (protocol text and IDs), else
+    // only the error's tag. A decode error's message can echo the payload, so it is never logged.
+    Effect.tapError((error) =>
+      Effect.logWarning('codex: stored thread unreadable').pipe(
+        Effect.annotateLogs({
+          threadId,
+          error: error._tag,
+          ...(error instanceof RpcFailure
+            ? { method: error.method, code: error.code, message: error.message }
+            : {}),
+        }),
+      ),
+    ),
     // Codex has no stable not-found code, so every failure is the same: unreadable.
     Effect.mapError(
       () => new WorkerSetupError({ sessionId: threadId, reason: 'SessionUnreadable' }),

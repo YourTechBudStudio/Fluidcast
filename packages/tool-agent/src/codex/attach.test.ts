@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { Effect } from 'effect';
+import { Effect, Logger, References } from 'effect';
 
 import { WorkerSetupError } from '../worker.ts';
 import { attachWith, readThreadWith } from './attach.ts';
@@ -148,6 +148,57 @@ describe('reasoning in stored history', () => {
         );
         const stored = yield* readThreadWith(server.open)(main);
         assert.equal(stored.lastAnswer, 'Because.');
+      }),
+    ));
+});
+
+/** Runs `effect` and returns the annotations of each warning it logged. */
+const warnings = <A, E>(effect: Effect.Effect<A, E>) => {
+  const logged: Array<Readonly<Record<string, unknown>>> = [];
+  const capture = Logger.make((options) => {
+    if (options.logLevel === 'Warn') {
+      logged.push(options.fiber.getRef(References.CurrentLogAnnotations));
+    }
+  });
+  return effect.pipe(
+    Effect.exit,
+    Effect.provide(Logger.layer([capture])),
+    Effect.map(() => logged),
+  );
+};
+
+describe('a stored-thread read failure', () => {
+  it("logs Codex's code and message for a refused request, with the thread ID", () =>
+    run(
+      Effect.gen(function* () {
+        const server = yield* storedServer({}, (method) =>
+          method === 'thread/read'
+            ? { error: { code: -32600, message: 'thread not loaded: x' } }
+            : undefined,
+        );
+        assert.deepEqual(yield* warnings(readThreadWith(server.open)('x')), [
+          {
+            threadId: 'x',
+            error: 'RpcFailure',
+            method: 'thread/read',
+            code: -32600,
+            message: 'thread not loaded: x',
+          },
+        ]);
+      }),
+    ));
+
+  it('logs only the tag of a decode failure, whose message could echo the payload', () =>
+    run(
+      Effect.gen(function* () {
+        const server = yield* storedServer({}, (method) =>
+          method === 'thread/read' ? { result: { thread: { secret: 'content' } } } : undefined,
+        );
+        const [warning, ...rest] = yield* warnings(attachWith(server.open)(main));
+        assert.deepEqual(rest, []);
+        assert.deepEqual(Object.keys(warning ?? {}).sort(), ['error', 'threadId']);
+        assert.equal(warning?.['threadId'], main);
+        assert.notEqual(warning?.['error'], 'RpcFailure');
       }),
     ));
 });

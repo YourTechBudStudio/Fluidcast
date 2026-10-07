@@ -62,10 +62,17 @@ export const SessionStatus = Schema.Union([
 export type SessionStatus = typeof SessionStatus.Type;
 export const SessionStatusJson = Schema.fromJsonString(SessionStatus);
 
-/** `POST /api/session`: a new brainstorm, or a stored Claude Code session to continue (raw input). */
+/** The agent behind a session's worker, chosen at start for the session's whole life. */
+export const Agent = Schema.Literals(['claude', 'codex']);
+export type Agent = typeof Agent.Type;
+
+/**
+ * `POST /api/session`: a new brainstorm, or a stored session of `agent` to continue (raw input).
+ * `agent` is the only source of truth for which agent a pasted ID belongs to.
+ */
 export const StartRequest = Schema.Union([
-  Schema.Struct({ mode: Schema.Literal('new') }),
-  Schema.Struct({ mode: Schema.Literal('continue'), sessionId: Schema.String }),
+  Schema.Struct({ mode: Schema.Literal('new'), agent: Agent }),
+  Schema.Struct({ mode: Schema.Literal('continue'), agent: Agent, sessionId: Schema.String }),
 ]);
 export type StartRequest = typeof StartRequest.Type;
 

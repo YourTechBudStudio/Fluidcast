@@ -8,10 +8,11 @@ import { Cause, Data, Deferred, Effect, Queue, Stream, type Scope } from 'effect
 import type { Transport } from './process.ts';
 import type { Notification } from './protocol.ts';
 
-/** The server answered a request with an error. */
+/** The server answered a request with an error; `message` is Codex's own text, or empty. */
 export class RpcFailure extends Data.TaggedError('RpcFailure')<{
   readonly method: string;
   readonly code: number | undefined;
+  readonly message: string;
   readonly data: unknown;
 }> {}
 
@@ -107,12 +108,13 @@ export const makeRpc = (transport: Transport): Effect.Effect<Rpc, never, Scope.S
       pending.delete(id as number);
       const error = message['error'];
       if (typeof error === 'object' && error !== null) {
-        const { code, data } = error as Readonly<Record<string, unknown>>;
+        const { code, message: text, data } = error as Readonly<Record<string, unknown>>;
         return Deferred.fail(
           waiting.reply,
           new RpcFailure({
             method: waiting.method,
             code: typeof code === 'number' ? code : undefined,
+            message: typeof text === 'string' ? text : '',
             data,
           }),
         ).pipe(Effect.asVoid);

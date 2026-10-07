@@ -236,6 +236,22 @@ preset: { voice: { name: alloy, instructions: calm } }
     assert.deepEqual((await loaded(validYaml, keys)).conversation.worker.claude, {});
   });
 
+  it('reads the Codex section beside Claude, with any non-empty effort', async () => {
+    const config = await loaded(
+      `${validYaml}workers: { claude: { effort: low }, codex: { model: gpt-x, effort: ultra } }\n`,
+      keys,
+    );
+    assert.deepEqual(config.conversation.worker.codex, { model: 'gpt-x', effort: 'ultra' });
+    assert.deepEqual(config.conversation.worker.claude, { effort: 'low' });
+    assert.deepEqual((await loaded(validYaml, keys)).conversation.worker.codex, {});
+  });
+
+  it('rejects an empty Codex effort or model', async () => {
+    for (const codex of ["{ effort: '' }", "{ model: '' }", '{ effort: 3 }']) {
+      assert.match(await failure(`${validYaml}workers: { codex: ${codex} }\n`, keys), /is invalid/);
+    }
+  });
+
   it('resolves workers.cwd relative to the config, and defaults to its directory', async () => {
     assert.equal((await loaded(validYaml, keys)).conversation.worker.cwd, directories.at(-1));
     const config = await loaded(`${validYaml}workers: { cwd: .. }\n`, keys);
@@ -310,6 +326,7 @@ preset: { voice: { name: alloy, instructions: calm } }
       .join('\n');
     const config = await loaded(`${validYaml}${uncommented}`, keys);
     assert.deepEqual(config.conversation.worker.claude, { model: 'opus', effort: 'high' });
+    assert.deepEqual(config.conversation.worker.codex, { model: 'gpt-6.1-sol', effort: 'high' });
     assert.equal(config.conversation.worker.cwd, directories.at(-1));
   });
 

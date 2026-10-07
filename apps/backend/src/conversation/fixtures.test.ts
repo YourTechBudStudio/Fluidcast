@@ -12,6 +12,10 @@ import {
   type WorkerType,
 } from '@yourtechbudstudio/fluidcast-tool-agent';
 import type { ClaudeWorkerOptions } from '@yourtechbudstudio/fluidcast-tool-agent/claude';
+import type {
+  CodexThread,
+  CodexWorkerOptions,
+} from '@yourtechbudstudio/fluidcast-tool-agent/codex';
 import type { WorkerSummary } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 
 import { ActiveSession, makeActiveSession } from './active.ts';
@@ -90,7 +94,7 @@ export const fakeActiveLayer = (build: ReturnType<typeof fakeBuild>['build']) =>
 /** Starts a new session and returns its ID, read from the status stream. */
 export const startNew = Effect.gen(function* () {
   const active = yield* ActiveSession;
-  yield* active.start({ mode: 'new' });
+  yield* active.start({ mode: 'new', agent: 'claude' });
   const status = yield* Stream.runHead(active.status);
   if (status._tag === 'None' || status.value._tag !== 'Active') {
     return yield* Effect.die('expected an active session');
@@ -108,6 +112,7 @@ export const conversationConfig = (
     cwd: process.cwd(),
     environment: {},
     claude: {},
+    codex: {},
     claudeConfigDir: '/nonexistent-claude-config',
     claudeExecutable: '/nonexistent/claude',
   },
@@ -128,34 +133,59 @@ export const storedMessage = (
   parent_agent_id: null,
 });
 
+/** A worker type that spawns nothing: `attach` succeeds, or fails with `attachFailure`. */
+const fakeWorkerType = (
+  cwd: string,
+  attachFailure: WorkerSetupError['reason'] | undefined,
+): WorkerType => ({
+  cwd,
+  composeMessage: (prompt) => prompt,
+  attach: (sessionId) =>
+    attachFailure === undefined
+      ? Effect.succeed({ cwd, history: [] })
+      : Effect.fail(new WorkerSetupError({ sessionId, reason: attachFailure })),
+  connect: () => Stream.die('the fake worker never connects'),
+});
+
 /**
- * Fake `SessionSources`: stored messages (or a throw), and a Claude worker type that records the
- * options it was made with and whose `attach` succeeds, or fails with `attachFailure`.
+ * Fake `SessionSources`: stored Claude messages (or a throw), a stored Codex thread (or a read
+ * failure), and worker types for both agents that record the options they were made with, plus
+ * each read thread's ID and environment. Every `attach` succeeds, or fails with `attachFailure`.
  */
 export const fakeSources = (options: {
   readonly messages?: ReadonlyArray<SessionMessage> | 'throw';
+  readonly thread?: CodexThread | 'fail';
   readonly attachFailure?: WorkerSetupError['reason'];
 }) => {
   const workers: Array<ClaudeWorkerOptions> = [];
+  const codexWorkers: Array<CodexWorkerOptions> = [];
+  const threadReads: Array<{ readonly threadId: string; readonly environment: unknown }> = [];
   const sources: SessionSources = {
-    claudeWorker: (workerOptions): WorkerType => {
+    claudeWorker: (workerOptions) => {
       workers.push(workerOptions);
-      return {
-        cwd: workerOptions.cwd,
-        composeMessage: (prompt) => prompt,
-        attach: (sessionId) =>
-          options.attachFailure === undefined
-            ? Effect.succeed({ cwd: workerOptions.cwd, history: [] })
-            : Effect.fail(new WorkerSetupError({ sessionId, reason: options.attachFailure })),
-        connect: () => Stream.die('the fake worker never connects'),
-      };
+      return fakeWorkerType(workerOptions.cwd, options.attachFailure);
     },
     sessionMessages: async () => {
       if (options.messages === 'throw') throw new Error('unreadable');
       return options.messages ?? [];
     },
+    codexWorker: (workerOptions) => {
+      codexWorkers.push(workerOptions);
+      return fakeWorkerType(workerOptions.cwd, options.attachFailure);
+    },
+    readCodexThread: (threadId, { environment }) => {
+      threadReads.push({ threadId, environment });
+      const thread = options.thread ?? {
+        model: undefined,
+        effort: undefined,
+        lastAnswer: undefined,
+      };
+      return thread === 'fail'
+        ? Effect.fail(new WorkerSetupError({ sessionId: threadId, reason: 'SessionUnreadable' }))
+        : Effect.succeed(thread);
+    },
   };
-  return { sources, workers };
+  return { sources, workers, codexWorkers, threadReads };
 };
 
 /** The `data:` payloads of an SSE body, in order. */
@@ -230,7 +260,10 @@ export const statusOver = async (send: Send) => {
 
 /** Starts a new session over `POST /api/session` and returns its ID. */
 export const startOver = async (send: Send) => {
-  const response = await send(routes.session, { method: 'POST', json: { mode: 'new' } });
+  const response = await send(routes.session, {
+    method: 'POST',
+    json: { mode: 'new', agent: 'claude' },
+  });
   if (response.status !== 204) throw new Error(`start failed with ${response.status}`);
   const status = await statusOver(send);
   if (status._tag !== 'Active') throw new Error('expected an active session');

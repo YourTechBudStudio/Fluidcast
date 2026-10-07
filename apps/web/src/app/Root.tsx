@@ -4,7 +4,6 @@ import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router
 import { RouterProvider } from 'react-router/dom';
 
 import { sessionIdAtom, sessionStatusAtom } from '../client';
-import { AgentToggleMock } from './mock/AgentToggleMock';
 import { ModeScreen } from './ModeScreen';
 import { Player } from './Player';
 import { routeFor } from './route';
@@ -58,8 +57,6 @@ function SessionScreen() {
 
 /** `/` is the mode screen and `/session/:sessionId` the player; the status gate keeps the URL in line with the backend. */
 const router = createBrowserRouter([
-  // TODO(phase-04): remove with `mock/AgentToggleMock.tsx`. Dev-only, outside the status gate so it needs no backend.
-  ...(import.meta.env.DEV ? [{ path: '/mock/agent-toggle', element: <AgentToggleMock /> }] : []),
   {
     element: <StatusGate />,
     children: [

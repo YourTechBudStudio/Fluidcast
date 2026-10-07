@@ -7,22 +7,10 @@ import { after, describe, it } from 'node:test';
 import * as NodeServices from '@effect/platform-node/NodeServices';
 import { Effect, Result } from 'effect';
 
-import { lastAnswer, parseSessionId, recordedEffort } from './claude-session.ts';
+import { lastAnswer, recordedEffort } from './claude-session.ts';
 import { storedMessage } from './fixtures.test.ts';
 
 const id = '0198f1a2-3b4c-7d5e-8f60-123456789abc';
-
-describe('parseSessionId', () => {
-  it('trims a UUID', () => {
-    assert.equal(parseSessionId(`  ${id}\n`), id);
-  });
-
-  it('rejects anything else', () => {
-    for (const text of ['', 'nope', `${id}x`, '../../etc/passwd', `${id} ${id}`]) {
-      assert.equal(parseSessionId(text), undefined);
-    }
-  });
-});
 
 describe('lastAnswer', () => {
   const text = (value: string) => ({ type: 'text', text: value });

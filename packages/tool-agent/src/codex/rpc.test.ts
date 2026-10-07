@@ -69,7 +69,7 @@ describe('makeRpc', () => {
         assert.deepEqual(yield* rpc.request('ok', {}), { fine: true });
         assert.deepEqual(
           yield* Effect.flip(rpc.request('bad', {})),
-          new RpcFailure({ method: 'bad', code: -32600, data: { x: 1 } }),
+          new RpcFailure({ method: 'bad', code: -32600, message: 'no', data: { x: 1 } }),
         );
         const pending = yield* Effect.forkChild(rpc.request('never', {}));
         yield* server.push({ method: 'turn/started', params: { threadId: 't' } });
@@ -87,7 +87,8 @@ describe('makeRpc', () => {
 
 describe('isNotSteerable', () => {
   it('recognises activeTurnNotSteerable in the error data, leniently', () => {
-    const failure = (data: unknown) => new RpcFailure({ method: 'turn/start', code: -32600, data });
+    const failure = (data: unknown) =>
+      new RpcFailure({ method: 'turn/start', code: -32600, message: 'refused', data });
     assert.equal(
       isNotSteerable(
         failure({ codexErrorInfo: { activeTurnNotSteerable: { turnKind: 'review' } } }),

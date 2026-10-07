@@ -190,7 +190,7 @@ const findExecutable = (
 
 /**
  * Where a new worker runs (`workers.cwd`, else the config file's directory), the `workers.claude`
- * settings, and the environment it gets: the real environment (never `.env` values) minus the
+ * and `workers.codex` settings, and the environment it gets: the real environment (never `.env` values) minus the
  * variables holding the configured providers' keys. Credential hygiene, not isolation. Claude
  * Code's config directory and executable also come from the real environment, because that is
  * what the in-process SDK readers and the worker process see.
@@ -208,12 +208,16 @@ const workerConfig = (
       .filter(isApiKeyProvider)
       .map((type) => apiKeyEnvFor(file, type)),
   );
-  const claude = file.workers?.claude;
+  const { claude, codex } = file.workers ?? {};
   return {
     cwd: file.workers?.cwd === undefined ? directory : relativeToConfig(file.workers.cwd),
     claude: {
       ...(claude?.model === undefined ? {} : { model: claude.model }),
       ...(claude?.effort === undefined ? {} : { effort: claude.effort }),
+    },
+    codex: {
+      ...(codex?.model === undefined ? {} : { model: codex.model }),
+      ...(codex?.effort === undefined ? {} : { effort: codex.effort }),
     },
     claudeConfigDir: nonEmpty(real['CLAUDE_CONFIG_DIR']) ?? join(home, '.claude'),
     // Not installed: the bare name fails the SDK's existence check, so the worker faults at startup.

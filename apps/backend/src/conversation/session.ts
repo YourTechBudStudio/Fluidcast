@@ -1,8 +1,8 @@
 import { getSessionMessages, type SessionMessage } from '@anthropic-ai/claude-agent-sdk';
-import { Context, Effect, type FileSystem, Layer, type Path, type Scope } from 'effect';
+import { Context, Effect, type FileSystem, Layer, type Path, Schema, type Scope } from 'effect';
 import { LanguageModel } from 'effect/unstable/ai';
 
-import { StartFailed, type StartRequest } from '@fluidcast/app-contract';
+import { type Agent, StartFailed, type StartRequest } from '@fluidcast/app-contract';
 import { outputJsonSchema } from '@yourtechbudstudio/fluidcast-core/generation';
 import type { AudioFormat, SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';
 import {
@@ -18,16 +18,23 @@ import {
 import {
   forwardAgentTool,
   type WorkerHandle,
+  type WorkerSetupError,
   type WorkerType,
 } from '@yourtechbudstudio/fluidcast-tool-agent';
 import {
   claudeWorker,
   type ClaudeWorkerOptions,
 } from '@yourtechbudstudio/fluidcast-tool-agent/claude';
+import {
+  type CodexThread,
+  codexWorker,
+  type CodexWorkerOptions,
+  readCodexThread,
+} from '@yourtechbudstudio/fluidcast-tool-agent/codex';
 import { askTool } from '@yourtechbudstudio/fluidcast-tool-ask';
 import { showTool } from '@yourtechbudstudio/fluidcast-tool-show';
 
-import { lastAnswer, parseSessionId, recordedEffort } from './claude-session.ts';
+import { lastAnswer, recordedEffort } from './claude-session.ts';
 import type { ClaudeEffort, PresetSection } from './config.ts';
 import { withGenerationLog } from './generation-log.ts';
 import type { LlmConfig } from './language-model.ts';
@@ -44,7 +51,7 @@ export interface ConversationConfig {
   readonly llm: LlmConfig;
   /** The `preset` section: the Guided Walkthrough's profile and the speaker's voice. */
   readonly preset: PresetSection;
-  /** The worker behind the Forward Agent tool, from the `workers` section. */
+  /** The workers behind the Forward Agent tool, from the `workers` section. */
   readonly worker: {
     /** Where a new worker runs: `workers.cwd`, resolved, else the config file's directory. */
     readonly cwd: string;
@@ -52,6 +59,8 @@ export interface ConversationConfig {
     readonly environment: Readonly<Record<string, string | undefined>>;
     /** `workers.claude`: for new sessions; `effort` is also a continued session's fallback. */
     readonly claude: { readonly model?: string; readonly effort?: ClaudeEffort };
+    /** `workers.codex`: for new sessions; `effort` is also a continued session's fallback. */
+    readonly codex: { readonly model?: string; readonly effort?: string };
     /** Where Claude Code keeps sessions: `CLAUDE_CONFIG_DIR`, else `<home>/.claude`. */
     readonly claudeConfigDir: string;
     /** The installed `claude`, found on the real environment's `PATH`, else the bare name. */
@@ -61,43 +70,82 @@ export interface ConversationConfig {
   readonly generationLog?: string;
 }
 
-/** Where `buildSession` gets the worker and stored sessions; tests pass fakes. */
+/** Where `buildSession` gets the workers and stored sessions; tests pass fakes. */
 export interface SessionSources {
   readonly claudeWorker: (options: ClaudeWorkerOptions) => WorkerType;
+  /** Claude Code's stored session messages. */
   readonly sessionMessages: (sessionId: string) => Promise<ReadonlyArray<SessionMessage>>;
+  readonly codexWorker: (options: CodexWorkerOptions) => WorkerType;
+  /** A stored Codex thread's recorded effort and last answer. */
+  readonly readCodexThread: (
+    threadId: string,
+    options: { readonly environment: Readonly<Record<string, string | undefined>> },
+  ) => Effect.Effect<CodexThread, WorkerSetupError>;
 }
 
-/** The real sources: Claude Code, and its stored sessions. */
-export const claudeSources: SessionSources = {
+/** The real sources: Claude Code and Codex, and their stored sessions. */
+export const referenceSources: SessionSources = {
   claudeWorker,
   sessionMessages: (sessionId) => getSessionMessages(sessionId),
+  codexWorker,
+  readCodexThread,
+};
+
+const isUuid = Schema.is(Schema.String.check(Schema.isUUID()));
+
+/**
+ * Trimmed; a UUID, or `undefined`. Both agents' session IDs are UUIDs. Runs before the ID reaches
+ * any reader or path.
+ */
+export const parseSessionId = (text: string): string | undefined => {
+  const id = text.trim();
+  return isUuid(id) ? id : undefined;
 };
 
 /**
- * The worker's options. A new session gets the `workers` model and effort. A continued session
- * passes no model (the SDK restores the session's own) and its recorded effort, else the
- * configured one. `cwd` is always passed, but a resumed worker runs in its recorded directory.
+ * An agent's model and effort, the same rule for both: a new session gets the configured ones. A
+ * continued session gets no model (the agent restores the session's own) and its recorded effort,
+ * else the configured one.
  */
-export const workerOptions = (
-  worker: ConversationConfig['worker'],
-  continued?: { readonly effort: ClaudeEffort | undefined },
-): ClaudeWorkerOptions => {
-  const base = {
-    cwd: worker.cwd,
-    executable: worker.claudeExecutable,
-    permissionMode: 'auto',
-    environment: worker.environment,
-  } as const;
-  if (continued !== undefined) {
-    const effort = continued.effort ?? worker.claude.effort;
-    return { ...base, ...(effort === undefined ? {} : { effort }) };
-  }
+const modelAndEffort = <Effort extends string>(
+  configured: { readonly model?: string; readonly effort?: Effort },
+  continued: { readonly effort: Effort | undefined } | undefined,
+): { readonly model?: string; readonly effort?: Effort } => {
+  const model = continued === undefined ? configured.model : undefined;
+  const effort = continued?.effort ?? configured.effort;
   return {
-    ...base,
-    ...(worker.claude.model === undefined ? {} : { model: worker.claude.model }),
-    ...(worker.claude.effort === undefined ? {} : { effort: worker.claude.effort }),
+    ...(model === undefined ? {} : { model }),
+    ...(effort === undefined ? {} : { effort }),
   };
 };
+
+/**
+ * The Claude worker's options: the installed `claude` in auto permission mode, with
+ * `modelAndEffort`. `cwd` is always passed, but a resumed worker runs in its recorded directory.
+ */
+export const claudeWorkerOptions = (
+  worker: ConversationConfig['worker'],
+  continued?: { readonly effort: ClaudeEffort | undefined },
+): ClaudeWorkerOptions => ({
+  cwd: worker.cwd,
+  executable: worker.claudeExecutable,
+  permissionMode: 'auto',
+  environment: worker.environment,
+  ...modelAndEffort(worker.claude, continued),
+});
+
+/**
+ * The Codex worker's options, with `modelAndEffort`. Auto permission mode is the worker type's own.
+ * `cwd` is always passed, but a resumed worker runs in its recorded directory.
+ */
+export const codexWorkerOptions = (
+  worker: ConversationConfig['worker'],
+  continued?: { readonly effort: string | undefined },
+): CodexWorkerOptions => ({
+  cwd: worker.cwd,
+  environment: worker.environment,
+  ...modelAndEffort(worker.codex, continued),
+});
 
 /** The tools the reference session registers, in prompt order: Show, Ask and Forward Agent. */
 export const referenceTools = (forward: Tool): ReadonlyArray<Tool> => [
@@ -171,8 +219,10 @@ export interface BuiltSession {
 
 /**
  * Builds one session in the current scope: the worker first, so the Harness is torn down first.
- * A new brainstorm gets a fresh worker with the brainstorming hook; a continued one resumes the
- * stored Claude session, with its last answer as the preloaded start's context.
+ * `request.agent` picks the worker type; this is the one place that maps an agent to one, and
+ * everything from the Forward Agent tool on is agent-neutral. A new brainstorm gets a fresh worker
+ * with the brainstorming hook; a continued one resumes the agent's stored session, with its last
+ * answer as the preloaded start's context.
  */
 export const buildSession = (
   config: ConversationConfig,
@@ -191,19 +241,19 @@ export const buildSession = (
     const progress = { prompt: guidedWalkthroughProgressPrompt };
     const continued =
       request.mode === 'continue'
-        ? yield* openStoredSession(config.worker, request.sessionId, sources)
+        ? yield* openStoredSession(config.worker, request.agent, request.sessionId, sources)
         : undefined;
     const forward = yield* (
       continued === undefined
         ? forwardAgentTool({
-            worker: sources.claudeWorker(workerOptions(config.worker)),
+            worker: newWorker(config.worker, request.agent, sources),
             hook: brainstormHook,
             progress,
           })
-        : // Continue resumes the original Claude session, not a fork. Forking (`forkSession`) would
-          // be this backend's choice: the Agent tool always continues the session it is given.
+        : // Continue resumes the original session, not a fork. Forking would be this backend's
+          // choice: the Agent tool always continues the session it is given.
           forwardAgentTool({
-            worker: sources.claudeWorker(workerOptions(config.worker, continued)),
+            worker: continued.worker,
             session: { sessionId: continued.sessionId },
             progress,
           })
@@ -225,20 +275,50 @@ export const buildSession = (
     return { session: Context.get(context, Session), worker: forward.worker };
   });
 
+/** A new session's worker type for `agent`, with the configured model and effort. */
+const newWorker = (
+  worker: ConversationConfig['worker'],
+  agent: Agent,
+  sources: SessionSources,
+): WorkerType =>
+  agent === 'claude'
+    ? sources.claudeWorker(claudeWorkerOptions(worker))
+    : sources.codexWorker(codexWorkerOptions(worker));
+
+/** A stored session to continue: its ID, last answer, and the worker type that resumes it. */
+interface StoredSession {
+  readonly sessionId: string;
+  readonly answer: string;
+  readonly worker: WorkerType;
+}
+
 /**
- * The stored Claude session to continue: its validated ID, last answer and recorded effort. Logs
- * identifiers and reason tags only, never message content.
+ * The stored session of `agent` to continue, with its validated ID. Logs identifiers and reason
+ * tags only, never message content.
  */
 const openStoredSession = (
   worker: ConversationConfig['worker'],
+  agent: Agent,
   rawId: string,
   sources: SessionSources,
-) =>
+): Effect.Effect<StoredSession, StartFailed, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function* () {
     const sessionId = parseSessionId(rawId);
     if (sessionId === undefined) {
       return yield* Effect.fail(new StartFailed({ reason: 'InvalidSessionId' }));
     }
+    return yield* agent === 'claude'
+      ? openClaudeSession(worker, sessionId, sources)
+      : openCodexSession(worker, sessionId, sources);
+  });
+
+/** A stored Claude Code session: its messages' last answer, and its recorded effort. */
+const openClaudeSession = (
+  worker: ConversationConfig['worker'],
+  sessionId: string,
+  sources: SessionSources,
+) =>
+  Effect.gen(function* () {
     const messages = yield* Effect.tryPromise(() => sources.sessionMessages(sessionId)).pipe(
       Effect.mapError(() => new StartFailed({ reason: 'SessionUnreadable' })),
     );
@@ -250,12 +330,37 @@ const openStoredSession = (
     const effort = yield* recordedEffort(worker.claudeConfigDir, sessionId);
     if (effort._tag === 'Failure') {
       yield* Effect.logInfo('continue: no recorded effort').pipe(
-        Effect.annotateLogs({ sessionId, reason: effort.failure }),
+        Effect.annotateLogs({ agent: 'claude', sessionId, reason: effort.failure }),
       );
     }
+    const continued = { effort: effort._tag === 'Success' ? effort.success : undefined };
     return {
       sessionId,
       answer,
-      effort: effort._tag === 'Success' ? effort.success : undefined,
+      worker: sources.claudeWorker(claudeWorkerOptions(worker, continued)),
+    };
+  });
+
+/**
+ * A stored Codex thread: its last answer and recorded effort, read through a short-lived
+ * app-server. Any read failure is `SessionUnreadable` (the reader logs Codex's error); Codex has no
+ * stable not-found code.
+ */
+const openCodexSession = (
+  worker: ConversationConfig['worker'],
+  sessionId: string,
+  sources: SessionSources,
+) =>
+  Effect.gen(function* () {
+    const thread = yield* sources
+      .readCodexThread(sessionId, { environment: worker.environment })
+      .pipe(Effect.mapError((error) => new StartFailed({ reason: error.reason })));
+    if (thread.lastAnswer === undefined) {
+      return yield* Effect.fail(new StartFailed({ reason: 'NoAnswer' }));
+    }
+    return {
+      sessionId,
+      answer: thread.lastAnswer,
+      worker: sources.codexWorker(codexWorkerOptions(worker, { effort: thread.effort })),
     };
   });
