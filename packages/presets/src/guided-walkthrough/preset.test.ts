@@ -36,7 +36,7 @@ const progressBullet =
   '- While you wait, a `<tool_progress>` from `forward_agent` says what you are doing: say it in one short first-person line, then keep waiting for its result.';
 
 const segmentBullet =
-  '- A segment is one to three compact `show`s. Introduce each in one short line, `show` it, then walk the listener through it while they look at it.';
+  '- A segment is one compact `show`. Introduce it in one short line, `show` it, then walk the listener through it while they look at it.';
 const evaluatedSegmentBullet =
   '- A segment is one to three compact `show`s, each after a sentence or two of speech.';
 
@@ -68,9 +68,9 @@ const swap = (text: string, from: string, to: string): string => {
   return text.replace(from, () => to);
 };
 
-/** The examples' walk-through lines: a speak right before an `ask`, which follows a screen. */
+/** The examples' walk-through lines: the run of speaks right before an `ask`, which follows a screen. */
 const walkThroughSpeech =
-  /,\{"type":"speak","speaker":"host","text":"(?:[^"\\]|\\.)*"\}(?=,\{"type":"ask")/g;
+  /(?:,\{"type":"speak","speaker":"host","text":"(?:[^"\\]|\\.)*"\})+(?=,\{"type":"ask")/g;
 
 /*
  * The detailed preset, rendered by Core with the real tools, against the evaluated prompt
@@ -83,8 +83,8 @@ const walkThroughSpeech =
  * 4. `## Forwarding` ends with the added progress bullet.
  * 5. The interrupted-question example shows an interrupt cancelling the question (a notice, then
  *    the listener's message) instead of an interrupted answer, which Ask no longer has.
- * 6. Walk-through speech: the segment bullet, a new `## Speaking` section, and a speak after each
- *    example screen that walks the listener through it.
+ * 6. Walk-through speech: the segment bullet, a new `## Speaking` section, and short speaks after
+ *    each example screen, one per point, that walk the listener through it.
  * 7. The `continue` Ask kind: the segment-ending ask bullet asks with `kind: "continue"` instead of a
  *    choice with the single option "Continue"; the `Ask` type gains a `continue` branch; the `ask`
  *    guideline names it; and the examples' two Continue asks use it. Their results still read

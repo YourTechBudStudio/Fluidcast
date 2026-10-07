@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { mountIdOf, withMountId } from './mermaid';
+import { mountIdOf, renderIdOf, withMountId } from './mermaid';
 
 describe('withMountId', () => {
   const svg = [
@@ -31,5 +31,17 @@ describe('withMountId', () => {
     expect(mountIdOf('«r1»')).toBe('fcshow-r1');
     expect(mountIdOf(':r2:')).toBe('fcshow-r2');
     expect(mountIdOf('_r_3_')).toBe('fcshow-_r_3_');
+  });
+});
+
+describe('renderIdOf', () => {
+  it("names the Show's handle and a three-digit position, so no id starts another", () => {
+    expect(renderIdOf('call_7', 0)).toBe('fcshowmmd-call_7-000');
+    expect(renderIdOf('call_7', 12)).toBe('fcshowmmd-call_7-012');
+    expect(renderIdOf('call_7', 12).startsWith(renderIdOf('call_7', 1))).toBe(false);
+  });
+
+  it('keeps only characters safe in ids and CSS selectors', () => {
+    expect(renderIdOf('call:7»', 1)).toBe('fcshowmmd-call7-001');
   });
 });

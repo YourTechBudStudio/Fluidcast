@@ -9,9 +9,10 @@ import { showToolName } from '@yourtechbudstudio/fluidcast-tool-show/schema';
 
 /*
  * The Guided Walkthrough's worked examples, reconstructed from the evaluated prompt, with two
- * changes: speech after each screen walks the listener through it, and the interrupted question
- * shows an interrupt cancelling the question rather than the evaluated interrupted answer. Handles
- * number each example's tool calls in order, so results name the call they answer.
+ * changes: speech after each screen walks the listener through it, one short speak per point, and
+ * the interrupted question shows an interrupt cancelling the question rather than the evaluated
+ * interrupted answer. Handles number each example's tool calls in order, so results name the call
+ * they answer.
  */
 
 const user = (text: string): ExampleStep => ({ type: 'user_message', text });
@@ -59,16 +60,15 @@ const answered = (handle: string, text: string, answer: AskCommand): ExampleStep
   result: { question: text, answer },
 });
 
-/** A segment's screen, spoken: a lead-in, the screen, then its highlights while the listener looks at it. */
+/**
+ * A segment's screen, spoken: a lead-in, the screen, then its highlights while the listener looks
+ * at it, one short speak per point.
+ */
 const walkThrough = (
   lead: string,
   screen: ExampleStep,
-  highlights?: string,
-): ReadonlyArray<ExampleStep> => [
-  say(lead),
-  screen,
-  ...(highlights === undefined ? [] : [say(highlights)]),
-];
+  highlights: ReadonlyArray<string> = [],
+): ReadonlyArray<ExampleStep> => [say(lead), screen, ...highlights.map(say)];
 
 /** A long forward result walked through one segment at a time, its questions asked along the way, then forwarded. */
 const nightlyJobs: Example = [
@@ -86,7 +86,10 @@ const nightlyJobs: Example = [
       'So far',
       '**6 jobs** a night · **95 min** in total\n\nLongest: search reindex, **50 min**',
     ),
-    'Six jobs run every night, ninety-five minutes in all, and the search reindex is the longest, at fifty.',
+    [
+      'Six jobs run every night, ninety-five minutes in all.',
+      'The longest is the search reindex, at fifty.',
+    ],
   ),
   choice('call_3', 'Does anyone outside our team rely on the report emails?', ['Yes', 'No']),
   answered('call_3', 'Does anyone outside our team rely on the report emails?', {
@@ -100,7 +103,12 @@ const nightlyJobs: Example = [
       'Three can go',
       "- **Thumbnail rebuild** → redundant: thumbnails are built on upload now\n- **Session sweep** → useless: sessions expire on their own after a day\n- **Temp cleanup** → its folder was removed last month; it only logs an error nightly → I'd archive its script, not delete it\n\nDropping all three saves **~40 min a night**.",
     ),
-    "The thumbnail rebuild and the session sweep have nothing left to do, and the temp cleanup only logs an error, so I'd archive it. Together that's about forty minutes a night.",
+    [
+      'The thumbnail rebuild is redundant now that thumbnails are built on upload.',
+      "The session sweep isn't needed, since sessions expire on their own.",
+      "The temp cleanup only logs an error, so I'd archive its script.",
+      'Together, that saves about forty minutes a night.',
+    ],
   ),
   choice('call_5', 'Archive the temp cleanup script, or delete it for good?', [
     'Archive it',
@@ -117,7 +125,12 @@ const nightlyJobs: Example = [
       'Shrink one, keep two',
       '**Shrink**\n- **Report emails** → 3 a night where 1 would do; merging is simple\n- Catch: finance filters on the old subject lines → heads-up before we switch\n\n**Keep**\n- **Search reindex** → still the only full reindex\n- **Backup copy** → every restore depends on it',
     ),
-    'The report job can send one email instead of three, but finance needs a heads-up first. The search reindex and the backup copy both stay.',
+    [
+      'The report job sends three emails where one would do.',
+      'The catch: finance filters on the old subject lines, so they need a heads-up first.',
+      "The search reindex stays, since it's our only full reindex.",
+      'And the backup copy stays, because every restore depends on it.',
+    ],
   ),
   choice('call_7', 'Should I drop the three jobs now, or after the release?', [
     'Now',
@@ -152,7 +165,11 @@ const nightlyBackup: Example = [
       'Backup chain',
       'Reindex finishes → backup starts\n\nReindex: **no time limit**\n\nNot started by **6 am** → skipped until the next night',
     ),
-    "The backup starts only once the reindex finishes, and the reindex has no time limit. If the backup hasn't started by six, it waits for the next night.",
+    [
+      'The backup starts only once the reindex finishes.',
+      'And the reindex has no time limit.',
+      "If the backup hasn't started by six, it waits for the next night.",
+    ],
   ),
   question('call_3', "If the reindex hangs one night, what happens to that night's backup?"),
   answered('call_3', "If the reindex hangs one night, what happens to that night's backup?", {

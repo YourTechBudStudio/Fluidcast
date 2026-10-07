@@ -14,7 +14,7 @@ export type ShowBody =
   | { readonly state: 'failed'; readonly reason: string };
 
 /**
- * The body of a Show: rendered Markdown, a Mermaid diagram, the HTML frame (no sandbox, A2), the rendering skeleton,
+ * The body of a Show: rendered Markdown (with any diagrams in it), a Mermaid diagram, the HTML frame (no sandbox, A2), the rendering skeleton,
  * or the failure. `correction` says where its error stands on the way back to the model, when a replacement will come.
  */
 export function ShowBodyView({
@@ -44,16 +44,24 @@ function Rendered({
   readonly rendered: RenderedShow;
 }) {
   const mountId = mountIdOf(useId());
-  const diagram = useMemo(
-    () =>
-      rendered.kind === 'diagram' ? withMountId(rendered.svg, rendered.renderId, mountId) : '',
-    [rendered, mountId],
-  );
+  const markup = useMemo(() => {
+    switch (rendered.kind) {
+      case 'diagram':
+        return withMountId(rendered.svg, rendered.renderId, mountId);
+      case 'markup':
+        return rendered.renderIds.reduce(
+          (html, renderId, index) => withMountId(html, renderId, `${mountId}-${index}`),
+          rendered.html,
+        );
+      case 'frame':
+        return '';
+    }
+  }, [rendered, mountId]);
   switch (rendered.kind) {
     case 'markup':
-      return <div className="markdown-prose" dangerouslySetInnerHTML={{ __html: rendered.html }} />;
+      return <div className="markdown-prose" dangerouslySetInnerHTML={{ __html: markup }} />;
     case 'diagram':
-      return <div className="show-diagram" dangerouslySetInnerHTML={{ __html: diagram }} />;
+      return <div className="show-diagram" dangerouslySetInnerHTML={{ __html: markup }} />;
     case 'frame':
       return (
         <iframe

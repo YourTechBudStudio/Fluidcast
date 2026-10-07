@@ -6,7 +6,13 @@ import { palette } from '../../ui';
  */
 const RENDER_ID_PREFIX = 'fcshowmmd-';
 
-let renders = 0;
+/**
+ * The render id of a Show's diagram: its call handle, then its position among the Show's diagrams. Each Show renders
+ * once per page load, so the id is unique, and it names the Show it belongs to. The position has three digits, so no
+ * id is the start of another (`…-001` is not in `…-012`).
+ */
+export const renderIdOf = (handle: string, position: number): string =>
+  `${RENDER_ID_PREFIX}${handle.replace(/[^a-zA-Z0-9_-]/g, '')}-${String(position).padStart(3, '0')}`;
 
 /** Mermaid is large, so it loads on the first diagram and never before. */
 const load = () =>
@@ -57,11 +63,10 @@ export interface RenderedDiagram {
   readonly renderId: string;
 }
 
-/** Renders Mermaid source to SVG under a fresh render id. Rejects with Mermaid's own error when the source is invalid. */
-export async function renderMermaid(source: string): Promise<RenderedDiagram> {
+/** Renders Mermaid source to SVG under `renderId`. Rejects with Mermaid's own error when the source is invalid. */
+export async function renderMermaid(source: string, renderId: string): Promise<RenderedDiagram> {
   mermaid ??= load();
   const api = await mermaid;
-  const renderId = `${RENDER_ID_PREFIX}${++renders}`;
   try {
     const { svg } = await api.render(renderId, source);
     return { svg, renderId };

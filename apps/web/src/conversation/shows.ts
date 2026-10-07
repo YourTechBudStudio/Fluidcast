@@ -37,7 +37,7 @@ export const showRenderAtom = Atom.family((handle: string) =>
     if (!input) {
       return Effect.succeed({ state: 'failed', reason: 'This show is not in the conversation.' });
     }
-    return renderShow(input).pipe(
+    return renderShow(input, handle).pipe(
       Effect.match({
         onSuccess: (rendered): Settled => ({ state: 'rendered', rendered }),
         onFailure: ({ reason }): Settled => ({ state: 'failed', reason }),

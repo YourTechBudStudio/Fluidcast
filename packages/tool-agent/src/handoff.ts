@@ -86,7 +86,7 @@ const isOutcome = (action: Action | PendingResult): action is Outcome =>
 /**
  * Pure: the entries after the forward call `since` (or the whole conversation when `undefined`) up
  * to, not including, the forward call `handle`. Forward's own results are left out: the worker wrote
- * them.
+ * them. So is the voice's speech in reply to a progress update: it retells the worker's progress.
  */
 export const conversationSince = (
   state: SessionState,
@@ -123,6 +123,8 @@ export const conversationSince = (
 
   const entries: Array<ConversationEntry> = [];
   let paragraphSpeaker: string | undefined;
+  // Whether the actions are the reply to a progress update: until the next input, or through a retry.
+  let answeringProgress = false;
   const push = (entry: ConversationEntry) => {
     entries.push(entry);
     paragraphSpeaker = undefined;
@@ -130,7 +132,11 @@ export const conversationSince = (
 
   for (const action of window) {
     switch (action.type) {
+      case 'tool_progress':
+        answeringProgress = true;
+        break;
       case 'speak': {
+        if (answeringProgress) break;
         const last = entries.at(-1);
         if (last?.kind === 'voice' && paragraphSpeaker === action.speaker) {
           entries[entries.length - 1] = { ...last, text: `${last.text} ${action.text}` };
@@ -141,9 +147,11 @@ export const conversationSince = (
         break;
       }
       case 'user_message':
+        answeringProgress = false;
         push({ kind: 'user', text: action.text });
         break;
       case 'interrupted':
+        answeringProgress = false;
         push({ kind: 'interruption', during: action.during });
         break;
       case 'tool_call': {
@@ -176,6 +184,7 @@ export const conversationSince = (
       }
       case 'tool_result':
       case 'tool_errored': {
+        answeringProgress = false;
         const folded = action.handles.some(
           (call) =>
             invalid.has(call) ||
@@ -186,7 +195,7 @@ export const conversationSince = (
         if (!folded) push(toolOutcome(action));
         break;
       }
-      // Other calls, progress, context and failures are not conversation.
+      // Other calls, context and failures are not conversation.
       default:
         break;
     }

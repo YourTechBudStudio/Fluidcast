@@ -162,6 +162,32 @@ describe('conversationSince', () => {
     ]);
   });
 
+  it("leaves out the voice's replies to progress updates, through a retry, until the next input", () => {
+    const progress = (text: string) =>
+      ({ type: 'tool_progress', handles: ['call_1'], tool: 'forward_agent', text }) as const;
+    const state = stateOf(
+      actions(
+        forwardCall('call_1'),
+        speak('Let me check.'),
+        progress('Reading the docs.'),
+        speak("I'm reading the docs."),
+        progress('Tracing the session.'),
+        { type: 'generation_failed', error: { tag: 'Timeout', message: 'Timed out.' } },
+        speak("I'm tracing the session."),
+        result(['call_1'], 'forward_agent', { messages: ['Here is how it works.'] }),
+        speak("Here's how it works."),
+        progress('Still going.'),
+        speak('Still on it.'),
+        user('Wait, go back.'),
+        forwardCall('call_2'),
+      ),
+    );
+    assert.deepEqual(handoffFor(state, 'call_1').conversation, [
+      { kind: 'voice', speaker: undefined, text: "Let me check. Here's how it works." },
+      { kind: 'user', text: 'Wait, go back.' },
+    ]);
+  });
+
   it("excludes forward's own results and errors, and includes other tools' outcomes", () => {
     const state = stateOf(
       actions(
