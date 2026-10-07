@@ -236,6 +236,22 @@ preset: { voice: { name: alloy, instructions: calm } }
     assert.deepEqual((await loaded(validYaml, keys)).conversation.worker.claude, {});
   });
 
+  it('reads the Codex section beside Claude, with any non-empty effort', async () => {
+    const config = await loaded(
+      `${validYaml}workers: { claude: { effort: low }, codex: { model: gpt-x, effort: ultra } }\n`,
+      keys,
+    );
+    assert.deepEqual(config.conversation.worker.codex, { model: 'gpt-x', effort: 'ultra' });
+    assert.deepEqual(config.conversation.worker.claude, { effort: 'low' });
+    assert.deepEqual((await loaded(validYaml, keys)).conversation.worker.codex, {});
+  });
+
+  it('rejects an empty Codex effort or model', async () => {
+    for (const codex of ["{ effort: '' }", "{ model: '' }", '{ effort: 3 }']) {
+      assert.match(await failure(`${validYaml}workers: { codex: ${codex} }\n`, keys), /is invalid/);
+    }
+  });
+
   it('resolves workers.cwd relative to the config, and defaults to its directory', async () => {
     assert.equal((await loaded(validYaml, keys)).conversation.worker.cwd, directories.at(-1));
     const config = await loaded(`${validYaml}workers: { cwd: .. }\n`, keys);
@@ -272,6 +288,31 @@ preset: { voice: { name: alloy, instructions: calm } }
     assert.equal(fallback.conversation.worker.claudeConfigDir, '/home/me/.claude');
   });
 
+  it('runs the first executable claude on the real PATH, else the bare name', async () => {
+    const bin = mkdtempSync(join(tmpdir(), 'fluidcast-bin-'));
+    try {
+      const empty = join(bin, 'empty');
+      const notExecutable = join(bin, 'plain');
+      const installed = join(bin, 'installed');
+      const shadowed = join(bin, 'later');
+      for (const directory of [empty, notExecutable, installed, shadowed]) mkdirSync(directory);
+      mkdirSync(join(empty, 'claude'));
+      writeFileSync(join(notExecutable, 'claude'), '', { mode: 0o644 });
+      writeFileSync(join(installed, 'claude'), '', { mode: 0o755 });
+      writeFileSync(join(shadowed, 'claude'), '', { mode: 0o755 });
+      const found = await loaded(validYaml, {
+        ...keys,
+        PATH: [empty, notExecutable, installed, shadowed].join(':'),
+      });
+      assert.equal(found.conversation.worker.claudeExecutable, join(installed, 'claude'));
+      // Only the real environment counts: a .env PATH is never searched.
+      const missing = await loaded(validYaml, { ...keys, PATH: empty }, `PATH=${installed}\n`);
+      assert.equal(missing.conversation.worker.claudeExecutable, 'claude');
+    } finally {
+      rmSync(bin, { recursive: true });
+    }
+  });
+
   it("loads fluidcast.example.yaml's workers block once uncommented", async () => {
     const example = readFileSync(
       new URL('../../../fluidcast.example.yaml', import.meta.url),
@@ -285,6 +326,7 @@ preset: { voice: { name: alloy, instructions: calm } }
       .join('\n');
     const config = await loaded(`${validYaml}${uncommented}`, keys);
     assert.deepEqual(config.conversation.worker.claude, { model: 'opus', effort: 'high' });
+    assert.deepEqual(config.conversation.worker.codex, { model: 'gpt-6.1-sol', effort: 'high' });
     assert.equal(config.conversation.worker.cwd, directories.at(-1));
   });
 

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { maxContentLength } from '../content.ts';
 import type { TranscriptEntry } from '../schema.ts';
 import {
   assistant,
@@ -13,7 +14,7 @@ import {
   toolResults,
   toolUse,
 } from './frames.test.ts';
-import { frameEntries, historyEntries, maxContentLength } from './transcript.ts';
+import { frameEntries, historyEntries } from './transcript.ts';
 
 const call = (
   toolUseId: string,

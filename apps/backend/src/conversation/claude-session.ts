@@ -1,6 +1,6 @@
 /**
- * Reading a stored Claude Code session for Continue: the pasted ID, the session's last answer, and
- * the effort it last ran with.
+ * Reading a stored Claude Code session for Continue: the session's last answer, and the effort it
+ * last ran with.
  */
 import type { SessionMessage } from '@anthropic-ai/claude-agent-sdk';
 import { Effect, FileSystem, Path, Result, Schema } from 'effect';
@@ -10,14 +10,6 @@ import { ClaudeEffort } from './config.ts';
 type Block = Readonly<Record<string, unknown>>;
 
 const isRecord = (value: unknown): value is Block => typeof value === 'object' && value !== null;
-
-const isUuid = Schema.is(Schema.String.check(Schema.isUUID()));
-
-/** Trimmed; a UUID, or `undefined`. Runs before the ID reaches any reader or path. */
-export const parseSessionId = (text: string): string | undefined => {
-  const id = text.trim();
-  return isUuid(id) ? id : undefined;
-};
 
 /** `SessionMessage.message` is `unknown`: its `content`, if it has one. */
 const contentOf = (message: SessionMessage): unknown =>

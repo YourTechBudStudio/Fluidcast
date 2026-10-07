@@ -1,7 +1,7 @@
 /**
  * The reference app's two modes, hard-coded: it has no profiles. New brainstorm starts a fresh
- * worker on the brainstorming skill; Continue resumes a stored Claude Code session and walks the
- * listener through its last answer.
+ * worker on the brainstorming skill; Continue resumes a stored session of the chosen agent (Claude
+ * Code or Codex) and walks the listener through its last answer.
  */
 import type { Reminders } from '@yourtechbudstudio/fluidcast-core/generation';
 import type { Handoff, HandoffPrompt } from '@yourtechbudstudio/fluidcast-tool-agent';
@@ -12,8 +12,9 @@ export const brainstormOpening = "Let's brainstorm this in phases.";
 
 /**
  * New brainstorm's hook: the first hand-off starts the brainstorming skill with the opening line,
- * so Claude Code receives `/brainstorming Let's brainstorm this in phases.\n\n<hand-off>`. Later
- * hand-offs are unchanged.
+ * which each worker type writes in its own syntax: Claude Code receives `/brainstorming Let's
+ * brainstorm this in phases.\n\n<hand-off>`, Codex the same with `$brainstorming`. Later hand-offs
+ * are unchanged.
  */
 export const brainstormHook = (handoff: Handoff): HandoffPrompt =>
   handoff.isFirstMessage

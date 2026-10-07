@@ -26,7 +26,6 @@ const entry = (value: string): TranscriptEntry => ({
 });
 const snapshot = (...values: string[]): TranscriptMessage => ({
   _tag: 'TranscriptSnapshot',
-  sessionId: 's',
   entries: values.map(entry),
 });
 const appended = (...values: string[]): TranscriptMessage => ({

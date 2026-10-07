@@ -10,6 +10,7 @@ import { ToolFault } from '@yourtechbudstudio/fluidcast-harness';
 import type { WorkerEvent, WorkerMessage } from '../worker.ts';
 import { connectWith, queryOptions, runTracker, type QueryFunction } from './connect.ts';
 import { background, result, say, state } from './frames.test.ts';
+import { initialTurnState } from './turn.ts';
 
 const run = <A, E>(effect: Effect.Effect<A, E>) =>
   Effect.runPromise(effect.pipe(Effect.provide(TestClock.layer())) as Effect.Effect<A, E>);
@@ -37,7 +38,9 @@ describe('runTracker', () => {
     run(
       Effect.gen(function* () {
         const frames = yield* Queue.unbounded<SDKMessage, ToolFault>();
-        const worker = yield* consume(runTracker(Stream.fromQueue(frames)));
+        const worker = yield* consume(
+          runTracker(Stream.fromQueue(frames), initialTurnState(false)),
+        );
         for (const frame of [
           state('running'),
           background('task_1'),
@@ -62,7 +65,9 @@ describe('runTracker', () => {
     run(
       Effect.gen(function* () {
         const frames = yield* Queue.unbounded<SDKMessage, ToolFault>();
-        const worker = yield* consume(runTracker(Stream.fromQueue(frames)));
+        const worker = yield* consume(
+          runTracker(Stream.fromQueue(frames), initialTurnState(false)),
+        );
         for (const frame of [
           state('running'),
           background('task_1'),
@@ -95,7 +100,9 @@ describe('runTracker', () => {
     run(
       Effect.gen(function* () {
         const frames = yield* Queue.unbounded<SDKMessage, ToolFault>();
-        const worker = yield* consume(runTracker(Stream.fromQueue(frames)));
+        const worker = yield* consume(
+          runTracker(Stream.fromQueue(frames), initialTurnState(false)),
+        );
         yield* Queue.offer(
           frames,
           result({ subtype: 'error_during_execution', startupFailure: 'cwd_unavailable' }),
@@ -113,7 +120,9 @@ describe('runTracker', () => {
     run(
       Effect.gen(function* () {
         const frames = yield* Queue.unbounded<SDKMessage, ToolFault>();
-        const worker = yield* consume(runTracker(Stream.fromQueue(frames)));
+        const worker = yield* consume(
+          runTracker(Stream.fromQueue(frames), initialTurnState(false)),
+        );
         yield* Queue.offer(frames, say('Last words.'));
         yield* Queue.fail(frames, new ToolFault({ reason: 'ClaudeExited' }));
         assert.deepEqual(
@@ -149,13 +158,15 @@ const fakeQuery = (frames: ReadonlyArray<SDKMessage>, hold = false) => {
 };
 
 const environment = { PATH: '/bin', HOME: '/home/someone' };
-const worker = { sessionId: 'b0a1c2d3-0000-4000-8000-000000000001', resume: false, cwd: '/work' };
+const executable = '/usr/local/bin/claude';
+const sessionId = 'b0a1c2d3-0000-4000-8000-000000000001';
+const worker = { cwd: '/work', resume: undefined };
 
 describe('connectWith', () => {
   it('passes exactly the agreed query options', () => {
-    assert.deepEqual(queryOptions({ environment }, worker), {
+    assert.deepEqual(queryOptions({ executable, environment }, worker), {
       cwd: '/work',
-      sessionId: worker.sessionId,
+      pathToClaudeCodeExecutable: executable,
       permissionMode: 'auto',
       settingSources: ['user', 'project', 'local'],
       disallowedTools: ['AskUserQuestion'],
@@ -170,12 +181,13 @@ describe('connectWith', () => {
     });
     assert.deepEqual(
       queryOptions(
-        { environment, model: 'opus', effort: 'high', permissionMode: 'acceptEdits' },
-        { ...worker, resume: true },
+        { executable, environment, model: 'opus', effort: 'high', permissionMode: 'acceptEdits' },
+        { ...worker, resume: sessionId },
       ),
       {
         cwd: '/work',
-        resume: worker.sessionId,
+        pathToClaudeCodeExecutable: executable,
+        resume: sessionId,
         model: 'opus',
         effort: 'high',
         permissionMode: 'acceptEdits',
@@ -199,7 +211,7 @@ describe('connectWith', () => {
         const fake = fakeQuery([], true);
         const inbox = yield* Queue.unbounded<WorkerMessage>();
         const consumer = yield* consume(
-          connectWith(fake.query, { environment })(worker, Stream.fromQueue(inbox)),
+          connectWith(fake.query, { executable, environment })(worker, Stream.fromQueue(inbox)),
         );
         yield* Queue.offer(inbox, {
           id: 'b0a1c2d3-0000-4000-8000-00000000000a',
@@ -223,7 +235,7 @@ describe('connectWith', () => {
       Effect.gen(function* () {
         const fake = fakeQuery([say('Bye.', ['m1'])]);
         const consumer = yield* consume(
-          connectWith(fake.query, { environment })(worker, Stream.empty),
+          connectWith(fake.query, { executable, environment })(worker, Stream.empty),
         );
         assert.deepEqual(
           yield* Fiber.await(consumer.fiber),
@@ -239,7 +251,7 @@ describe('connectWith', () => {
       Effect.gen(function* () {
         const fake = fakeQuery([say('Working.')], true);
         const consumer = yield* consume(
-          connectWith(fake.query, { environment })(worker, Stream.never),
+          connectWith(fake.query, { executable, environment })(worker, Stream.never),
         );
         yield* flush;
         const exit = yield* Fiber.interrupt(consumer.fiber).pipe(
@@ -258,7 +270,9 @@ describe('connectWith', () => {
         const query: QueryFunction = () => {
           throw new Error('spawn failed');
         };
-        const consumer = yield* consume(connectWith(query, { environment })(worker, Stream.never));
+        const consumer = yield* consume(
+          connectWith(query, { executable, environment })(worker, Stream.never),
+        );
         assert.deepEqual(
           yield* Fiber.await(consumer.fiber),
           Exit.fail(new ToolFault({ reason: 'ClaudeStartup' })),

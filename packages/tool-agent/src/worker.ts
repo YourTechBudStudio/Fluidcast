@@ -19,7 +19,13 @@ export type WorkerEvent =
   /** Messages a turn has taken in. */
   | { readonly _tag: 'Consumed'; readonly ids: ReadonlyArray<string> }
   /** Idle, with no live background work, and a turn's result seen. */
-  | { readonly _tag: 'Settled' };
+  | { readonly _tag: 'Settled' }
+  /**
+   * The agent's ID for a new session, once, before or with the connection's first entry. The agent
+   * owns the ID: a new worker has none until this arrives. Optional on resume, where it must equal
+   * the resumed ID.
+   */
+  | { readonly _tag: 'SessionStarted'; readonly sessionId: string };
 
 /** One kind of worker, such as Claude Code. */
 export interface WorkerType {
@@ -30,7 +36,7 @@ export interface WorkerType {
    * Throws when the type cannot express the modifiers (a hook defect, which halts).
    */
   readonly composeMessage: (prompt: string, modifiers: ReadonlyArray<Modifier>) => string;
-  /** Preload: checks an existing session and reads its directory and history. Spawns nothing. */
+  /** Preload: checks an existing session and reads its directory and history. Starts no turn. */
   readonly attach: (
     sessionId: string,
   ) => Effect.Effect<
@@ -40,10 +46,11 @@ export interface WorkerType {
   /**
    * Runs one worker process for as long as the stream is consumed: it reads `input`, and its
    * finalizer closes the process. An end or failure of the process fails the stream with a
-   * `ToolFault`; interruption is teardown and records nothing.
+   * `ToolFault`; interruption is teardown and records nothing. `resume` is the session to continue,
+   * or `undefined` for a new session, whose ID the agent reports with `SessionStarted`.
    */
   readonly connect: (
-    worker: { readonly sessionId: string; readonly resume: boolean; readonly cwd: string },
+    worker: { readonly cwd: string; readonly resume: string | undefined },
     input: Stream.Stream<WorkerMessage>,
   ) => Stream.Stream<WorkerEvent, ToolFault>;
 }

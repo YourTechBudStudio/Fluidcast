@@ -21,6 +21,11 @@ import { connectWith } from './connect.ts';
 export interface ClaudeWorkerOptions {
   /** Where a new worker runs. A preloaded worker runs in its session's recorded directory. */
   readonly cwd: string;
+  /**
+   * The installed `claude` executable, as an absolute path (the SDK checks it exists). Required: the
+   * worker never runs the SDK's bundled Claude Code.
+   */
+  readonly executable: string;
   readonly model?: string;
   readonly effort?: EffortLevel;
   /** Default `'auto'`. */
@@ -56,6 +61,7 @@ export const claudeWorker = (options: ClaudeWorkerOptions): WorkerType => ({
     options.cwd,
   ),
   connect: connectWith(query, {
+    executable: options.executable,
     model: options.model,
     effort: options.effort,
     permissionMode: options.permissionMode,

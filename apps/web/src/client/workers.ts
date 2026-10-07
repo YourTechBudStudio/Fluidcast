@@ -26,7 +26,7 @@ const watch = <A>(path: string, schema: Schema.Decoder<A>) =>
     }),
   );
 
-/** The session's worker status: its summary now, then again whenever its status changes. */
+/** The session's worker status: its summary now, then again whenever its status or session ID changes. */
 export const watchWorker = (sessionId: string): Stream.Stream<WorkerSummary, TransportError> =>
   watch(sessionPaths(sessionId).worker, WorkerSummary);
 

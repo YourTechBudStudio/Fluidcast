@@ -1,27 +1,30 @@
 import { useAtom, useAtomValue } from '@effect/atom-react';
 import { Option } from 'effect';
 import { AsyncResult, Atom } from 'effect/unstable/reactivity';
-import { ArrowRight, History, Sparkles } from 'lucide-react';
+import { ArrowRight, Sparkles } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 
 import { startSessionAtom } from '../client';
-import { Swap, useReducedMotion } from '../ui';
+import { SegmentedControl, Swap, useReducedMotion } from '../ui';
 import { createAnalysis, Visual } from '../visuals';
+import { AGENT_NAME, AGENT_OPTIONS } from './agents';
 import { Brand } from './Brand';
 import { ErrorLine, Spinner } from './feedback';
 import { startFailureCopy } from './startFailure';
-import { visualAtom } from './state';
+import { agentAtom, visualAtom } from './state';
 
-/** Where to find a session ID. Claude Code's `/status` does not show it (checked against its command reference). */
+/** Where to find a session ID, for either agent. Claude Code's `/status` does not show it (checked against its command reference). */
 const ID_HINT = 'Copy it from a previous session’s Worker view.';
 
 /**
- * The mode screen, shown while no session is live. One gesture covers both modes: the button starts a new brainstorm
- * while the field is empty, and continues the pasted Claude Code session otherwise. The backend is the one check on
- * the ID; the page leaves this screen only when the status stream reports the new session.
+ * The mode screen, shown while no session is live. The pills pick the agent (remembered in this browser) for both
+ * modes, and are the only source of truth for which agent a pasted ID belongs to. One gesture covers both modes: the
+ * button starts a new brainstorm while the field is empty, and continues the pasted session otherwise. The backend is
+ * the one check on the ID; the page leaves this screen only when the status stream reports the new session.
  */
 export function ModeScreen() {
   const [result, start] = useAtom(startSessionAtom);
+  const [agent, setAgent] = useAtom(agentAtom);
   const visual = useAtomValue(visualAtom);
   const reducedMotion = useReducedMotion();
   // No player here: the visual has its own analysis with no source, so it never reacts to audio.
@@ -36,14 +39,18 @@ export function ModeScreen() {
   const sessionId = value.trim();
   const mode = sessionId === '' ? 'new' : 'continue';
   const error = busy ? Option.none() : AsyncResult.error(result);
-  const failure = Option.match(error, { onNone: () => null, onSome: startFailureCopy });
+  const failure = Option.match(error, {
+    onNone: () => null,
+    onSome: (e) => startFailureCopy(e, agent),
+  });
   const fieldError = Option.exists(error, (e) => e._tag === 'StartFailed');
+  const name = AGENT_NAME[agent];
   const readout =
     mode === 'new'
       ? focused
         ? ID_HINT
-        : 'Leave it empty to start a new brainstorm.'
-      : 'Continues this session. The voice walks you through its last answer first.';
+        : `Leave it empty to start a new brainstorm with ${name}.`
+      : `Continues this ${name} session. The voice walks you through its last answer first.`;
 
   const inputs = useMemo(
     () => ({
@@ -76,25 +83,33 @@ export function ModeScreen() {
             onSubmit={(event) => {
               event.preventDefault();
               if (busy) return;
-              start(mode === 'new' ? { mode: 'new' } : { mode: 'continue', sessionId });
+              start(
+                mode === 'new' ? { mode: 'new', agent } : { mode: 'continue', agent, sessionId },
+              );
             }}
           >
             <label htmlFor={inputId} className="sr-only">
-              Claude Code session ID to continue (optional)
+              {name} session ID to continue (optional)
             </label>
             <div
-              className={`flex min-h-16 items-center gap-2 rounded-xl bg-subtle/85 py-2 pr-2 pl-5 backdrop-blur-md transition-shadow duration-(--duration-surface) ease-expo max-sm:pl-4 ${
+              className={`flex min-h-16 items-center gap-2 rounded-xl bg-subtle/85 py-2 pr-2 pl-2 backdrop-blur-md transition-shadow duration-(--duration-surface) ease-expo ${
                 failure
                   ? 'shadow-[inset_0_0_0_1px_rgb(237_135_150/0.55),var(--shadow-lift)]'
                   : 'shadow-[inset_0_0_0_1px_rgb(91_96_120/0.5),var(--shadow-lift)] focus-within:shadow-[inset_0_0_0_1px_rgb(138_173_244/0.7),0_0_0_5px_rgb(138_173_244/0.1),var(--shadow-lift)]'
               }`}
             >
-              <History
-                size={17}
-                strokeWidth={1.8}
-                aria-hidden
-                className="shrink-0 text-fg-subtle"
+              <SegmentedControl
+                label="Agent"
+                value={agent}
+                options={AGENT_OPTIONS}
+                readOnly={busy}
+                onChange={(next) => {
+                  setAgent(next);
+                  // A Continue failure is about the ID under the other agent, so switching clears it, as editing does.
+                  if (fieldError) start(Atom.Reset);
+                }}
               />
+              <i aria-hidden className="mx-1 h-6 w-px shrink-0 bg-line/50" />
               <input
                 id={inputId}
                 value={value}
@@ -111,7 +126,7 @@ export function ModeScreen() {
                 placeholder="Paste a session ID to continue, or just start"
                 aria-invalid={fieldError || undefined}
                 aria-describedby={readoutId}
-                className="min-w-0 flex-1 bg-transparent py-2 font-mono text-[14px] text-fg outline-none placeholder:font-sans placeholder:text-[15px] placeholder:text-fg-subtle"
+                className="min-w-0 flex-1 bg-transparent py-2 font-mono text-[14px] text-ellipsis text-fg outline-none placeholder:font-sans placeholder:text-[15px] placeholder:text-fg-subtle"
               />
               <button
                 type="submit"

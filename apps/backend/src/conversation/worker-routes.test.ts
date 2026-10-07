@@ -24,7 +24,6 @@ const working: WorkerSummary = { ...idle, status: 'working' };
 
 const snapshot: TranscriptMessage = {
   _tag: 'TranscriptSnapshot',
-  sessionId: 'session-1',
   entries: [{ _tag: 'prompt', parentToolUseId: null, source: 'fluidcast', text: 'Go.' }],
 };
 
@@ -41,7 +40,6 @@ const app = () =>
         fakeActiveLayer(
           fakeBuild({
             worker: {
-              sessionId: 'session-1',
               status: Stream.make(idle, working),
               transcript: Stream.make(snapshot, appended),
             },

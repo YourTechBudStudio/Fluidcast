@@ -62,7 +62,8 @@ preset:
     # Optional delivery guidance, for voices that support it.
     # instructions: Calm and unhurried.
 
-# The agent behind the forward_agent tool: Claude Code.
+# The agents behind the forward_agent tool: Claude Code or Codex, picked on the mode screen for each
+# session. Both run the CLI installed on this machine (`claude`, `codex app-server`).
 # workers:
 #   # Where a new brainstorm's worker runs, relative to this file. Default: this file's directory.
 #   # A continued session runs in its own recorded directory.
@@ -72,6 +73,12 @@ preset:
 #     model: opus
 #     # Effort for new sessions (low, medium, high, xhigh, max). A continued session uses the effort
 #     # it last ran with, and this when none is recorded.
+#     effort: high
+#   codex:
+#     # The model for new sessions. Absent: Codex's default. A continued session keeps its own.
+#     model: gpt-6.1-sol
+#     # Reasoning effort for new sessions; the levels depend on the model. A continued session uses
+#     # the effort it last ran with, and this when none is recorded.
 #     effort: high
 
 # Development aids, off by default.

@@ -88,9 +88,11 @@ export const ClaudeEffort = Schema.Literals(Object.values(effortLevels));
 export type ClaudeEffort = typeof ClaudeEffort.Type;
 
 /**
- * `workers`: the agent behind `forward_agent`. `cwd` (relative to the config file, default its
- * directory), `claude.model` and `claude.effort` apply to new sessions. A continued session keeps
- * its own model and directory, and its recorded effort, falling back to `claude.effort`.
+ * `workers`: the agents behind `forward_agent`; the mode screen picks one per session. `cwd`
+ * (relative to the config file, default its directory) is shared. Each agent's `model` and
+ * `effort` apply to its new sessions. A continued session keeps its own model and directory, and
+ * its recorded effort, falling back to the agent's `effort`. Codex effort levels vary by model, so
+ * any non-empty string is accepted.
  */
 export const WorkersSection = Schema.Struct({
   cwd: Schema.optionalKey(Schema.NonEmptyString),
@@ -98,6 +100,12 @@ export const WorkersSection = Schema.Struct({
     Schema.Struct({
       model: Schema.optionalKey(Schema.NonEmptyString),
       effort: Schema.optionalKey(ClaudeEffort),
+    }),
+  ),
+  codex: Schema.optionalKey(
+    Schema.Struct({
+      model: Schema.optionalKey(Schema.NonEmptyString),
+      effort: Schema.optionalKey(Schema.NonEmptyString),
     }),
   ),
 });

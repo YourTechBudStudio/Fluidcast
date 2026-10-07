@@ -28,16 +28,20 @@ export interface TurnState {
   readonly graces: number;
   /** A rejected rate-limit event in the current turn. */
   readonly rateLimit: RateLimit | undefined;
+  /** A new session whose ID is not reported yet: the first `init` frame reports it. */
+  readonly reportSession: boolean;
 }
 
-export const initialTurnState: TurnState = {
+/** The state of a connection; `newSession`: it reports the ID Claude Code chooses. */
+export const initialTurnState = (newSession: boolean): TurnState => ({
   session: 'idle',
   background: new Set(),
   resultSeen: false,
   grace: 0,
   graces: 0,
   rateLimit: undefined,
-};
+  reportSession: newSession,
+});
 
 export type TrackerInput =
   | { readonly _tag: 'Frame'; readonly frame: SDKMessage }
@@ -91,6 +95,13 @@ const onFrame = (state: TurnState, frame: SDKMessage): Step => {
           const next = { ...state, session: frame.state };
           return frame.state === 'idle' ? evaluate(next) : [next, []];
         }
+        case 'init':
+          return state.reportSession
+            ? [
+                { ...state, reportSession: false },
+                [{ _tag: 'SessionStarted', sessionId: frame.session_id }],
+              ]
+            : [state, []];
         case 'background_tasks_changed': {
           const background = new Set(
             frame.tasks.filter((task) => task.ambient !== true).map((task) => task.task_id),

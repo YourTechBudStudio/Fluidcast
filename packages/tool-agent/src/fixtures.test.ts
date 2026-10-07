@@ -74,7 +74,7 @@ export const errored = (handles: ReadonlyArray<string>, tool: string, message: s
 // pushes. Nothing is spawned.
 
 export interface FakeConnection {
-  readonly worker: { readonly sessionId: string; readonly resume: boolean; readonly cwd: string };
+  readonly worker: { readonly cwd: string; readonly resume: string | undefined };
   /** Messages the worker has read, in order. */
   readonly received: Effect.Effect<ReadonlyArray<WorkerMessage>>;
   readonly emit: (...events: ReadonlyArray<WorkerEvent>) => Effect.Effect<void>;

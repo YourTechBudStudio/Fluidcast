@@ -27,14 +27,14 @@ import { type AudioFormat, SpeechSynthesizer } from '@yourtechbudstudio/fluidcas
 import {
   type BuiltSession,
   buildSession,
-  claudeSources,
   type ConversationConfig,
+  referenceSources,
   type SessionSources,
 } from './session.ts';
 
 /** The live session, as routes see it. */
 export interface LiveSession extends BuiltSession {
-  /** The backend's own ID for this session (a UUIDv7 per start), not Claude's. */
+  /** The backend's own ID for this session (a UUIDv7 per start), not the agent's. */
   readonly id: string;
   /** Ends `stream` (normally) when this session is discarded. For SSE streams only, not speech. */
   readonly bound: <A, E, R>(stream: Stream.Stream<A, E, R>) => Stream.Stream<A, E, R>;
@@ -51,9 +51,9 @@ export class ActiveSession extends Context.Service<
     /** Builds and publishes a session. Refuses while one is live. Uninterruptible. */
     readonly start: (request: StartRequest) => Effect.Effect<void, StartFailed | SessionActive>;
     /**
-     * Ends its SSE streams, tears it down (the Harness, then the worker's query close) and publishes
-     * `NoSession`. Uninterruptible. The worker process's exit is not awaited: closing the query
-     * starts the SDK's own shutdown.
+     * Ends its SSE streams, tears it down (the Harness, then the worker's close) and publishes
+     * `NoSession`. Uninterruptible. The worker process's exit is not awaited: closing the worker
+     * starts its own shutdown.
      */
     readonly reset: (id: string) => Effect.Effect<void, NoSession>;
   }
@@ -92,7 +92,7 @@ export const makeActiveSession = (
     const discard = ({ live, scope, ended }: Entry) =>
       Effect.gen(function* () {
         yield* Deferred.succeed(ended, undefined);
-        // The Harness's finalizers, then the Forward Agent tool's, which close the Claude query.
+        // The Harness's finalizers, then the Forward Agent tool's, which close the worker.
         yield* Scope.close(scope, Exit.void);
         yield* SubscriptionRef.set(entry, Option.none());
         yield* Effect.logInfo('session: reset').pipe(Effect.annotateLogs({ sessionId: live.id }));
@@ -126,16 +126,20 @@ export const makeActiveSession = (
           };
           yield* SubscriptionRef.set(entry, Option.some({ live, scope, ended }));
           yield* Effect.logInfo('session: started').pipe(
-            Effect.annotateLogs({ mode: request.mode, sessionId: id }),
+            Effect.annotateLogs({ mode: request.mode, agent: request.agent, sessionId: id }),
           );
         }).pipe(
           Effect.tapError((error) =>
             error._tag === 'SessionActive'
               ? Effect.logInfo('session: start refused').pipe(
-                  Effect.annotateLogs({ mode: request.mode }),
+                  Effect.annotateLogs({ mode: request.mode, agent: request.agent }),
                 )
               : Effect.logInfo('session: start failed').pipe(
-                  Effect.annotateLogs({ mode: request.mode, reason: error.reason }),
+                  Effect.annotateLogs({
+                    mode: request.mode,
+                    agent: request.agent,
+                    reason: error.reason,
+                  }),
                 ),
           ),
         ),
@@ -175,7 +179,7 @@ export const makeActiveSession = (
 export const activeSessionLayer = (
   config: ConversationConfig,
   speechFormat: AudioFormat,
-  sources: SessionSources = claudeSources,
+  sources: SessionSources = referenceSources,
 ): Layer.Layer<
   ActiveSession,
   never,

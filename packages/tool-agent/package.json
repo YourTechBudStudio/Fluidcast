@@ -19,6 +19,10 @@
     "./claude": {
       "types": "./dist/claude/index.d.ts",
       "default": "./dist/claude/index.js"
+    },
+    "./codex": {
+      "types": "./dist/codex/index.d.ts",
+      "default": "./dist/codex/index.js"
     }
   },
   "scripts": {

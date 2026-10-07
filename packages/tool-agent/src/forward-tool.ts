@@ -22,7 +22,7 @@ export interface ForwardAgentToolOptions {
   /**
    * An existing session to resume as the worker, such as a fork of a recorded Claude Code session:
    * its history opens the transcript, and its first forward resumes it in its recorded directory.
-   * Nothing is spawned until then. Absent: a new session.
+   * No worker connects until then. Absent: a new session.
    */
   readonly session?: { readonly sessionId: string };
   /**
@@ -40,9 +40,7 @@ export interface ForwardAgentToolOptions {
 
 /** A read-only view of the worker for applications (the reference apps' Worker view). */
 export interface WorkerHandle {
-  /** The worker's session ID: the preloaded one, or a new UUID. */
-  readonly sessionId: string;
-  /** The worker's summary now, then again whenever its status changes. */
+  /** The worker's summary now, then again whenever its status or session ID changes. */
   readonly status: Stream.Stream<WorkerSummary>;
   /** The worker's transcript: a snapshot, then appended entries. */
   readonly transcript: Stream.Stream<TranscriptMessage>;
@@ -104,7 +102,6 @@ export const forwardAgentTool = (
     return {
       tool,
       worker: {
-        sessionId: session.sessionId,
         status: session.status,
         transcript: session.transcript,
       },

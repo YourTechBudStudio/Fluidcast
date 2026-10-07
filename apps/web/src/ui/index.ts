@@ -14,6 +14,11 @@ export {
   uiTransition,
 } from './motion';
 export { RadioMenu, type RadioMenuOption, type RadioMenuProps } from './RadioMenu';
+export {
+  SegmentedControl,
+  type SegmentedControlProps,
+  type SegmentedOption,
+} from './SegmentedControl';
 export { Swap } from './Swap';
 export { palette, rgb, type PaletteName, type Rgb } from './tokens';
 export { typingTarget } from './typingTarget';

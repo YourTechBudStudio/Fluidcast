@@ -35,6 +35,7 @@ import {
   WorkerSetupError,
   type TranscriptEntry,
   type TranscriptMessage,
+  type WorkerSummary,
 } from './index.ts';
 
 const text = (value: string, parentToolUseId: string | null = null): TranscriptEntry => ({
@@ -133,11 +134,7 @@ describe('worker session', () => {
         const ctx = yield* setup();
         assert.equal(yield* ctx.context, undefined, 'an idle worker adds no context');
         const [idle] = yield* Stream.runHead(ctx.worker.status).pipe(Effect.map(Option.toArray));
-        assert.deepEqual(idle, {
-          _tag: 'WorkerSummary',
-          status: 'idle',
-          sessionId: ctx.worker.sessionId,
-        });
+        assert.deepEqual(idle, { _tag: 'WorkerSummary', status: 'idle', sessionId: null });
         assert.equal(
           (yield* ctx.fake.connections).length,
           0,
@@ -149,11 +146,7 @@ describe('worker session', () => {
         assert.equal(yield* ctx.context, working);
 
         const open = yield* ctx.connection();
-        assert.deepEqual(open.worker, {
-          sessionId: ctx.worker.sessionId,
-          resume: false,
-          cwd: '/work',
-        });
+        assert.deepEqual(open.worker, { cwd: '/work', resume: undefined });
         const [message] = yield* eventually(open.received, (all) => all.length === 1);
         assert.ok(
           message!.text.startsWith('The user is talking with you through a voice conversation.'),
@@ -499,12 +492,68 @@ describe('worker session', () => {
             .map((item) => (item._tag === 'text' ? item.text : item._tag));
         const messages = yield* eventually(Ref.get(received), (all) => texts(all).length === 4);
         assert.equal(messages[0]?._tag, 'TranscriptSnapshot');
-        assert.equal(
-          messages[0]._tag === 'TranscriptSnapshot' && messages[0].sessionId,
-          open.worker.sessionId,
-        );
         assert.ok(messages.slice(1).every((message) => message._tag === 'TranscriptAppended'));
         assert.deepEqual(texts(messages), ['prompt', 'One.', 'Two.', 'Three.']);
+      }),
+    ));
+
+  it('has no session ID until the agent reports it, which changes neither status nor transcript', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* setup();
+        const summaries = yield* Ref.make<ReadonlyArray<WorkerSummary>>([]);
+        yield* Effect.forkChild(
+          Stream.runForEach(ctx.worker.status, (summary) =>
+            Ref.update(summaries, (all) => [...all, summary]),
+          ),
+        );
+        yield* eventually(Ref.get(summaries), (all) => all.length === 1);
+        const sent = yield* ctx.send('call_1');
+        const open = yield* ctx.connection();
+        const [id] = yield* ctx.ids(open, 1);
+        yield* eventually(Ref.get(summaries), (all) => all.length === 2);
+        const before = (yield* ctx.snapshot).entries;
+
+        yield* open.emit({ _tag: 'SessionStarted', sessionId: 'agent-session' });
+        const seen = yield* eventually(Ref.get(summaries), (all) => all.length === 3);
+        assert.deepEqual(seen, [
+          { _tag: 'WorkerSummary', status: 'idle', sessionId: null },
+          { _tag: 'WorkerSummary', status: 'working', sessionId: null },
+          { _tag: 'WorkerSummary', status: 'working', sessionId: 'agent-session' },
+        ]);
+        assert.deepEqual((yield* ctx.snapshot).entries, before, 'no transcript entry');
+
+        yield* open.emit(consumed(id!), entry(text('Done.')), entry(turnEnd()), settled);
+        assert.deepEqual(yield* Fiber.join(sent.fiber), { messages: ['Done.'] });
+        const [idle] = yield* Stream.runHead(ctx.worker.status).pipe(Effect.map(Option.toArray));
+        assert.deepEqual(idle, {
+          _tag: 'WorkerSummary',
+          status: 'idle',
+          sessionId: 'agent-session',
+        });
+      }),
+    ));
+
+  it('reports a session ID with no period open without making the worker busy', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* setup();
+        const sent = yield* ctx.send('call_1');
+        const open = yield* ctx.connection();
+        const [id] = yield* ctx.ids(open, 1);
+        yield* open.emit(consumed(id!), entry(turnEnd()), settled);
+        yield* Fiber.join(sent.fiber);
+        yield* open.emit({ _tag: 'SessionStarted', sessionId: 'agent-session' });
+        const summary = yield* eventually(
+          Stream.runHead(ctx.worker.status).pipe(Effect.map(Option.getOrThrow)),
+          (current) => current.sessionId !== null,
+        );
+        assert.deepEqual(summary, {
+          _tag: 'WorkerSummary',
+          status: 'idle',
+          sessionId: 'agent-session',
+        });
+        assert.equal(yield* ctx.context, undefined);
       }),
     ));
 
@@ -556,17 +605,18 @@ describe('worker session preload', () => {
     run(
       Effect.gen(function* () {
         const ctx = yield* setup({ fake: { sessions }, session: { sessionId: 'session-1' } });
-        assert.equal(ctx.worker.sessionId, 'session-1');
-        assert.equal(yield* ctx.context, undefined);
-        assert.deepEqual(yield* ctx.snapshot, {
-          _tag: 'TranscriptSnapshot',
+        const [summary] = yield* Stream.runHead(ctx.worker.status).pipe(Effect.map(Option.toArray));
+        assert.deepEqual(summary, {
+          _tag: 'WorkerSummary',
+          status: 'idle',
           sessionId: 'session-1',
-          entries: history,
         });
+        assert.equal(yield* ctx.context, undefined);
+        assert.deepEqual(yield* ctx.snapshot, { _tag: 'TranscriptSnapshot', entries: history });
         assert.equal((yield* ctx.fake.connections).length, 0, 'nothing is spawned');
         yield* ctx.send('call_1');
         const open = yield* ctx.connection();
-        assert.deepEqual(open.worker, { sessionId: 'session-1', resume: true, cwd: '/elsewhere' });
+        assert.deepEqual(open.worker, { cwd: '/elsewhere', resume: 'session-1' });
         const [message] = yield* eventually(open.received, (all) => all.length === 1);
         assert.ok(
           message!.text.startsWith('The user is talking with you through a voice conversation.'),

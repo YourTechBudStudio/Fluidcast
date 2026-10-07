@@ -40,7 +40,15 @@ describe('GET /api/session', () => {
 describe('POST /api/session', () => {
   it('answers an invalid body with 400 InvalidRequest', async () => {
     await withApp(app(), async (send) => {
-      for (const json of [{ mode: 'resume' }, { mode: 'continue' }, 'new']) {
+      const invalid = [
+        { mode: 'resume', agent: 'claude' },
+        { mode: 'continue', agent: 'claude' },
+        // The agent is required: no default, no detection.
+        { mode: 'new' },
+        { mode: 'new', agent: 'gemini' },
+        'new',
+      ];
+      for (const json of invalid) {
         const response = await send(routes.session, { method: 'POST', json });
         assert.equal(response.status, startStatus.invalid);
         assert.deepEqual(await response.json(), { _tag: 'InvalidRequest' });
@@ -52,7 +60,10 @@ describe('POST /api/session', () => {
   it('answers 409 SessionActive while a session is live', async () => {
     await withApp(app(), async (send) => {
       const id = await startOver(send);
-      const response = await send(routes.session, { method: 'POST', json: { mode: 'new' } });
+      const response = await send(routes.session, {
+        method: 'POST',
+        json: { mode: 'new', agent: 'codex' },
+      });
       assert.equal(response.status, startStatus.active);
       assert.deepEqual(await response.json(), { _tag: 'SessionActive' });
       assert.deepEqual(await statusOver(send), { _tag: 'Active', id });
@@ -70,7 +81,7 @@ describe('POST /api/session', () => {
     await withApp(HttpRouter.toWebHandler(real, { disableLogger: true }), async (send) => {
       const response = await send(routes.session, {
         method: 'POST',
-        json: { mode: 'continue', sessionId: 'nope' },
+        json: { mode: 'continue', agent: 'codex', sessionId: 'nope' },
       });
       assert.equal(response.status, startStatus.failed);
       assert.deepEqual(await response.json(), {
