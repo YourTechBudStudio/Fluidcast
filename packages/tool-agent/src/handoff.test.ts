@@ -38,7 +38,7 @@ const rules = `Respond to the user's latest words. They are the user's own, and 
 - You are working unattended. The user hears and sees your response only through the voice, in pieces, so include everything needed in it.
 - The voice adds nothing of its own. When the user asks to slow down, repeat or re-explain something, do it in your response.
 - If anything said or shown to the user misrepresents your work, correct it in your response.
-- End your response with any questions for the user, as a numbered list under **Questions for you**. Do not use the AskUserQuestion tool.
+- Do not use the AskUserQuestion tool.
 - Run tasks and shell commands in the foreground, not in the background.`;
 
 const diagram =
