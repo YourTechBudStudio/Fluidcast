@@ -1,4 +1,4 @@
-import { AtomRegistry } from 'effect/unstable/reactivity';
+import { AtomRegistry } from 'effect/reactivity';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { agentAtom } from './state';

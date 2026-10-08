@@ -1,6 +1,6 @@
 import * as NodeHttpServerRequest from '@effect/platform-node/NodeHttpServerRequest';
 import { Cause, Effect, Exit, Pull, Schema, Stream } from 'effect';
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/unstable/http';
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/http';
 
 import { routes, SpeechFailure, speechStatus } from '@fluidcast/app-contract';
 import { audioMimeType, type AudioFormat } from '@yourtechbudstudio/fluidcast-core/speech';

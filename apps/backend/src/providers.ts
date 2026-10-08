@@ -1,6 +1,6 @@
 import * as OpenAiClient from '@effect/ai-openai/OpenAiClient';
 import { Schema, type Layer, type Redacted } from 'effect';
-import type { HttpClient } from 'effect/unstable/http';
+import type { HttpClient } from 'effect/http';
 
 /**
  * The provider types. `openai` is OpenAI's API (Responses for generation, `/audio/speech` for TTS);

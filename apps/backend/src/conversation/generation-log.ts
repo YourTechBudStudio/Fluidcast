@@ -1,5 +1,5 @@
 import { Effect, Exit, FileSystem, Layer, Option, Stream } from 'effect';
-import { AiError, LanguageModel } from 'effect/unstable/ai';
+import { AiError, LanguageModel } from 'effect/ai';
 
 import { parseActions } from '@yourtechbudstudio/fluidcast-core/generation';
 

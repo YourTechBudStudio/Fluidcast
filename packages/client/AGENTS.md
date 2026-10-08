@@ -8,7 +8,7 @@ The environment-neutral client: a projection of the Harness session, reconnectio
 - `session/`: protocol sync, connection state, playback instructions and reconnection.
 - `audio/`: prefetching, caching and the pluggable `AudioStore`.
 - `client.ts`: the `Client` service.
-- The root entry is pure: only `effect` stable modules, `fluidcast-core/actions` and `fluidcast-harness/protocol`, never either package's root (enforced by `scripts/check-pure-exports.mjs`).
+- The root entry is pure: only `effect` (not `effect/testing`), `fluidcast-core/actions` and `fluidcast-harness/protocol`, never either package's root (enforced by `scripts/check-pure-exports.mjs`).
 
 ## Rules
 

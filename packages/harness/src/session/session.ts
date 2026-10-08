@@ -16,7 +16,7 @@ import {
   Semaphore,
   Stream,
 } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
+import { LanguageModel } from 'effect/ai';
 
 import {
   makeActionId,

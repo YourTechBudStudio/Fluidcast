@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { Cause, Effect, Exit, Fiber, Layer, Queue, Ref, Schema, Scope, Stream } from 'effect';
+import { LanguageModel, type Prompt, type Response } from 'effect/ai';
 import { TestClock } from 'effect/testing';
-import { LanguageModel, type Prompt, type Response } from 'effect/unstable/ai';
 
 import {
   makeActionId,

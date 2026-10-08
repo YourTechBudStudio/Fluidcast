@@ -1,6 +1,6 @@
 import * as CompatLanguageModel from '@effect/ai-openai-compat/OpenAiLanguageModel';
 import { Effect, type JsonSchema, Stream } from 'effect';
-import type { LanguageModel } from 'effect/unstable/ai';
+import type { LanguageModel } from 'effect/ai';
 
 /**
  * Wraps an `openai-compatible` model so every streamed generation asks the server to constrain its

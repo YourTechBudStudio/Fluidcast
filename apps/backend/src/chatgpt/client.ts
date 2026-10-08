@@ -1,6 +1,6 @@
 import * as OpenAiClient from '@effect/ai-openai/OpenAiClient';
 import { Effect, type FileSystem, Layer, Redacted } from 'effect';
-import { HttpClient, HttpClientError, HttpClientRequest } from 'effect/unstable/http';
+import { HttpClient, HttpClientError, HttpClientRequest } from 'effect/http';
 
 import { ChatGptAuth } from './auth.ts';
 

@@ -3,7 +3,7 @@ import { delimiter, join } from 'node:path';
 import { parseEnv } from 'node:util';
 
 import { Effect, FileSystem, Path, Redacted, Schema } from 'effect';
-import { Yaml } from 'effect/unstable/encoding';
+import { Yaml } from 'effect/encoding';
 
 import { credentialsPath, readCredentials } from './chatgpt/index.ts';
 import {

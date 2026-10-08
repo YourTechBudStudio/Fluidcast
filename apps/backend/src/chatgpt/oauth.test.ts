@@ -2,13 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { Effect } from 'effect';
+import { type HttpBody, HttpClient, type HttpClientRequest, HttpClientResponse } from 'effect/http';
 import { TestClock } from 'effect/testing';
-import {
-  type HttpBody,
-  HttpClient,
-  type HttpClientRequest,
-  HttpClientResponse,
-} from 'effect/unstable/http';
 
 import * as OAuth from './oauth.ts';
 

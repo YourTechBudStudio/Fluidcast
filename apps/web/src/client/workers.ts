@@ -1,5 +1,5 @@
 import { Effect, type Schema, type Scope, Stream } from 'effect';
-import { FetchHttpClient, HttpClient, type HttpClientError } from 'effect/unstable/http';
+import { FetchHttpClient, HttpClient, type HttpClientError } from 'effect/http';
 
 import { sessionPaths } from '@fluidcast/app-contract';
 import type { TransportError } from '@yourtechbudstudio/fluidcast-client';

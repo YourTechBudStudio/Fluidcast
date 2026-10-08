@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import * as NodeServices from '@effect/platform-node/NodeServices';
 import { Deferred, Duration, Effect, Fiber, Layer, Option, Stream } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
+import { LanguageModel } from 'effect/ai';
 
 import { SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';
 

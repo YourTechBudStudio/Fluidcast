@@ -1,7 +1,7 @@
 import { useAtomSet } from '@effect/atom-react';
 import { Effect, Option, Stream } from 'effect';
-import { FetchHttpClient } from 'effect/unstable/http';
-import { AsyncResult, Atom } from 'effect/unstable/reactivity';
+import { FetchHttpClient } from 'effect/http';
+import { AsyncResult, Atom } from 'effect/reactivity';
 import { useMemo } from 'react';
 
 import { Client, type TransportError } from '@yourtechbudstudio/fluidcast-client';

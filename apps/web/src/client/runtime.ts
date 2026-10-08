@@ -1,5 +1,5 @@
 import { Layer } from 'effect';
-import { Atom } from 'effect/unstable/reactivity';
+import { Atom } from 'effect/reactivity';
 
 import * as FluidcastClient from '@yourtechbudstudio/fluidcast-client';
 

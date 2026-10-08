@@ -2,8 +2,8 @@ import * as CompatClient from '@effect/ai-openai-compat/OpenAiClient';
 import * as CompatLanguageModel from '@effect/ai-openai-compat/OpenAiLanguageModel';
 import * as OpenAiLanguageModel from '@effect/ai-openai/OpenAiLanguageModel';
 import { type FileSystem, Layer } from 'effect';
-import type { LanguageModel } from 'effect/unstable/ai';
-import type { HttpClient } from 'effect/unstable/http';
+import type { LanguageModel } from 'effect/ai';
+import type { HttpClient } from 'effect/http';
 
 import { chatGptClientLayer } from '../chatgpt/index.ts';
 import { type Connection, openAiClientLayer } from '../providers.ts';

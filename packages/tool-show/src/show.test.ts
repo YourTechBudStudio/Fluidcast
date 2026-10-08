@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { Effect, Exit, Layer, Ref, Stream } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
+import { LanguageModel } from 'effect/ai';
 
 import { checkTools, generate } from '@yourtechbudstudio/fluidcast-core/generation';
 import { ToolError } from '@yourtechbudstudio/fluidcast-harness';

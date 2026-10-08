@@ -8,7 +8,7 @@ import {
   type HttpClientRequest,
   HttpClientRequest as Request,
   HttpClientResponse,
-} from 'effect/unstable/http';
+} from 'effect/http';
 
 import { type Connection, openAiClientLayer } from './providers.ts';
 

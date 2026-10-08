@@ -1,7 +1,7 @@
 /** Test-only builders and fakes (named `.test.ts` so builds leave it out; it has no tests). */
 import type { SessionMessage } from '@anthropic-ai/claude-agent-sdk';
 import { Context, Effect, Layer, Schema, type Scope, Stream } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
+import { LanguageModel } from 'effect/ai';
 
 import { routes, SessionStatusJson, StartFailed, type StartRequest } from '@fluidcast/app-contract';
 import { SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';

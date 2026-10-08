@@ -4,7 +4,7 @@ Stateless action generation and speech synthesis. Core never stores action IDs o
 
 ## Structure
 
-- `src/actions/`: the action vocabulary. Exported alone as `./actions`, a pure entry: only `effect` stable modules, files inside `src/actions/`, and other pure entries (enforced by `scripts/check-pure-exports.mjs`).
+- `src/actions/`: the action vocabulary. Exported alone as `./actions`, a pure entry: only `effect` (not `effect/testing`), files inside `src/actions/`, and other pure entries (enforced by `scripts/check-pure-exports.mjs`).
 - `src/generation/`: prompt rendering, the model call and the streaming JSON parser.
 - `src/speech/`: the `SpeechSynthesizer` service and the OpenAI-compatible layer.
 

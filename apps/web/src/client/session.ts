@@ -1,6 +1,6 @@
 import { Effect, Option, Schedule, Stream } from 'effect';
-import { FetchHttpClient, HttpClient, HttpClientRequest } from 'effect/unstable/http';
-import { AsyncResult, Atom } from 'effect/unstable/reactivity';
+import { FetchHttpClient, HttpClient, HttpClientRequest } from 'effect/http';
+import { AsyncResult, Atom } from 'effect/reactivity';
 
 import {
   resetStatus,

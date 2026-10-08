@@ -1,5 +1,5 @@
 import { Effect, FiberMap, Stream } from 'effect';
-import { AsyncResult, Atom, AtomRegistry } from 'effect/unstable/reactivity';
+import { AsyncResult, Atom, AtomRegistry } from 'effect/reactivity';
 
 import { Client } from '@yourtechbudstudio/fluidcast-client';
 import type { Execution, ExecutionId } from '@yourtechbudstudio/fluidcast-harness/protocol';

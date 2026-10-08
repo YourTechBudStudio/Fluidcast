@@ -1,5 +1,5 @@
 import { Duration, Effect, Option, Stream } from 'effect';
-import { AsyncResult, Atom } from 'effect/unstable/reactivity';
+import { AsyncResult, Atom } from 'effect/reactivity';
 
 import type { TransportError } from '@yourtechbudstudio/fluidcast-client';
 import type {

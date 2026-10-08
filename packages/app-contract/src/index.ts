@@ -1,6 +1,6 @@
 /**
  * The reference apps' HTTP contract: route paths, their bodies and error payloads, and the SSE
- * framing. A pure export: it imports only `effect` stable modules and the SDKs' pure contracts, so
+ * framing. A pure export: it imports only `effect` and the SDKs' pure contracts, so
  * the backend and any client transport can share it. It is not an SDK surface.
  *
  * Every failure body is a tagged error that an SDK already defines, except `InvalidRequest` and the

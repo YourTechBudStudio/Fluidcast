@@ -1,5 +1,5 @@
 import { absurd } from 'effect/Function';
-import { AsyncResult } from 'effect/unstable/reactivity';
+import { AsyncResult } from 'effect/reactivity';
 
 import type { TransportError } from '@yourtechbudstudio/fluidcast-client';
 import type { Execution, ExecutionId } from '@yourtechbudstudio/fluidcast-harness/protocol';

@@ -18,7 +18,7 @@ import {
   type Schedule,
   type Scope,
 } from 'effect';
-import type { LanguageModel } from 'effect/unstable/ai';
+import type { LanguageModel } from 'effect/ai';
 
 import { uuidv7 } from '@yourtechbudstudio/fluidcast-core/actions';
 import {

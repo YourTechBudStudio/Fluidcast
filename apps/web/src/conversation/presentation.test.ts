@@ -1,4 +1,4 @@
-import { AsyncResult } from 'effect/unstable/reactivity';
+import { AsyncResult } from 'effect/reactivity';
 import { describe, expect, it } from 'vitest';
 
 import { TransportError } from '@yourtechbudstudio/fluidcast-client';

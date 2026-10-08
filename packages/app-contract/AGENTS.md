@@ -4,5 +4,5 @@ The reference apps' HTTP contract (routes, Schemas, SSE framing) between `apps/b
 
 ## Rules
 
-- Pure export: only `effect` stable modules and `fluidcast-harness/protocol` (enforced by `scripts/check-pure-exports.mjs`). That is why routes are plain constants and Schemas, not an `effect/unstable/httpapi` definition.
+- Pure export: only `effect` (not `effect/testing`) and `fluidcast-harness/protocol` (enforced by `scripts/check-pure-exports.mjs`).
 - Errors carry identifiers only, never conversation text or provider messages.

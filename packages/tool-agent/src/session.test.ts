@@ -12,7 +12,7 @@ import {
   Stream,
   type Scope as ScopeType,
 } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
+import { LanguageModel } from 'effect/ai';
 
 import { uuidv7, type Action } from '@yourtechbudstudio/fluidcast-core/actions';
 import { ToolError, ToolFault } from '@yourtechbudstudio/fluidcast-harness';

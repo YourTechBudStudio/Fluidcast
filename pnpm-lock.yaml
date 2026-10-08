@@ -171,11 +171,11 @@ catalogs:
       specifier: 0.127.0
       version: 0.127.0
     '@effect/ai-openai':
-      specifier: 4.0.0-rc.117
-      version: 4.0.0-rc.117
+      specifier: ^4.0.2
+      version: 4.0.2
     '@effect/platform-node':
-      specifier: 4.0.0-rc.117
-      version: 4.0.0-rc.117
+      specifier: ^4.0.2
+      version: 4.0.2
     '@modelcontextprotocol/sdk':
       specifier: 1.30.0
       version: 1.30.0
@@ -183,8 +183,8 @@ catalogs:
       specifier: 26.4.1
       version: 26.4.1
     effect:
-      specifier: 4.0.0-rc.117
-      version: 4.0.0-rc.117
+      specifier: ^4.0.2
+      version: 4.0.2
     markdown-it:
       specifier: 15.0.2
       version: 15.0.2
@@ -240,13 +240,13 @@ importers:
         version: 0.127.0(zod@4.6.5)
       '@effect/ai-openai':
         specifier: 'catalog:'
-        version: 4.0.0-rc.117(effect@4.0.0-rc.117)
+        version: 4.0.2(effect@4.0.2)
       '@effect/ai-openai-compat':
-        specifier: 4.0.0-rc.117
-        version: 4.0.0-rc.117(effect@4.0.0-rc.117)
+        specifier: ^4.0.2
+        version: 4.0.2(effect@4.0.2)
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1)
+        version: 4.0.2(effect@4.0.2)(redis@6.2.1)
       '@fluidcast/app-contract':
         specifier: workspace:*
         version: link:../../packages/app-contract
@@ -273,7 +273,7 @@ importers:
         version: link:../../packages/tool-show
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-rc.117
+        version: 4.0.2
       zod:
         specifier: 'catalog:'
         version: 4.6.5
@@ -300,8 +300,8 @@ importers:
         specifier: ^1.8.0
         version: 1.8.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@effect/atom-react':
-        specifier: 4.0.0-rc.117
-        version: 4.0.0-rc.117(effect@4.0.0-rc.117)(react@19.3.0)(scheduler@0.27.0)
+        specifier: ^4.0.2
+        version: 4.0.2(effect@4.0.2)(react@19.3.0)(scheduler@0.27.0)
       '@fluidcast/app-contract':
         specifier: workspace:*
         version: link:../../packages/app-contract
@@ -334,7 +334,7 @@ importers:
         version: link:../../packages/tool-show
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-rc.117
+        version: 4.0.2
       highlight.js:
         specifier: ^11.12.0
         version: 11.12.0
@@ -420,7 +420,7 @@ importers:
         version: link:../typescript-config
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-rc.117
+        version: 4.0.2
       oxfmt:
         specifier: 'catalog:'
         version: 0.66.0
@@ -448,7 +448,7 @@ importers:
         version: link:../typescript-config
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-rc.117
+        version: 4.0.2
       oxfmt:
         specifier: 'catalog:'
         version: 0.66.0
@@ -463,7 +463,7 @@ importers:
     devDependencies:
       '@effect/ai-openai':
         specifier: 'catalog:'
-        version: 4.0.0-rc.117(effect@4.0.0-rc.117)
+        version: 4.0.2(effect@4.0.2)
       '@types/node':
         specifier: 'catalog:'
         version: 26.4.1
@@ -472,7 +472,7 @@ importers:
         version: link:../typescript-config
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-rc.117
+        version: 4.0.2
       oxfmt:
         specifier: 'catalog:'
         version: 0.66.0
@@ -497,7 +497,7 @@ importers:
         version: link:../typescript-config
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-rc.117
+        version: 4.0.2
       oxfmt:
         specifier: 'catalog:'
         version: 0.66.0
@@ -533,7 +533,7 @@ importers:
         version: link:../typescript-config
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-rc.117
+        version: 4.0.2
       oxfmt:
         specifier: 'catalog:'
         version: 0.66.0
@@ -575,7 +575,7 @@ importers:
         version: link:../typescript-config
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-rc.117
+        version: 4.0.2
       oxfmt:
         specifier: 'catalog:'
         version: 0.66.0
@@ -605,7 +605,7 @@ importers:
         version: link:../typescript-config
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-rc.117
+        version: 4.0.2
       oxfmt:
         specifier: 'catalog:'
         version: 0.66.0
@@ -632,7 +632,7 @@ importers:
         version: link:../typescript-config
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-rc.117
+        version: 4.0.2
       oxfmt:
         specifier: 'catalog:'
         version: 0.66.0
@@ -767,34 +767,34 @@ packages:
   '@chevrotain/utils@11.1.2':
     resolution: {integrity: sha512-4mudFAQ6H+MqBTfqLmU7G1ZwRzCLfJEooL/fsF6rCX5eePMbGhoy5n4g+G4vlh2muDcsCTJtL+uKbOzWxs5LHA==}
 
-  '@effect/ai-openai-compat@4.0.0-rc.117':
-    resolution: {integrity: sha512-TJFO5CGOks+y9d6Fbj3/lfWO4FHWMIS0h+8MOMEcNyDau/BTZYIYP/Ab9OID0Rwsbvq3Wi7kxJKpA88QgaVqkw==}
+  '@effect/ai-openai-compat@4.0.2':
+    resolution: {integrity: sha512-M4mg50Pe9gxkJRabnSEyNT6vlT9gsmpyXxoZ8yX8dQ7d5Xs8dw3Im6Sf6Ab/r0IU/IkT8pZgCoLsnbeb8QChBA==}
     peerDependencies:
-      effect: ^4.0.0-rc.117
+      effect: ^4.0.2
 
-  '@effect/ai-openai@4.0.0-rc.117':
-    resolution: {integrity: sha512-EGQtI0Y8B/PgEQ3ObZ8RYfIwTL5f5gXegO386aoskR4S5XrDr42mJk+7gJ/86SQ1mc38eYD4zEHz8f4Q3RkUgg==}
+  '@effect/ai-openai@4.0.2':
+    resolution: {integrity: sha512-xNaXIInCYaqzVmx5tt3gfnQ7KPlLs3BX02cWomfu/uLggaHoQNlrfbIxRyCtuzBW5teqFACAPTUAf2SUzlGq6g==}
     peerDependencies:
-      effect: ^4.0.0-rc.117
+      effect: ^4.0.2
 
-  '@effect/atom-react@4.0.0-rc.117':
-    resolution: {integrity: sha512-e6swZzC+2sPY9LfICB1YQBdn6DvnNmS1p4KwppzfHjT9lv+fyDVI9IxymUQ/Oduc58rOV/4jBhZv1tu7vgx47w==}
+  '@effect/atom-react@4.0.2':
+    resolution: {integrity: sha512-rg9xnPHzjURhKhOm+bKnYitPPQC02m6R7ZmJLNdxtrNCgDQ9fSOPqZHN5W/GzUw+OsvplKSvaBe/JSQejeYKYA==}
     peerDependencies:
-      effect: ^4.0.0-rc.117
+      effect: ^4.0.2
       react: '>=19.0.0 <20.0.0'
       scheduler: '>=0.25.0 <0.28.0'
 
-  '@effect/platform-node-shared@4.0.0-rc.117':
-    resolution: {integrity: sha512-GyRkEfLBG49MwJe+/XDPiXYcQ44RA9p2z0AurlsWhR1cd1PqOUMEZU1pORL+/R5hR8aH6ZuqoJYD8lAc6h+wlA==}
+  '@effect/platform-node-shared@4.0.2':
+    resolution: {integrity: sha512-xn8aDw9p/QUPt1Yi0C3HUMcycT+MjHfAe19FDUDrUuzcwq0xxskkamVSqbdykF/Dsuus4aZTsCBZA/vkhHIfbQ==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: ^4.0.0-rc.117
+      effect: ^4.0.2
 
-  '@effect/platform-node@4.0.0-rc.117':
-    resolution: {integrity: sha512-WbPcvQDkqXFnCeG6LohJ9eVNapCDhZbCpezhYKxm0IsZEk7swakRh7RkC1t2CXzd3hGmszTv2k9e/pXyZuL+wQ==}
+  '@effect/platform-node@4.0.2':
+    resolution: {integrity: sha512-RWesXBQStnFHdD465gR5thFKgXO7FSyCKRZ56nWXB7PedNVzr8vV0nb/3MULLdri493sMz/b/pmGBTb6K8cBjQ==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: ^4.0.0-rc.117
+      effect: ^4.0.2
       redis: '>=5.0.0 <7.0.0'
 
   '@floating-ui/core@1.8.0':
@@ -1586,8 +1586,8 @@ packages:
   '@types/trusted-types@2.0.7':
     resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
 
-  '@types/ws@8.18.1':
-    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
+  '@types/ws@8.18.2':
+    resolution: {integrity: sha512-67MQl+fpWKVTT1NYdnmo3U4sc/xPo/zQBncVnI74qmQa0z/b+1g6iYqNmGCPbxO+zz2aklb08a0oHfegiVd0/w==}
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     resolution: {integrity: sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ==}
@@ -1748,11 +1748,6 @@ packages:
 
   ajv-formats@3.0.1:
     resolution: {integrity: sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==}
-    peerDependencies:
-      ajv: ^8.0.0
-    peerDependenciesMeta:
-      ajv:
-        optional: true
 
   ajv@8.20.0:
     resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
@@ -2028,8 +2023,8 @@ packages:
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
-  effect@4.0.0-rc.117:
-    resolution: {integrity: sha512-UUyi9QiOW4nySFIBM3KnYbNMd9EZliOdKfBcyLD0mPMPheO2fkuXS5y0opjWc9oqzlJxPQICEGm8gGw3kh9j/w==}
+  effect@4.0.2:
+    resolution: {integrity: sha512-YeYnLqSFrL4+tCOXRrfNP03w8FILoF/wDl+ukraJAGzXrjcS383W7LAAvGBbLatEyktmLxRq+9xJinx7QzXW5A==}
 
   elkjs@0.9.3:
     resolution: {integrity: sha512-f/ZeWvW/BCXbhGEf1Ujp29EASo/lk1FDnETgNKwJrsVvGZhUWCZyg3xLJjAsxfOmt8KjswHmI5EwCQcPMpOYhQ==}
@@ -2749,8 +2744,8 @@ packages:
   undici-types@8.3.0:
     resolution: {integrity: sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ==}
 
-  undici@8.11.0:
-    resolution: {integrity: sha512-AdzuGcAkzhbha3GgCSoUBx2P0quwym6qdFNCQz/fDGZc8w9XJ741wHUbt2kTmfPz+ZIOMkySFkiY7RXmiDDC8w==}
+  undici@8.11.2:
+    resolution: {integrity: sha512-u4UB2/IrKdU6lFxumHmmo1a3fCQO5tzQllRorfoRS63txhrB7xTpSn1PftwC4qEHkOaqP95fCWW4lJzwErwzhQ==}
     engines: {node: '>=22.19.0'}
 
   unpipe@1.0.0:
@@ -2867,8 +2862,8 @@ packages:
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
 
-  ws@8.21.3:
-    resolution: {integrity: sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==}
+  ws@8.22.0:
+    resolution: {integrity: sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -2984,35 +2979,35 @@ snapshots:
 
   '@chevrotain/utils@11.1.2': {}
 
-  '@effect/ai-openai-compat@4.0.0-rc.117(effect@4.0.0-rc.117)':
+  '@effect/ai-openai-compat@4.0.2(effect@4.0.2)':
     dependencies:
-      effect: 4.0.0-rc.117
+      effect: 4.0.2
 
-  '@effect/ai-openai@4.0.0-rc.117(effect@4.0.0-rc.117)':
+  '@effect/ai-openai@4.0.2(effect@4.0.2)':
     dependencies:
-      effect: 4.0.0-rc.117
+      effect: 4.0.2
 
-  '@effect/atom-react@4.0.0-rc.117(effect@4.0.0-rc.117)(react@19.3.0)(scheduler@0.27.0)':
+  '@effect/atom-react@4.0.2(effect@4.0.2)(react@19.3.0)(scheduler@0.27.0)':
     dependencies:
-      effect: 4.0.0-rc.117
+      effect: 4.0.2
       react: 19.3.0
       scheduler: 0.27.0
 
-  '@effect/platform-node-shared@4.0.0-rc.117(effect@4.0.0-rc.117)':
+  '@effect/platform-node-shared@4.0.2(effect@4.0.2)':
     dependencies:
-      '@types/ws': 8.18.1
-      effect: 4.0.0-rc.117
-      ws: 8.21.3
+      '@types/ws': 8.18.2
+      effect: 4.0.2
+      ws: 8.22.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1)':
+  '@effect/platform-node@4.0.2(effect@4.0.2)(redis@6.2.1)':
     dependencies:
-      '@effect/platform-node-shared': 4.0.0-rc.117(effect@4.0.0-rc.117)
-      effect: 4.0.0-rc.117
+      '@effect/platform-node-shared': 4.0.2(effect@4.0.2)
+      effect: 4.0.2
       redis: 6.2.1
-      undici: 8.11.0
+      undici: 8.11.2
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -3079,7 +3074,7 @@ snapshots:
     dependencies:
       '@hono/node-server': 2.1.1(hono@4.13.9)
       ajv: 8.20.0
-      ajv-formats: 3.0.1(ajv@8.20.0)
+      ajv-formats: 3.0.1
       content-type: 1.0.5
       cors: 2.8.6
       cross-spawn: 7.0.6
@@ -3552,7 +3547,7 @@ snapshots:
   '@types/trusted-types@2.0.7':
     optional: true
 
-  '@types/ws@8.18.1':
+  '@types/ws@8.18.2':
     dependencies:
       '@types/node': 26.4.1
 
@@ -3642,8 +3637,8 @@ snapshots:
       mime-types: 3.0.2
       negotiator: 1.1.0
 
-  ajv-formats@3.0.1(ajv@8.20.0):
-    optionalDependencies:
+  ajv-formats@3.0.1:
+    dependencies:
       ajv: 8.20.0
 
   ajv@8.20.0:
@@ -3943,7 +3938,7 @@ snapshots:
 
   ee-first@1.1.1: {}
 
-  effect@4.0.0-rc.117: {}
+  effect@4.0.2: {}
 
   elkjs@0.9.3: {}
 
@@ -4686,7 +4681,7 @@ snapshots:
 
   undici-types@8.3.0: {}
 
-  undici@8.11.0: {}
+  undici@8.11.2: {}
 
   unpipe@1.0.0: {}
 
@@ -4739,7 +4734,7 @@ snapshots:
 
   wrappy@1.0.2: {}
 
-  ws@8.21.3: {}
+  ws@8.22.0: {}
 
   zod-to-json-schema@3.25.2(zod@4.6.5):
     dependencies:

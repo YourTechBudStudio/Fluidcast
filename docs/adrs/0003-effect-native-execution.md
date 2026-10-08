@@ -19,7 +19,7 @@ Our applications also use Effect for reactive state: Effect's reactivity modules
 - Effect is an intentional foundational dependency; the dependency-light principle applies to everything else.
 - Integrators consume Effect-native contracts, which ties them to the Effect ecosystem at the SDK boundary.
 - In our applications, typed failures and interruption flow from SDK streams into UI state without translation through untyped caches or stores.
-- Effect v4 is pre-release and its reactivity modules are unstable: expect API churn and less mature tooling.
+- Effect v4 is not compatible with Effect v3: v3 APIs, examples and guidance do not apply.
 - Resource lifetime and cancellation ownership must be explicit; Effect provides mechanisms, not proof that Fluidcast's scheduling rules are correct.
 - Canceling local work does not guarantee that an external worker or provider stopped.
 

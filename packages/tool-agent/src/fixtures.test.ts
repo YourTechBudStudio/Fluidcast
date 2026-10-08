@@ -1,6 +1,6 @@
 /** Test-only builders and fakes (named `.test.ts` so builds leave it out; it has no tests). */
 import { Cause, Effect, Queue, Ref, Stream } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
+import { LanguageModel } from 'effect/ai';
 
 import { makeActionId, type Action } from '@yourtechbudstudio/fluidcast-core/actions';
 import type { ToolFault } from '@yourtechbudstudio/fluidcast-harness';

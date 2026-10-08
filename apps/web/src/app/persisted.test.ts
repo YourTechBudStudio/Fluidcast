@@ -1,4 +1,4 @@
-import { AtomRegistry } from 'effect/unstable/reactivity';
+import { AtomRegistry } from 'effect/reactivity';
 import { describe, expect, it } from 'vitest';
 
 import { persistedAtom } from './persisted';

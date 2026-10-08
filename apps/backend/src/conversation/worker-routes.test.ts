@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { Layer, Schema, Stream } from 'effect';
-import { HttpRouter } from 'effect/unstable/http';
+import { HttpRouter } from 'effect/http';
 
 import { noSessionStatus, sessionPaths, workerStatus } from '@fluidcast/app-contract';
 import {

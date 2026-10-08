@@ -1,5 +1,5 @@
 import { Effect, type Schedule, type Scope, type Stream } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
+import { LanguageModel } from 'effect/ai';
 
 import type { ToolDefinition } from '@yourtechbudstudio/fluidcast-core/generation';
 import type { Tool } from '@yourtechbudstudio/fluidcast-harness';

@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import * as NodeServices from '@effect/platform-node/NodeServices';
 import { Layer } from 'effect';
-import { HttpRouter } from 'effect/unstable/http';
+import { HttpRouter } from 'effect/http';
 
 import { resetStatus, routes, sessionPaths, startStatus } from '@fluidcast/app-contract';
 

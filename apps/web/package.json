@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
-    "@effect/atom-react": "4.0.0-rc.117",
+    "@effect/atom-react": "^4.0.2",
     "@fluidcast/app-contract": "workspace:*",
     "@fontsource-variable/fira-code": "^5.3.0",
     "@fontsource-variable/sora": "^5.3.0",

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { Cause, Effect, Exit, Layer, Stream } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
+import { LanguageModel } from 'effect/ai';
 
 import { InvalidAction, MalformedOutput } from './errors.ts';
 import { generate } from './generate.ts';

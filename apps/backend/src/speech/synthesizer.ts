@@ -1,5 +1,5 @@
 import { Layer } from 'effect';
-import type { HttpClient } from 'effect/unstable/http';
+import type { HttpClient } from 'effect/http';
 
 import type { AudioFormat, SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';
 import * as OpenAiSpeech from '@yourtechbudstudio/fluidcast-core/speech/openai';

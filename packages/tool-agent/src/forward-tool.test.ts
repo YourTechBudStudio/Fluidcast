@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { Context, Effect, Layer, Queue, Ref, Schema, type Scope, Stream } from 'effect';
-import { LanguageModel, type Prompt, type Response } from 'effect/unstable/ai';
+import { LanguageModel, type Prompt, type Response } from 'effect/ai';
 
 import { checkTools } from '@yourtechbudstudio/fluidcast-core/generation';
 import { SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';

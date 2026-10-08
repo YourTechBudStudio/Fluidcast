@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 
 import * as NodeHttpServer from '@effect/platform-node/NodeHttpServer';
 import { Layer } from 'effect';
-import { FetchHttpClient, HttpRouter } from 'effect/unstable/http';
+import { FetchHttpClient, HttpRouter } from 'effect/http';
 
 import type { Config } from './config.ts';
 import {

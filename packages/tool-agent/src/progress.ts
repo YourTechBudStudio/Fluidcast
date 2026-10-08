@@ -3,7 +3,7 @@
  * describing the worker's recent transcript and offers it to the Harness, which accepts (uses or keeps) or drops it.
  */
 import { Effect, Ref, Schedule, Stream } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
+import { LanguageModel } from 'effect/ai';
 
 import type { TranscriptEntry } from './schema.ts';
 

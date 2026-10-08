@@ -1,6 +1,6 @@
 import { getSessionMessages, type SessionMessage } from '@anthropic-ai/claude-agent-sdk';
 import { Context, Effect, type FileSystem, Layer, type Path, Schema, type Scope } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
+import { LanguageModel } from 'effect/ai';
 
 import { type Agent, StartFailed, type StartRequest } from '@fluidcast/app-contract';
 import { outputJsonSchema } from '@yourtechbudstudio/fluidcast-core/generation';

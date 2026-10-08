@@ -9,7 +9,7 @@ import {
   Schema,
   Semaphore,
 } from 'effect';
-import { HttpClient } from 'effect/unstable/http';
+import { HttpClient } from 'effect/http';
 
 import { readCredentials, writeCredentials, type ChatGptCredentials } from './credentials.ts';
 import * as OAuth from './oauth.ts';

@@ -1,11 +1,11 @@
 import { Effect, Option, Schema, type Scope, Stream } from 'effect';
-import { Sse } from 'effect/unstable/encoding';
+import { Sse } from 'effect/encoding';
 import {
   HttpClientError,
   HttpClientRequest,
   type HttpClient,
   type HttpClientResponse,
-} from 'effect/unstable/http';
+} from 'effect/http';
 
 import { TransportError } from '@yourtechbudstudio/fluidcast-client';
 

@@ -1,6 +1,6 @@
 import { useAtom, useAtomValue } from '@effect/atom-react';
 import { Option } from 'effect';
-import { AsyncResult, Atom } from 'effect/unstable/reactivity';
+import { AsyncResult, Atom } from 'effect/reactivity';
 import { ArrowRight, Sparkles } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 

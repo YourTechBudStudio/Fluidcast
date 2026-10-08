@@ -6,7 +6,7 @@ import { describe, it } from 'node:test';
 
 import * as NodeServices from '@effect/platform-node/NodeServices';
 import { Effect, Layer, Redacted, Stream } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
+import { LanguageModel } from 'effect/ai';
 
 import type { StartRequest } from '@fluidcast/app-contract';
 import { checkTools, outputJsonSchema } from '@yourtechbudstudio/fluidcast-core/generation';

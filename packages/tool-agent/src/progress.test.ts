@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { Clock, Effect, Fiber, Ref, type Schedule, Stream, SubscriptionRef } from 'effect';
+import { AiError, LanguageModel } from 'effect/ai';
 import { TestClock } from 'effect/testing';
-import { AiError, LanguageModel } from 'effect/unstable/ai';
 
 import {
   defaultProgressPrompt,

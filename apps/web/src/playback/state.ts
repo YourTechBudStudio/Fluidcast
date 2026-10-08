@@ -1,6 +1,6 @@
 import { useAtomSet, useAtomValue } from '@effect/atom-react';
 import { Effect, Option, Stream, SubscriptionRef } from 'effect';
-import { AsyncResult, Atom } from 'effect/unstable/reactivity';
+import { AsyncResult, Atom } from 'effect/reactivity';
 import { useMemo } from 'react';
 
 import { clientRuntime } from '../client';

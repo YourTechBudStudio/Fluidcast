@@ -1,5 +1,5 @@
 import { Stream } from 'effect';
-import { AiError, LanguageModel } from 'effect/unstable/ai';
+import { AiError, LanguageModel } from 'effect/ai';
 
 import type { Action, Speak, SpeakerProfile } from '../actions/index.ts';
 import { ProviderError, type GenerationError } from './errors.ts';

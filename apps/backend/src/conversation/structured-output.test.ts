@@ -3,8 +3,8 @@ import { describe, it } from 'node:test';
 
 import * as NodeServices from '@effect/platform-node/NodeServices';
 import { Context, Effect, Layer, Redacted, Stream } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
-import { HttpClient, HttpClientResponse } from 'effect/unstable/http';
+import { LanguageModel } from 'effect/ai';
+import { HttpClient, HttpClientResponse } from 'effect/http';
 
 import { languageModelLayer } from './language-model.ts';
 import { withStructuredOutput } from './structured-output.ts';

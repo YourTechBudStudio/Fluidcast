@@ -1,5 +1,5 @@
 import { Effect, Layer, Option, Stream } from 'effect';
-import { FetchHttpClient, HttpClient, HttpClientRequest } from 'effect/unstable/http';
+import { FetchHttpClient, HttpClient, HttpClientRequest } from 'effect/http';
 
 import {
   CommandBody,

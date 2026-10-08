@@ -3,12 +3,7 @@ import { describe, it } from 'node:test';
 
 import * as OpenAiClient from '@effect/ai-openai/OpenAiClient';
 import { Effect, Layer, Redacted, Stream } from 'effect';
-import {
-  type HttpBody,
-  HttpClient,
-  type HttpClientRequest,
-  HttpClientResponse,
-} from 'effect/unstable/http';
+import { type HttpBody, HttpClient, type HttpClientRequest, HttpClientResponse } from 'effect/http';
 
 import * as OpenAiSpeech from './openai.ts';
 import { synthesize } from './synthesizer.ts';

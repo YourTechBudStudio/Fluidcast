@@ -10,7 +10,7 @@ import { homedir } from 'node:os';
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime';
 import * as NodeServices from '@effect/platform-node/NodeServices';
 import { Console, Data, Deferred, Duration, Effect, Layer } from 'effect';
-import { FetchHttpClient } from 'effect/unstable/http';
+import { FetchHttpClient } from 'effect/http';
 
 import { credentialsPath, readCredentials, writeCredentials } from './chatgpt/credentials.ts';
 import * as OAuth from './chatgpt/oauth.ts';

@@ -5,7 +5,7 @@ The single-session conversation authority: the action log, the cursor, playback 
 ## Structure
 
 - `src/session/` is one deep module; do not split it into slices that share its state.
-- `protocol.ts` is the session contract and the pure fold (`reduce`) every client uses. Exported alone as `./protocol`, a pure entry: only `effect` stable modules and `fluidcast-core/actions` (enforced by `scripts/check-pure-exports.mjs`).
+- `protocol.ts` is the session contract and the pure fold (`reduce`) every client uses. Exported alone as `./protocol`, a pure entry: only `effect` (not `effect/testing`) and `fluidcast-core/actions` (enforced by `scripts/check-pure-exports.mjs`).
 
 ## Rules
 

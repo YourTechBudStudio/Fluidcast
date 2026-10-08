@@ -12,7 +12,7 @@ import {
   Stream,
   SubscriptionRef,
 } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
+import { LanguageModel } from 'effect/ai';
 
 import {
   NoSession,

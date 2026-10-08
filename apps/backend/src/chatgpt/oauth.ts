@@ -6,7 +6,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 import { Clock, Effect, Option, Schema } from 'effect';
-import { HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/unstable/http';
+import { HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/http';
 
 const authorizeUrl = 'https://auth.openai.com/api/accounts/authorize';
 const tokenUrl = 'https://auth.openai.com/api/accounts/oauth/token';

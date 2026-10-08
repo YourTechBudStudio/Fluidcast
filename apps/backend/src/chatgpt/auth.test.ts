@@ -6,7 +6,7 @@ import { after, describe, it } from 'node:test';
 
 import * as NodeServices from '@effect/platform-node/NodeServices';
 import { Deferred, Effect, Fiber, FileSystem, Layer, Redacted } from 'effect';
-import { HttpClient, type HttpClientRequest, HttpClientResponse } from 'effect/unstable/http';
+import { HttpClient, type HttpClientRequest, HttpClientResponse } from 'effect/http';
 
 import { ChatGptAuth } from './auth.ts';
 import type { ChatGptCredentials } from './credentials.ts';

@@ -27,7 +27,7 @@
     "@anthropic-ai/claude-agent-sdk": "catalog:",
     "@anthropic-ai/sdk": "catalog:",
     "@effect/ai-openai": "catalog:",
-    "@effect/ai-openai-compat": "4.0.0-rc.117",
+    "@effect/ai-openai-compat": "^4.0.2",
     "@effect/platform-node": "catalog:",
     "@fluidcast/app-contract": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:",

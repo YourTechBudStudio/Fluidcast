@@ -1,7 +1,7 @@
 import * as Generated from '@effect/ai-openai/Generated';
 import * as OpenAiClient from '@effect/ai-openai/OpenAiClient';
 import { Effect, Layer, Stream } from 'effect';
-import type { HttpClientError } from 'effect/unstable/http';
+import type { HttpClientError } from 'effect/http';
 
 import { SpeechError, SpeechSynthesizer } from './synthesizer.ts';
 

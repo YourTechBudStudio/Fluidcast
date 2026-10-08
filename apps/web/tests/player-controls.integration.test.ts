@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Option, Schema, Stream, SubscriptionRef } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
+import { LanguageModel } from 'effect/ai';
 import { describe, expect, it } from 'vitest';
 
 import { Client, layer as clientLayer, Transport } from '@yourtechbudstudio/fluidcast-client';

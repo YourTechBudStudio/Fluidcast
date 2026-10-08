@@ -1,4 +1,4 @@
-import { Atom } from 'effect/unstable/reactivity';
+import { Atom } from 'effect/reactivity';
 
 // Per-viewer conveniences only. Storage can be missing or throw (private windows, blocked site data), so every access is guarded
 // and the player works the same without it.

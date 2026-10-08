@@ -6,7 +6,7 @@ import { after, describe, it } from 'node:test';
 
 import * as NodeServices from '@effect/platform-node/NodeServices';
 import { Effect, Fiber, Layer, Stream } from 'effect';
-import { AiError, LanguageModel, type Response } from 'effect/unstable/ai';
+import { AiError, LanguageModel, type Response } from 'effect/ai';
 
 import { generate } from '@yourtechbudstudio/fluidcast-core/generation';
 

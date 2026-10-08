@@ -3,7 +3,8 @@
 //
 // Allowed:
 // - relative imports that stay inside the entry's own module directory (followed transitively);
-// - `effect` and its stable top-level modules such as `effect/Schema` (nothing under `effect/unstable/`);
+// - `effect` and its modules such as `effect/Schema` or `effect/http`, which load in any environment,
+//   except `effect/testing`, which imports Node built-ins;
 // - other pure entries, by package specifier.
 // Everything else fails, including type-only imports.
 import { existsSync, readFileSync } from 'node:fs';
@@ -50,7 +51,9 @@ const moduleSpecifiers = (file, text) => {
 };
 
 const isAllowedPackage = (specifier) =>
-  specifier === 'effect' || /^effect\/[A-Za-z]+$/.test(specifier) || specifier in pureEntries;
+  specifier === 'effect' ||
+  (specifier.startsWith('effect/') && !/^effect\/testing(\/|$)/.test(specifier)) ||
+  specifier in pureEntries;
 
 const violations = [];
 
