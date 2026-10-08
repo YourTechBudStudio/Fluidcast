@@ -4,7 +4,6 @@ import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router
 import { RouterProvider } from 'react-router/dom';
 
 import { sessionIdAtom, sessionStatusAtom } from '../client';
-import { PlayerControlsMock } from './mock/PlayerControlsMock';
 import { ModeScreen } from './ModeScreen';
 import { Player } from './Player';
 import { routeFor } from './route';
@@ -58,8 +57,6 @@ function SessionScreen() {
 
 /** `/` is the mode screen and `/session/:sessionId` the player; the status gate keeps the URL in line with the backend. */
 const router = createBrowserRouter([
-  // Temporary design mock with fixtures only, outside the gate so it needs no backend.
-  { path: '__player-controls', element: <PlayerControlsMock /> },
   {
     element: <StatusGate />,
     children: [

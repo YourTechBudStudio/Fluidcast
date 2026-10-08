@@ -83,7 +83,14 @@ export type StatusMoment =
   | FailureStatus
   | 'askingText'
   | 'resetting'
-  | 'resetFailed';
+  | 'resetFailed'
+  | PausedStatus;
+
+/**
+ * What only a pause shows: `paused` for a selected line held silent; `workerFinished` and `resultsReady` when the pause
+ * alone holds back finished outcomes (the worker's, or another tool's), which Play or a message submits.
+ */
+export type PausedStatus = 'paused' | 'workerFinished' | 'resultsReady';
 
 /**
  * Reset as the player shows it. `pending` holds from the press until the registry is disposed: while the request runs,
@@ -205,9 +212,28 @@ export type AskPresence =
       readonly answer: AskCommand;
     };
 
+/**
+ * Back, Play/Pause and Forward. Each is available only with a connection and no Reset pending, and only when the
+ * Harness says it does something now (`view.controls`). The middle button `shows` Play or Pause and says what pressing
+ * it `does`: `null` while unavailable; `resume` is the local gesture for audio the browser held, not a session command.
+ */
+export interface TransportState {
+  readonly back: boolean;
+  readonly forward: boolean;
+  readonly middle: {
+    readonly shows: 'play' | 'pause';
+    readonly does: 'play' | 'pause' | 'resume' | null;
+  };
+}
+
 export interface Presentation {
   readonly moment: Moment;
   readonly status: StatusMoment;
+  /**
+   * The session is paused (`view.paused`): orthogonal to the moment. The status line leads with it, except where a
+   * failure, the connection or Reset speaks first.
+   */
+  readonly paused: boolean;
   readonly composer: ComposerMode;
   readonly visual: VisualState;
   /** Playback waits for a gesture; the visual dims. */
@@ -220,8 +246,7 @@ export interface Presentation {
    * open question closes it unanswered, as the Ask card's Interrupt does.
    */
   readonly interruptible: boolean;
-  /** An earlier line can be presented again. */
-  readonly canGoBack: boolean;
+  readonly transport: TransportState;
   /** Why a tool halted the conversation, if one did. */
   readonly fault: string | null;
   /** The Show the Show button opens, if there has been one. */
@@ -376,6 +401,18 @@ function subtitleOf(
   });
   const lastSpeakIndex = lastIndexWhere(view.actions, isSpeak);
   const lastSpeak = view.actions[lastSpeakIndex] as Extract<Action, { type: 'speak' }> | undefined;
+  const presented = view.presented;
+
+  // While paused the selected line shows at once, whatever its audio is doing: before any clip, held by the browser or
+  // failed. The status line and the composer still say what holds it and how to recover.
+  if (
+    presented &&
+    view.paused &&
+    (moment === 'speaking' || moment === 'held' || moment === 'audioFailed')
+  ) {
+    const selected = line(presented, 'current');
+    return { ...selected, label: selected.label ? `Paused · ${selected.label}` : 'Paused' };
+  }
 
   switch (moment) {
     case 'connecting':
@@ -398,7 +435,6 @@ function subtitleOf(
     case 'speaking': {
       // A line appears when its audio starts. Until then the previous line of this turn stays, or your own message if
       // none has played yet. After Back, the presented line is an earlier one.
-      const presented = view.presented;
       if (presented && playback.kind === 'playing' && playback.actionId === presented.id)
         return line(presented, 'current');
       const before = view.actions.slice(0, presentedIndex(view));
@@ -419,6 +455,9 @@ function subtitleOf(
     }
     case 'waiting':
       return lastSpeak ? line(lastSpeak, 'current') : null;
+    // The line whose clip failed, which Retry clip plays, even when later lines are already buffered or it was replayed.
+    case 'audioFailed':
+      return presented ? line(presented, 'dim') : lastSpeak ? line(lastSpeak, 'dim') : null;
     case 'interrupted':
       return lastSpeak ? line(lastSpeak, 'dim', cutAt(view, lastSpeakIndex)) : null;
     default:
@@ -500,7 +539,15 @@ function timelineOf(
         if (action.id === view.presented?.id) {
           const presented = playbackAtPresented(view, playback);
           now =
-            presented === 'idle' ? 'queued' : presented === 'failed' ? 'audioFailed' : presented;
+            presented === 'failed'
+              ? 'audioFailed'
+              : presented === 'held'
+                ? 'held'
+                : view.paused
+                  ? 'paused'
+                  : presented === 'playing'
+                    ? 'playing'
+                    : 'queued';
         }
         rows.push({
           kind: 'speak',
@@ -638,6 +685,7 @@ function audioStatus(error: PlaybackFailure): FailureStatus {
 function statusOf(
   view: ConversationView,
   moment: Moment,
+  held: HeldOutcomes,
   connection: Connection,
   playback: PlaybackStatus,
   sendFailure: TransportError | null,
@@ -652,15 +700,87 @@ function statusOf(
     // A Show report the Harness would not accept: out of sync for as long as that execution stays open.
     if (view.executions.some((e) => unresolvedShows.has(e.executionId))) return 'outOfSync';
   }
+  if (held !== null) return held;
   switch (moment) {
     case 'audioFailed':
       // `audioFailed` is only ever derived from a failed playback status.
       return playback.kind === 'failed' ? audioStatus(playback.error) : 'audioUnplayable';
     case 'asking':
       return openAsk(view)?.input.kind === 'text' ? 'askingText' : 'asking';
+    case 'speaking':
+      return view.paused ? 'paused' : moment;
     default:
       return moment;
   }
+}
+
+type HeldOutcomes = Extract<PausedStatus, 'workerFinished' | 'resultsReady'> | null;
+
+/**
+ * Finished outcomes that only the pause holds back: nothing generates, plays or runs, and the Harness would take a
+ * message now (`controls.send`). Kept progress alone never counts: it is not a finished result.
+ */
+function heldOutcomesOf(view: ConversationView): HeldOutcomes {
+  if (
+    !view.paused ||
+    view.phase !== 'working' ||
+    !view.controls.send ||
+    view.executions.length > 0 ||
+    view.pendingResults.length === 0
+  )
+    return null;
+  return view.pendingResults.some((result) => result.tool === forwardToolName)
+    ? 'workerFinished'
+    : 'resultsReady';
+}
+
+/**
+ * The moment the status line speaks to. While an earlier line replays, the frontier's own state stays in view when it
+ * is a question, work under way or a failed generation: the replay does not end it.
+ */
+function standingMomentOf(
+  view: ConversationView,
+  moment: Moment,
+  connection: Connection,
+  playback: PlaybackStatus,
+): Moment {
+  if (moment !== 'speaking' || view.frontierPhase === 'speaking') return moment;
+  const frontier = momentOf({ ...view, phase: view.frontierPhase }, connection, playback);
+  return frontier === 'asking' ||
+    frontier === 'thinking' ||
+    frontier === 'waiting' ||
+    frontier === 'generationFailed'
+    ? frontier
+    : moment;
+}
+
+/** What the transport buttons show and do: see `TransportState`. */
+function transportOf(
+  view: ConversationView,
+  moment: Moment,
+  connection: Connection,
+  reset: ResetState,
+): TransportState {
+  const usable = connection === 'connected' && !reset.pending;
+  const back = usable && view.controls.back;
+  const forward = usable && view.controls.next;
+  if (view.paused)
+    return {
+      back,
+      forward,
+      middle: { shows: 'play', does: usable && view.controls.play ? 'play' : null },
+    };
+  // Pause is offered only while something moves on its own: a line plays (a replay included, even over an open
+  // question), the model thinks, or more is on the way. A silent open question or the end of the turn offers Play,
+  // unavailable unless a preloaded start waits or the browser held the audio.
+  if (moment === 'speaking' || moment === 'thinking' || moment === 'waiting')
+    return {
+      back,
+      forward,
+      middle: { shows: 'pause', does: usable && view.controls.pause ? 'pause' : null },
+    };
+  const does = !usable ? null : moment === 'held' ? 'resume' : view.controls.play ? 'play' : null;
+  return { back, forward, middle: { shows: 'play', does } };
 }
 
 function askPresenceOf(view: ConversationView): AskPresence | null {
@@ -678,11 +798,6 @@ function askPresenceOf(view: ConversationView): AskPresence | null {
   return null;
 }
 
-function canGoBackOf(view: ConversationView, connection: Connection): boolean {
-  if (connection !== 'connected' || view.phase === 'halted') return false;
-  return view.actions.slice(0, presentedIndex(view)).some(isSpeak);
-}
-
 export function present(
   view: ConversationView,
   connection: Connection,
@@ -692,21 +807,38 @@ export function present(
   reset: ResetState,
 ): Presentation {
   const moment = momentOf(view, connection, playback);
-  const composer = COMPOSER[moment];
+  const outcomes = connection === 'connected' ? heldOutcomesOf(view) : null;
+  // A message both releases the pause and submits the held outcomes with it.
+  const composer = outcomes !== null ? 'compose' : COMPOSER[moment];
+  const status = statusOf(
+    view,
+    standingMomentOf(view, moment, connection, playback),
+    outcomes,
+    connection,
+    playback,
+    sendFailure,
+    unresolvedShows,
+    reset,
+  );
+  const paused = view.paused && connection === 'connected';
   return {
     moment,
-    status: statusOf(view, moment, connection, playback, sendFailure, unresolvedShows, reset),
+    status,
+    paused,
     composer,
-    visual: VISUAL[moment],
-    held: moment === 'held',
+    // A paused line is quiet, and everything dims while paused.
+    visual: paused && moment === 'speaking' ? 'idle' : VISUAL[moment],
+    held: moment === 'held' || paused,
     subtitle: subtitleOf(view, moment, playback),
     timeline: timelineOf(view, moment, playback),
-    ask: askPresenceOf(view),
+    // An answer only the pause holds gives way to the composer: a message would release it and go with the answer.
+    // The transcript keeps the answer.
+    ask: outcomes !== null ? null : askPresenceOf(view),
     interruptible: composer === 'busy' || composer === 'retryClip',
-    canGoBack: canGoBackOf(view, connection),
+    transport: transportOf(view, moment, connection, reset),
     fault: view.actions.findLast((a) => a.type === 'tool_faulted')?.error.message ?? null,
     latestShow: latestShowHandle(view) ?? null,
     resetPending: reset.pending,
-    thinkingSince: moment === 'thinking' ? (forwardThinkingSince(view) ?? null) : null,
+    thinkingSince: status === 'thinking' ? (forwardThinkingSince(view) ?? null) : null,
   };
 }

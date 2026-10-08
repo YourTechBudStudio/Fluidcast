@@ -1,5 +1,5 @@
 import { useAtom } from '@effect/atom-react';
-import { PanelRight, RotateCcw, SquareTerminal, TextAlignStart, Undo2 } from 'lucide-react';
+import { PanelRight, RotateCcw, SquareTerminal, TextAlignStart } from 'lucide-react';
 import type { Ref } from 'react';
 
 import { Button, Kbd, RadioMenu } from '../ui';
@@ -25,8 +25,6 @@ const icon = { size: 16, strokeWidth: 1.8, 'aria-hidden': true } as const;
 const ICON_ONLY = 'text-sm max-lg:px-0';
 
 export interface TopBarProps {
-  /** Back presents the previous line again; unavailable when there is none. */
-  readonly back: { readonly available: boolean; readonly onBack: () => void };
   /** The Show panel: pressed while open; unavailable until there has been a Show. */
   readonly show: {
     readonly open: boolean;
@@ -51,26 +49,12 @@ export interface TopBarProps {
   };
 }
 
-export function TopBar({ back, show, layers, reset }: TopBarProps) {
+export function TopBar({ show, layers, reset }: TopBarProps) {
   const [visual, setVisual] = useAtom(visualAtom);
   return (
     <header className="relative z-20 flex min-h-17 items-center gap-3 px-4.5 py-3.5 max-sm:gap-1 max-sm:px-3">
       <Brand compact />
       <div className="ml-auto flex items-center gap-1.5 max-sm:gap-0.5">
-        <Button
-          tone="ghost"
-          aria-label="Back"
-          aria-keyshortcuts="B"
-          unavailable={!back.available}
-          className={ICON_ONLY}
-          icon={<Undo2 {...icon} />}
-          onClick={back.onBack}
-        >
-          <span className="max-lg:hidden">Back</span>
-          <span className="max-lg:hidden">
-            <Kbd>B</Kbd>
-          </span>
-        </Button>
         <RadioMenu
           label="Visual"
           className="max-lg:px-1.5"

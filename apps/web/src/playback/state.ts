@@ -5,10 +5,10 @@ import { useMemo } from 'react';
 
 import { clientRuntime } from '../client';
 import type { PlaybackControls, PlaybackStatus } from './model';
-import { makePlayer } from './player';
+import { browserMedia, makePlayer } from './player';
 
 /** The page's one player. Kept alive: it owns the audio element and the `AudioContext`. */
-const playerAtom = Atom.keepAlive(clientRuntime.atom(makePlayer));
+const playerAtom = Atom.keepAlive(clientRuntime.atom(Effect.flatMap(browserMedia, makePlayer)));
 
 const statusResultAtom = clientRuntime.atom((get) =>
   Stream.unwrap(

@@ -229,7 +229,7 @@ describe('the Ask in place of the composer', () => {
     expect(halted.ask).toBeNull();
     expect(halted.composer).toBe('offline');
     expect(halted.fault).toBe('The show tool failed unexpectedly.');
-    expect(halted.canGoBack).toBe(false);
+    expect(halted.transport.back).toBe(false);
   });
 });
 
@@ -256,35 +256,152 @@ describe('interruptible', () => {
   });
 });
 
-describe('canGoBack', () => {
+describe('transport', () => {
   const [first, second] = [speak('s1'), speak('s2')];
-
-  it('needs a speak before the presented one', () => {
-    expect(
-      presentOf(view({ actions: [user('u1'), first], phase: 'speaking', presented: first }))
-        .canGoBack,
-    ).toBe(false);
-    expect(
-      presentOf(
-        view({ actions: [user('u1'), first, second], phase: 'speaking', presented: second }),
-      ).canGoBack,
-    ).toBe(true);
+  const controls = (partial: Partial<ConversationView['controls']>) => ({
+    back: false,
+    next: false,
+    play: false,
+    pause: true,
+    send: false,
+    ...partial,
   });
 
-  it('takes any speak when nothing is presented, including beside an open Ask', () => {
-    expect(presentOf(view({ actions: [user('u1')] })).canGoBack).toBe(false);
-    expect(presentOf(view({ actions: [user('u1'), first] })).canGoBack).toBe(true);
-    expect(
-      presentOf(
-        view({ actions: asked, phase: 'waiting', executions: [execution('e1', 'call_1', 'ask')] }),
-      ).canGoBack,
-    ).toBe(true);
+  it('offers Back and Forward when the Harness says they act, and only with a connection and no Reset', () => {
+    const v = view({
+      actions: [user('u1'), first, second],
+      phase: 'speaking',
+      frontierPhase: 'speaking',
+      presented: second,
+      controls: controls({ back: true, next: true }),
+    });
+    expect(presentOf(v).transport).toMatchObject({ back: true, forward: true });
+    expect(presentOf(v, { connection: 'reconnecting' }).transport).toMatchObject({
+      back: false,
+      forward: false,
+      middle: { does: null },
+    });
+    expect(presentOf(v, { reset: { pending: true, failure: null } }).transport).toMatchObject({
+      back: false,
+      forward: false,
+      middle: { does: null },
+    });
+    expect(presentOf({ ...v, controls: controls({}) }).transport).toMatchObject({
+      back: false,
+      forward: false,
+    });
   });
 
-  it('needs a connection', () => {
-    expect(
-      presentOf(view({ actions: [user('u1'), first] }), { connection: 'reconnecting' }).canGoBack,
-    ).toBe(false);
+  it('offers Pause while a line plays, the model thinks, or more is on the way', () => {
+    const speaking = view({
+      actions: [user('u1'), first],
+      phase: 'speaking',
+      frontierPhase: 'speaking',
+      presented: first,
+    });
+    expect(presentOf(speaking).transport.middle).toEqual({ shows: 'pause', does: 'pause' });
+    const thinking = view({ actions: [user('u1')], phase: 'working', frontierPhase: 'working' });
+    expect(presentOf(thinking).transport.middle).toEqual({ shows: 'pause', does: 'pause' });
+    const more = view({
+      actions: [user('u1'), first],
+      phase: 'working',
+      frontierPhase: 'working',
+    });
+    expect(presentOf(more).moment).toBe('waiting');
+    expect(presentOf(more).transport.middle).toEqual({ shows: 'pause', does: 'pause' });
+  });
+
+  it('shows Play, unavailable, at the end of a turn and beside a silent open question', () => {
+    const end = presentOf(view({ actions: [user('u1'), first], controls: controls({}) }));
+    expect(end.transport.middle).toEqual({ shows: 'play', does: null });
+    const silentAsk = presentOf(
+      view({
+        actions: asked,
+        phase: 'waiting',
+        frontierPhase: 'waiting',
+        executions: [execution('e1', 'call_1', 'ask')],
+        controls: controls({ back: true }),
+      }),
+    );
+    expect(silentAsk.ask?.mode).toBe('open');
+    expect(silentAsk.status).toBe('asking');
+    expect(silentAsk.transport.middle).toEqual({ shows: 'play', does: null });
+  });
+
+  it('always shows Play while paused, enabled only when the Harness, the connection and Reset allow it', () => {
+    const silentAsk = view({
+      actions: asked,
+      phase: 'waiting',
+      frontierPhase: 'waiting',
+      paused: true,
+      executions: [execution('e1', 'call_1', 'ask')],
+      controls: controls({ play: true, pause: false, back: true }),
+    });
+    const p = presentOf(silentAsk);
+    expect(p.transport.middle).toEqual({ shows: 'play', does: 'play' });
+    expect(p.ask?.mode).toBe('open');
+    expect(p.status).toBe('asking');
+    expect(p.paused).toBe(true);
+    expect(presentOf(silentAsk, { connection: 'reconnecting' }).transport.middle).toEqual({
+      shows: 'play',
+      does: null,
+    });
+    // A paused session that halted stays paused, and nothing is offered.
+    const halted = presentOf(
+      view({
+        actions: [user('u1'), first, faulted('f1', 'call_1', 'Broken.')],
+        phase: 'halted',
+        frontierPhase: 'halted',
+        paused: true,
+        controls: controls({ pause: false }),
+      }),
+    );
+    expect(halted.transport).toEqual({
+      back: false,
+      forward: false,
+      middle: { shows: 'play', does: null },
+    });
+  });
+
+  it('offers Pause while a line replays over an open question, which keeps its status and dock', () => {
+    const p = presentOf(
+      view({
+        actions: asked,
+        phase: 'speaking',
+        frontierPhase: 'waiting',
+        presented: speak('s1'),
+        executions: [execution('e1', 'call_1', 'ask')],
+        controls: controls({ next: true }),
+      }),
+      { playback: { kind: 'playing', actionId: 's1' } },
+    );
+    expect(p.moment).toBe('speaking');
+    expect(p.transport.middle).toEqual({ shows: 'pause', does: 'pause' });
+    expect(p.status).toBe('asking');
+    expect(p.ask?.mode).toBe('open');
+    expect(p.composer).toBe('busy');
+  });
+
+  it('offers Play for a preloaded start, and the local resume for audio the browser held', () => {
+    const ready = presentOf(
+      view({
+        phase: 'ready',
+        frontierPhase: 'ready',
+        start: { message: { type: 'user_message', id: aid('m1'), text: 'Go.' }, context: null },
+        controls: controls({ play: true }),
+      }),
+    );
+    expect(ready.transport.middle).toEqual({ shows: 'play', does: 'play' });
+    const held = presentOf(
+      view({
+        actions: [user('u1'), first],
+        phase: 'speaking',
+        frontierPhase: 'speaking',
+        presented: first,
+      }),
+      { playback: { kind: 'held', actionId: 's1' } },
+    );
+    expect(held.transport.middle).toEqual({ shows: 'play', does: 'resume' });
   });
 });
 
@@ -906,7 +1023,7 @@ describe('a preloaded start', () => {
     expect(p.composer).toBe('offline');
     expect(p.visual).toBe('idle');
     expect(p.interruptible).toBe(false);
-    expect(p.canGoBack).toBe(false);
+    expect(p.transport.back).toBe(false);
     expect(p.subtitle).toEqual({
       key: 'preloaded:m1',
       text: '“Walk me through it.”',
@@ -987,5 +1104,244 @@ describe('Reset in the status line', () => {
     expect(
       presentOf(healthy, { connection: 'reconnecting', reset: { pending: false, failure } }).status,
     ).toBe('reconnecting');
+  });
+});
+
+describe('paused', () => {
+  const [one, two, three] = [speak('s1', 'One.'), speak('s2', 'Two.'), speak('s3', 'Three.')];
+  const pausedControls = { back: true, next: true, play: true, pause: false, send: false };
+  const at = (presented: Speak, actions: readonly Action[]) =>
+    view({
+      actions,
+      phase: 'speaking',
+      frontierPhase: 'speaking',
+      presented,
+      paused: true,
+      controls: pausedControls,
+    });
+
+  it('shows the selected line at once, before any audio, without claiming it plays', () => {
+    const p = presentOf(at(one, [user('u1'), one]));
+    expect(p.moment).toBe('speaking');
+    expect(p.subtitle).toMatchObject({ key: 's1', text: 'One.', tone: 'current', label: 'Paused' });
+    expect(p.status).toBe('paused');
+    expect(p.paused).toBe(true);
+    expect(p.visual).toBe('idle');
+    expect(p.held).toBe(true);
+    const row = rowOf(p.timeline, 'speak').find((r) => r.id === 's1');
+    expect(row?.now).toBe('paused');
+    // The player's own paused clip reads the same.
+    const kept = presentOf(at(one, [user('u1'), one]), {
+      playback: { kind: 'paused', actionId: 's1' },
+    });
+    expect(kept.subtitle?.text).toBe('One.');
+    expect(rowOf(kept.timeline, 'speak')[0]?.now).toBe('paused');
+  });
+
+  it('follows silent Back and Forward: the marker and the line move, later lines and Shows stay', () => {
+    const actions = [user('u1'), one, showCall('c1', 'call_1'), two, three];
+    const forward = presentOf(at(two, actions));
+    expect(forward.subtitle?.text).toBe('Two.');
+    expect(rowOf(forward.timeline, 'show')).toHaveLength(1);
+    expect(rowOf(forward.timeline, 'speak').map((r) => r.now)).toEqual([null, 'paused', null]);
+    const back = presentOf(at(one, actions));
+    expect(back.subtitle?.text).toBe('One.');
+    expect(rowOf(back.timeline, 'speak').map((r) => r.now)).toEqual(['paused', null, null]);
+    expect(back.latestShow).toBe('call_1');
+  });
+
+  it('names its speaker beside Paused when several speak', () => {
+    const p = presentOf({
+      ...at(one, [user('u1'), one]),
+      speakers: [
+        { id: 'host', name: 'Host' },
+        { id: 'guest', name: 'Guest' },
+      ],
+    });
+    expect(p.subtitle?.label).toBe('Paused · Host');
+  });
+
+  it('keeps thinking while paused, and keeps a running worker from reading as finished', () => {
+    const p = presentOf(
+      view({
+        actions: [user('u1'), forwardCall('c1', 'call_1')],
+        phase: 'working',
+        frontierPhase: 'working',
+        paused: true,
+        executions: [execution('e1', 'call_1', forwardToolName, 5_000)],
+        controls: pausedControls,
+      }),
+    );
+    expect(p.status).toBe('thinking');
+    expect(p.paused).toBe(true);
+    expect(p.thinkingSince).toBe(5_000);
+    expect(p.composer).toBe('busy');
+    expect(p.visual).toBe('thinking');
+    expect(p.held).toBe(true);
+  });
+
+  it('says finished outcomes wait for Play, and opens the composer, only when the pause alone holds them', () => {
+    const worker = view({
+      actions: [user('u1'), forwardCall('c1', 'call_1')],
+      phase: 'working',
+      frontierPhase: 'working',
+      paused: true,
+      pendingResults: [forwardResult('r1', ['call_1'], ['Done.'])],
+      controls: { ...pausedControls, send: true },
+    });
+    expect(presentOf(worker).status).toBe('workerFinished');
+    expect(presentOf(worker).composer).toBe('compose');
+
+    const other = {
+      ...worker,
+      pendingResults: [errored('r1', 'call_1', 'show', 'Could not render.')],
+    };
+    expect(presentOf(other).status).toBe('resultsReady');
+
+    // Unpaused, or with work still running, outcomes are not held by the pause.
+    expect(presentOf({ ...worker, paused: false }).status).toBe('thinking');
+    expect(presentOf({ ...worker, paused: false }).composer).toBe('busy');
+    const running = presentOf({
+      ...worker,
+      executions: [execution('e2', 'call_2', forwardToolName)],
+      controls: { ...pausedControls, send: false },
+    });
+    expect(running.status).toBe('thinking');
+    expect(running.composer).toBe('busy');
+    // Offline, the connection speaks first.
+    expect(presentOf(worker, { connection: 'reconnecting' }).status).toBe('reconnecting');
+    expect(presentOf(worker, { connection: 'reconnecting' }).composer).toBe('offline');
+  });
+
+  it('keeps an open question and its dock while paused, and Show rows beside it', () => {
+    const p = presentOf(
+      view({
+        actions: [user('u1'), one, showCall('c1', 'call_1'), askCall('c2', 'call_2')],
+        phase: 'waiting',
+        frontierPhase: 'waiting',
+        paused: true,
+        executions: [execution('e2', 'call_2', 'ask')],
+        controls: pausedControls,
+      }),
+    );
+    expect(p.status).toBe('asking');
+    expect(p.ask?.mode).toBe('open');
+    expect(rowOf(p.timeline, 'show')).toHaveLength(1);
+    expect(rowOf(p.timeline, 'ask')[0]?.state).toBe('live');
+  });
+
+  it('keeps recovery truthful: failures, the connection and Reset speak before the pause', () => {
+    const failed = presentOf(
+      view({
+        actions: [user('u1'), one],
+        phase: 'generationFailed',
+        frontierPhase: 'generationFailed',
+        paused: true,
+        controls: { ...pausedControls, send: true },
+      }),
+    );
+    expect(failed.status).toBe('generationFailed');
+    // Retry stays, so the draft and the explicit recovery remain; Play alone never generates.
+    expect(failed.composer).toBe('retry');
+    expect(failed.transport.middle).toEqual({ shows: 'play', does: 'play' });
+
+    const clip = presentOf(at(one, [user('u1'), one]), {
+      playback: {
+        kind: 'failed',
+        actionId: 's1',
+        error: { _tag: 'MediaError', streamed: false },
+      },
+    });
+    expect(clip.status).toBe('audioUnplayable');
+    expect(clip.composer).toBe('retryClip');
+    expect(rowOf(clip.timeline, 'speak')[0]?.now).toBe('audioFailed');
+
+    const offline = presentOf(at(one, [user('u1'), one]), { connection: 'reconnecting' });
+    expect(offline.status).toBe('reconnecting');
+    expect(offline.paused).toBe(false);
+    expect(offline.composer).toBe('offline');
+
+    const resetting = presentOf(at(one, [user('u1'), one]), {
+      reset: { pending: true, failure: null },
+    });
+    expect(resetting.status).toBe('resetting');
+  });
+
+  it('keeps a generation failure in view while an earlier line replays', () => {
+    const p = presentOf(
+      view({
+        actions: [user('u1'), one, two],
+        phase: 'speaking',
+        frontierPhase: 'generationFailed',
+        presented: one,
+        controls: { back: false, next: true, play: false, pause: true, send: false },
+      }),
+      { playback: { kind: 'playing', actionId: 's1' } },
+    );
+    expect(p.status).toBe('generationFailed');
+    expect(p.composer).toBe('busy');
+    expect(p.transport.middle).toEqual({ shows: 'pause', does: 'pause' });
+  });
+
+  it('keeps the selected line through a browser hold or a failed clip, with later lines buffered', () => {
+    const actions = [user('u1'), one, two];
+    const held = presentOf(at(one, actions), { playback: { kind: 'held', actionId: 's1' } });
+    expect(held.moment).toBe('held');
+    expect(held.subtitle).toMatchObject({ text: 'One.', label: 'Paused' });
+    expect(held.transport.middle).toEqual({ shows: 'play', does: 'play' });
+
+    const failure = {
+      kind: 'failed',
+      actionId: 's1',
+      error: { _tag: 'MediaError', streamed: false },
+    } as const;
+    const failed = presentOf(at(one, actions), { playback: failure });
+    expect(failed.status).toBe('audioUnplayable');
+    expect(failed.composer).toBe('retryClip');
+    expect(failed.subtitle).toMatchObject({ text: 'One.', label: 'Paused' });
+    // Unpaused too, the failed line is the one Retry clip plays, not the last one buffered.
+    const unpaused = presentOf({ ...at(one, actions), paused: false }, { playback: failure });
+    expect(unpaused.subtitle).toMatchObject({ text: 'One.', tone: 'dim' });
+  });
+
+  it('lets an answer only the pause holds give way to the composer, keeping it in the transcript', () => {
+    const p = presentOf(
+      view({
+        actions: [...asked],
+        phase: 'working',
+        frontierPhase: 'working',
+        paused: true,
+        pendingResults: [answered('r1', 'call_1', answer)],
+        controls: { ...pausedControls, next: false, send: true },
+      }),
+    );
+    expect(p.status).toBe('resultsReady');
+    expect(p.composer).toBe('compose');
+    expect(p.ask).toBeNull();
+    expect(rowOf(p.timeline, 'ask')[0]).toMatchObject({ state: 'pending', answer });
+    // Unpaused, the sent answer still holds the dock while it goes to the model.
+    const sent = presentOf(
+      view({
+        actions: [...asked],
+        phase: 'working',
+        frontierPhase: 'working',
+        pendingResults: [answered('r1', 'call_1', answer)],
+      }),
+    );
+    expect(sent.ask?.mode).toBe('sent');
+  });
+
+  it('keeps the composer for a message at the end of a paused turn', () => {
+    const p = presentOf(
+      view({
+        actions: [user('u1'), one],
+        paused: true,
+        controls: { ...pausedControls, next: false, send: true },
+      }),
+    );
+    expect(p.status).toBe('complete');
+    expect(p.paused).toBe(true);
+    expect(p.composer).toBe('compose');
+    expect(p.transport).toMatchObject({ forward: false, middle: { shows: 'play', does: 'play' } });
   });
 });

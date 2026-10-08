@@ -14,12 +14,14 @@ export interface MediaError {
 export type PlaybackFailure = AudioUnavailable | MediaError;
 
 /**
- * Client-local playback, which never reaches the Harness: whether the clip at the cursor is playing, failed, or held
- * waiting for a gesture because the browser blocked autoplay.
+ * Client-local playback, which never reaches the Harness: whether the clip at the cursor is playing, paused, failed, or
+ * held waiting for a gesture because the browser blocked autoplay. `paused` only observes the session's pause (the
+ * view's `paused` is the authority): the clip keeps its position for Play.
  */
 export type PlaybackStatus =
   | { readonly kind: 'idle' }
   | { readonly kind: 'playing'; readonly actionId: string }
+  | { readonly kind: 'paused'; readonly actionId: string }
   | { readonly kind: 'failed'; readonly actionId: string; readonly error: PlaybackFailure }
   | { readonly kind: 'held'; readonly actionId: string };
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { copyFor, formatElapsed, haltedCopy } from './copy';
+import { formatElapsed, statusText } from './copy';
 import type { StatusMoment } from './presentation';
 
 const RED = { color: 'var(--color-red)', pulse: false, error: true } as const;
@@ -31,6 +31,9 @@ const DOT: Record<StatusMoment, { color: string; pulse: boolean; error?: true }>
   superseded: { color: 'var(--color-fg-subtle)', pulse: false },
   resetting: { color: 'var(--color-fg-subtle)', pulse: true },
   resetFailed: RED,
+  paused: { color: 'var(--color-fg-subtle)', pulse: false },
+  workerFinished: { color: 'var(--color-cyan)', pulse: false },
+  resultsReady: { color: 'var(--color-cyan)', pulse: false },
 };
 
 /** `Date.now()`, re-rendering every second while `on`. */
@@ -47,15 +50,18 @@ function useNow(on: boolean): number {
 
 /**
  * One quiet line above the composer, on every layer. It rotates its copy each time the player enters a moment. When a
- * tool halted the conversation, the line leads with what failed. While thinking it counts the elapsed time: from
- * `thinkingSince` (when the earliest running worker started), else from when the line entered the moment.
+ * tool halted the conversation, the line leads with what failed. While `paused`, lines the pause holds lead with
+ * "Paused". While thinking it counts the elapsed time: from `thinkingSince` (when the earliest running worker started),
+ * else from when the line entered the moment.
  */
 export function StatusLine({
   moment,
+  paused = false,
   fault = null,
   thinkingSince = null,
 }: {
   readonly moment: StatusMoment;
+  readonly paused?: boolean;
   readonly fault?: string | null;
   readonly thinkingSince?: number | null;
 }) {
@@ -80,8 +86,7 @@ export function StatusLine({
   }
   const thinking = rotation.moment === 'thinking';
   const now = useNow(thinking);
-  const text =
-    rotation.moment === 'halted' ? haltedCopy(fault) : copyFor(rotation.moment, rotation.index);
+  const text = statusText(rotation.moment, rotation.index, { paused, fault });
 
   const dot = DOT[moment];
   const error = dot.error === true;

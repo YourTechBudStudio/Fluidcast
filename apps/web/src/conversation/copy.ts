@@ -66,12 +66,41 @@ export const COPY: Record<StatusMoment, readonly string[]> = {
     'Looks like you picked me up in another tab.',
     'You’re talking to me in another tab now.',
   ],
+  paused: ['Paused'],
+  workerFinished: ['Paused · The worker finished. Play to hear it.'],
+  resultsReady: ['Paused · Results are ready. Play to continue.'],
+};
+
+/**
+ * While paused, these lines lead with "Paused", some in their paused wording. Every other line already says what holds
+ * the player, or speaks first whatever the pause: failures, the connection, Reset and audio the browser held.
+ */
+const PAUSED_LEAD: Partial<Record<StatusMoment, string | null>> = {
+  thinking: 'Still thinking',
+  waiting: 'More on the way',
+  asking: 'Question open',
+  askingText: 'Question open',
+  fresh: null,
+  complete: null,
+  interrupted: null,
 };
 
 /** The line at `index` in a moment's pool, wrapping around; empty when the moment has no status copy. */
 export function copyFor(moment: StatusMoment, index: number): string {
   const pool = COPY[moment];
   return pool.length === 0 ? '' : pool[index % pool.length]!;
+}
+
+/** The status line's text: the moment's line at `index`, led by "Paused" where the pause is news. */
+export function statusText(
+  moment: StatusMoment,
+  index: number,
+  options: { readonly paused: boolean; readonly fault: string | null },
+): string {
+  const text = moment === 'halted' ? haltedCopy(options.fault) : copyFor(moment, index);
+  const lead = PAUSED_LEAD[moment];
+  if (!options.paused || lead === undefined) return text;
+  return `Paused · ${lead ?? text}`;
 }
 
 /** The halted line, led by what failed when the fault says. */

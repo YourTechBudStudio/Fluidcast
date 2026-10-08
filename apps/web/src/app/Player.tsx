@@ -13,7 +13,14 @@ import {
   Transcript,
   useConversationCommands,
 } from '../conversation';
-import { Subtitle, TapToResume, usePlaybackAnalyser, usePlaybackControls } from '../playback';
+import {
+  PlayerControls,
+  type PlayerControlsProps,
+  Subtitle,
+  TapToResume,
+  usePlaybackAnalyser,
+  usePlaybackControls,
+} from '../playback';
 import { AskForm, ShowPanel, ShowSheet } from '../tools';
 import { Button, PHONE, typingTarget, useMedia, useReducedMotion } from '../ui';
 import { analyserSource, createAnalysis, Visual } from '../visuals';
@@ -42,7 +49,7 @@ export function Player() {
   const shown = useAtomValue(shownShowAtom);
   const reducedMotion = useReducedMotion();
   const phone = useMedia(PHONE);
-  const { moment, composer, ask, interruptible, canGoBack, latestShow } = presentation;
+  const { moment, composer, ask, interruptible, transport, latestShow } = presentation;
   const transcriptOpen = layer === 'transcript';
   const workersOpen = layer === 'workers';
   const stageOpen = layer === 'stage';
@@ -112,7 +119,7 @@ export function Player() {
       } else if (key === 's' && latestShow !== null) {
         event.preventDefault();
         setPanel(panelOpen ? { ...panel, open: false } : { open: true, handle: null });
-      } else if (key === 'b' && canGoBack) {
+      } else if (key === 'b' && transport.back) {
         event.preventDefault();
         commands.back();
       }
@@ -122,7 +129,7 @@ export function Player() {
   }, [
     commands,
     interruptible,
-    canGoBack,
+    transport.back,
     latestShow,
     layer,
     switchLayer,
@@ -135,6 +142,23 @@ export function Player() {
     () => ({ state: presentation.visual, analysis, reducedMotion, held: presentation.held }),
     [presentation.visual, presentation.held, reducedMotion],
   );
+
+  // A paused line is selected, not narrated.
+  const narrating = moment === 'speaking' && !presentation.paused;
+  const { middle } = transport;
+  const controls: PlayerControlsProps = {
+    back: { available: transport.back, onPress: () => void commands.back() },
+    forward: { available: transport.forward, onPress: () => void commands.next() },
+    play: {
+      paused: middle.shows === 'play',
+      available: middle.does !== null,
+      onPress: () => {
+        if (middle.does === 'pause') void commands.pause();
+        else if (middle.does === 'play') void commands.play();
+        else if (middle.does === 'resume') playback.resume();
+      },
+    },
+  };
 
   const icon = { size: 16, strokeWidth: 1.8, 'aria-hidden': true } as const;
   const interruptButton = (
@@ -160,7 +184,6 @@ export function Player() {
     <div className="relative z-10 grid h-full grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto]">
       <div className="col-start-1 row-start-1" inert={sheetCovers}>
         <TopBar
-          back={{ available: canGoBack, onBack: commands.back }}
           show={{ open: panelOpen, available: latestShow !== null, onToggle: togglePanel }}
           layers={{
             current: layer,
@@ -194,7 +217,7 @@ export function Player() {
               <TapToResume
                 visible={moment === 'held' || moment === 'ready'}
                 label={moment === 'ready' ? 'Tap to start' : 'Tap to resume'}
-                onActivate={moment === 'ready' ? () => void commands.start() : playback.resume}
+                onActivate={moment === 'ready' ? () => void commands.play() : playback.resume}
                 unavailable={moment === 'ready' && presentation.resetPending}
               />
             </div>
@@ -251,18 +274,14 @@ export function Player() {
       </main>
 
       {phone && (
-        <ShowSheet
-          show={shown}
-          open={panelOpen}
-          speaking={moment === 'speaking'}
-          onClose={closePanel}
-        />
+        <ShowSheet show={shown} open={panelOpen} speaking={narrating} onClose={closePanel} />
       )}
 
       <footer className="relative z-20 col-start-1 row-start-3 px-4 pt-3 pb-5 max-sm:px-3 max-sm:pt-2.5 max-sm:pb-3">
         <div className="mb-3.5 max-sm:mb-2.5">
           <StatusLine
             moment={presentation.status}
+            paused={presentation.paused}
             fault={presentation.fault}
             thinkingSince={presentation.thinkingSince}
           />
@@ -272,32 +291,57 @@ export function Player() {
           contentKey={ask ? `ask-${askHandle(ask)}` : 'composer'}
         >
           {ask ? (
-            <AskForm
-              input={ask.input}
-              mode={ask.mode}
-              answer={ask.mode === 'sent' ? ask.answer : undefined}
-              narrating={moment === 'speaking'}
-              disabled={composer === 'offline'}
-              onSubmit={(answer) =>
-                ask.mode === 'open'
-                  ? commands.answerAsk(ask.execution, answer)
-                  : Promise.resolve(false)
-              }
-              onInterrupt={() => void commands.interrupt()}
-              extra={
-                ask.mode === 'open'
-                  ? composer === 'retryClip' && retryClipButton
-                  : interruptible && interruptButton
-              }
-            />
+            // The accepted placement: the transport sits inside the dock, in a strip under the question.
+            <div>
+              <AskForm
+                input={ask.input}
+                mode={ask.mode}
+                answer={ask.mode === 'sent' ? ask.answer : undefined}
+                narrating={narrating}
+                disabled={composer === 'offline'}
+                onSubmit={(answer) =>
+                  ask.mode === 'open'
+                    ? commands.answerAsk(ask.execution, answer)
+                    : Promise.resolve(false)
+                }
+                onInterrupt={() => void commands.interrupt()}
+                extra={
+                  ask.mode === 'open'
+                    ? composer === 'retryClip' && retryClipButton
+                    : interruptible && interruptButton
+                }
+              />
+              <div className="flex justify-center border-t border-line/25 px-2 py-1">
+                <PlayerControls {...controls} />
+              </div>
+            </div>
           ) : (
-            <Composer
-              mode={composer}
-              onSend={commands.sendMessage}
-              onInterrupt={commands.interrupt}
-              onRetry={commands.retryGeneration}
-              onRetryClip={playback.retryClip}
-            />
+            // One Composer at a fixed place in the tree, so crossing the breakpoint keeps the draft. Wide: the transport
+            // at its leading edge. Phone: a strip below it, as under a question. Focus order follows what is on screen.
+            <div>
+              <div className="flex items-end">
+                {!phone && (
+                  <PlayerControls
+                    {...controls}
+                    className="my-2 ml-1.5 border-r border-line/30 pr-1"
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  <Composer
+                    mode={composer}
+                    onSend={commands.sendMessage}
+                    onInterrupt={commands.interrupt}
+                    onRetry={commands.retryGeneration}
+                    onRetryClip={playback.retryClip}
+                  />
+                </div>
+              </div>
+              {phone && (
+                <div className="flex justify-center border-t border-line/25 px-2 py-1">
+                  <PlayerControls {...controls} />
+                </div>
+              )}
+            </div>
           )}
         </Dock>
       </footer>

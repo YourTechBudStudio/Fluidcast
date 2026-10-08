@@ -17,10 +17,14 @@ export interface ConversationCommands {
   readonly retryGeneration: () => Promise<boolean>;
   /** Answers the open Ask execution. */
   readonly answerAsk: (execution: Execution, answer: AskCommand) => Promise<boolean>;
-  /** Presents the previous line again. */
+  /** Presents the previous line again. Keeps the pause. */
   readonly back: () => Promise<boolean>;
-  /** Sends the preloaded start, so the conversation begins. */
-  readonly start: () => Promise<boolean>;
+  /** Forward: skips the presented line, or processes the action at the cursor. Keeps the pause. */
+  readonly next: () => Promise<boolean>;
+  /** Holds presentation and new turns; running work continues. */
+  readonly pause: () => Promise<boolean>;
+  /** Releases a pause, resuming the selected line, or sends the preloaded start so the conversation begins. */
+  readonly play: () => Promise<boolean>;
   /** Ends this backend session. Resolves `true` once the backend confirmed it; the page then leaves the session. */
   readonly reset: () => Promise<boolean>;
 }

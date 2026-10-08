@@ -153,8 +153,12 @@ const sendMessageAtom = clientRuntime.fn((text: string, get) =>
 const interruptAtom = clientRuntime.fn((_: void, get) =>
   accepted(get, (client) => client.interrupt()),
 );
+// Retry is refused while paused. Play first releases the pause, and starts nothing while generation is failed, so the
+// retry that follows is the only thing that runs.
 const retryGenerationAtom = clientRuntime.fn((_: void, get) =>
-  accepted(get, (client) => client.retry()),
+  accepted(get, (client) =>
+    get(conversationAtom).paused ? Effect.andThen(client.play(), client.retry()) : client.retry(),
+  ),
 );
 const answerAskAtom = clientRuntime.fn(
   (
@@ -177,7 +181,10 @@ const answerAskAtom = clientRuntime.fn(
     ),
 );
 const backAtom = clientRuntime.fn((_: void, get) => accepted(get, (client) => client.back()));
-const startAtom = clientRuntime.fn((_: void, get) => accepted(get, (client) => client.start()));
+const nextAtom = clientRuntime.fn((_: void, get) => accepted(get, (client) => client.next()));
+const pauseAtom = clientRuntime.fn((_: void, get) => accepted(get, (client) => client.pause()));
+// Also sends a preloaded start, as Start does.
+const playAtom = clientRuntime.fn((_: void, get) => accepted(get, (client) => client.play()));
 
 /** The commands the UI sends. Each resolves `true` once the Harness accepted it. */
 export function useConversationCommands(): ConversationCommands {
@@ -186,7 +193,9 @@ export function useConversationCommands(): ConversationCommands {
   const retryGeneration = useAtomSet(retryGenerationAtom, { mode: 'promise' });
   const answerAsk = useAtomSet(answerAskAtom, { mode: 'promise' });
   const back = useAtomSet(backAtom, { mode: 'promise' });
-  const start = useAtomSet(startAtom, { mode: 'promise' });
+  const next = useAtomSet(nextAtom, { mode: 'promise' });
+  const pause = useAtomSet(pauseAtom, { mode: 'promise' });
+  const play = useAtomSet(playAtom, { mode: 'promise' });
   const reset = useAtomSet(resetAtom, { mode: 'promise' });
   return useMemo(
     () => ({
@@ -195,10 +204,12 @@ export function useConversationCommands(): ConversationCommands {
       retryGeneration: () => retryGeneration(),
       answerAsk: (execution, answer) => answerAsk({ execution, answer }),
       back: () => back(),
-      start: () => start(),
+      next: () => next(),
+      pause: () => pause(),
+      play: () => play(),
       reset: () => reset(),
     }),
-    [sendMessage, interrupt, retryGeneration, answerAsk, back, start, reset],
+    [sendMessage, interrupt, retryGeneration, answerAsk, back, next, pause, play, reset],
   );
 }
 
