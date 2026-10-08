@@ -46,6 +46,8 @@ import {
 import {
   backTarget,
   blockingExecution,
+  canAdvance,
+  canSend,
   CommandRejected,
   currentAction,
   derivePhase,
@@ -101,27 +103,31 @@ interface Running {
 const batchWindow = Duration.millis(200);
 
 /**
- * Whether queued outcomes should be submitted now, without user input: someone is there to hear
- * the answer, nothing is playing, generating or holding, and no interrupt left them for the user's
- * next message. Agrees with `derivePhase`: whenever this holds, the phase is `working`.
+ * Whether queued outcomes or kept progress should be submitted now, without user input: someone is
+ * there to hear the answer, nothing is paused, playing, generating or holding, and no interrupt left
+ * them for the user's next message. Gates automatic continuation only: commands that start an
+ * iteration validate on their own. Agrees with `derivePhase`: whenever this holds, the phase is
+ * `working`.
  */
 const ready = (state: SessionState, subscribed: boolean): boolean =>
   subscribed &&
+  !state.paused &&
   !isHalted(state) &&
   state.generation === 'idle' &&
   state.replay === null &&
   state.cursor === state.actions.length &&
   blockingExecution(state) === undefined &&
-  state.pendingResults.length > 0 &&
+  (state.pendingResults.length > 0 || state.pendingProgress.length > 0) &&
   state.actions.at(-1)?.type !== 'interrupted';
 
 /**
- * Whether a progress update can be used now: someone is there, nothing is playing, queued,
+ * Whether a progress update can be used now: someone is there, nothing is paused, playing, queued,
  * generating or holding, and the user has not interrupted to speak. Unlike `ready`, it needs no
  * pending result.
  */
 const progressAllowed = (state: SessionState, subscribed: boolean): boolean =>
   subscribed &&
+  !state.paused &&
   !isHalted(state) &&
   state.generation === 'idle' &&
   state.replay === null &&
@@ -164,6 +170,7 @@ export const make = (config: SessionConfig) =>
       playback: null,
       executions: [],
       pendingResults: [],
+      pendingProgress: [],
       replay: null,
       // Its action IDs are assigned once, so the preloaded message keeps its ID in the log.
       start:
@@ -176,6 +183,7 @@ export const make = (config: SessionConfig) =>
                   ? null
                   : { type: 'context', id: makeActionId(), ...preloaded.context },
             },
+      paused: false,
       speakers: config.speakers.map(({ id, name }) => ({ id, name })),
       speech: { mimeType: audioMimeType[config.speechFormat] },
     });
@@ -224,10 +232,14 @@ export const make = (config: SessionConfig) =>
 
     const subscribed = Effect.map(Ref.get(subscriber), (queue) => queue !== undefined);
 
-    /** Requests playback of the presented speak under a fresh playback ID. */
+    /**
+     * Requests playback of the presented speak under a fresh playback ID. The one place playback is
+     * authorized: never while paused, or with nobody subscribed to play it.
+     */
     const requestPlayback = Effect.gen(function* () {
-      const current = currentAction(yield* Ref.get(state));
-      if (current?.type !== 'speak') return;
+      const latest = yield* Ref.get(state);
+      const current = currentAction(latest);
+      if (current?.type !== 'speak' || latest.paused || !(yield* subscribed)) return;
       yield* emit({
         _tag: 'PlaybackRequested',
         playbackId: PlaybackId.make(uuidv7()),
@@ -235,20 +247,23 @@ export const make = (config: SessionConfig) =>
       });
     });
 
-    /** Requests playback of the presented speak if it has none outstanding and someone can play it. */
+    /** Requests playback of the presented speak if it has none outstanding. */
     const keepPlaying = Effect.gen(function* () {
       const current = yield* Ref.get(state);
       const action = currentAction(current);
       if (action === undefined || current.playback?.actionId === action.id) return;
-      if (yield* subscribed) yield* requestPlayback;
+      yield* requestPlayback;
     });
 
     /**
-     * Brings the presentation up to date after an append, a cursor move or the end of a replay.
-     * While replaying, the frontier holds: only the replayed speak's playback is kept requested.
+     * Brings the presentation up to date on its own, after an append or a new iteration's input.
+     * While paused nothing moves: an action appended at the end-of-log cursor rests there, a tool
+     * call unreached, until `Play` or `Next`. While replaying, the frontier holds: only the replayed
+     * speak's playback is kept requested.
      */
     const settle = Effect.gen(function* () {
       const current = yield* Ref.get(state);
+      if (current.paused) return;
       if (current.replay !== null) return yield* keepPlaying;
       yield* settleFrom(current.cursor);
     });
@@ -256,7 +271,8 @@ export const make = (config: SessionConfig) =>
     /**
      * Moves the cursor from `from` past instant actions, reaching each tool call on the way with
      * its own `CursorMoved` before it starts (ADR 0002), then requests playback of the speak it
-     * rests on. A call just appended at the cursor is already reached by its append.
+     * rests on (unless paused). A tool call resting at the cursor has not been reached yet: one
+     * appended there during a replay or a pause is reached when `from` is the cursor.
      */
     const settleFrom = (from: number) =>
       Effect.gen(function* () {
@@ -529,6 +545,10 @@ export const make = (config: SessionConfig) =>
     const halt = (tool: string, handles: ReadonlyArray<string>, error: ToolFaulted['error']) =>
       Effect.gen(function* () {
         yield* stop({ type: 'tool_faulted', id: makeActionId(), handles, tool, error });
+        // Executions may run on, but nothing they kept can be submitted any more.
+        if ((yield* Ref.get(state)).pendingProgress.length > 0) {
+          yield* emit({ _tag: 'ProgressDiscarded' });
+        }
         yield* Effect.logWarning('tool faulted').pipe(
           Effect.annotateLogs({ tool, handles: handles.join(' '), error: error.tag }),
         );
@@ -548,9 +568,10 @@ export const make = (config: SessionConfig) =>
     // Progress
 
     /**
-     * Uses a running execution's progress update when `progressAllowed` holds: it is logged as
-     * `tool_progress` with the execution's current handles and starts an iteration. Otherwise it is
-     * dropped. The text is never logged.
+     * Accepts a running execution's progress update into `pendingProgress`, replacing the one it
+     * kept before, while paused or when it already keeps one. Otherwise it is used at once when
+     * `progressAllowed` holds (an iteration submits it), or dropped. Nothing is accepted once the
+     * session is closing or halted. The text is never logged.
      */
     const offerProgress = (executionId: ExecutionId) => (text: string) =>
       transact(
@@ -559,21 +580,24 @@ export const make = (config: SessionConfig) =>
           const execution = current.executions.find(
             (candidate) => candidate.executionId === executionId,
           );
-          const used =
-            !closing && execution !== undefined && progressAllowed(current, yield* subscribed);
-          yield* Effect.logInfo(used ? 'tool progress used' : 'tool progress dropped').pipe(
+          const open = !closing && execution !== undefined && !isHalted(current);
+          const kept = current.pendingProgress.some(
+            (candidate) => candidate.executionId === executionId,
+          );
+          const outcome = !open
+            ? 'dropped'
+            : current.paused || kept
+              ? 'kept'
+              : progressAllowed(current, yield* subscribed)
+                ? 'used'
+                : 'dropped';
+          yield* Effect.logInfo(`tool progress ${outcome}`).pipe(
             Effect.annotateLogs({ tool: execution?.tool ?? 'closed', executionId }),
           );
-          if (used) {
-            yield* beginIteration({
-              type: 'tool_progress',
-              id: makeActionId(),
-              handles: execution.handles,
-              tool: execution.tool,
-              text,
-            });
-          }
-          return used;
+          if (outcome === 'dropped') return false;
+          yield* emit({ _tag: 'ProgressQueued', executionId, text });
+          if (outcome === 'used') yield* beginIteration();
+          return true;
         }),
       );
 
@@ -653,15 +677,32 @@ export const make = (config: SessionConfig) =>
 
     /**
      * Starts another iteration: the only submission path for a message, a preloaded start
-     * (`'start'`), a progress update, a retry and continuation, so a queued outcome is submitted
-     * exactly once, before any new input. `running` comes first, so no event prefix reads as a
-     * finished turn. Tool context is recorded after the input, so it closes it.
+     * (`'start'`), progress, a retry and continuation, so queued outcomes and kept progress are
+     * submitted exactly once, before any new input. Each caller validates first; this never checks
+     * the pause. `running` comes first, so no event prefix reads as a finished turn. Tool context is
+     * recorded after the input, so it closes it.
      */
-    const beginIteration = (input?: UserMessage | ToolProgress | 'start') =>
+    const beginIteration = (input?: UserMessage | 'start') =>
       Effect.gen(function* () {
         yield* emit({ _tag: 'GenerationChanged', generation: 'running' });
-        if ((yield* Ref.get(state)).pendingResults.length > 0) {
-          yield* emit({ _tag: 'ResultsSubmitted' });
+        const queued = yield* Ref.get(state);
+        if (queued.pendingResults.length > 0 || queued.pendingProgress.length > 0) {
+          // Execution start order; each with the handles its execution holds now, joins included.
+          const progress: Array<ToolProgress> = [];
+          for (const execution of queued.executions) {
+            const kept = queued.pendingProgress.find(
+              (candidate) => candidate.executionId === execution.executionId,
+            );
+            if (kept === undefined) continue;
+            progress.push({
+              type: 'tool_progress',
+              id: makeActionId(),
+              handles: execution.handles,
+              tool: execution.tool,
+              text: kept.text,
+            });
+          }
+          yield* emit({ _tag: 'ResultsSubmitted', progress });
         }
         if (input === 'start') yield* emit({ _tag: 'StartSubmitted' });
         else if (input !== undefined) yield* append(input);
@@ -714,13 +755,25 @@ export const make = (config: SessionConfig) =>
         }
         if (position >= current.cursor) {
           yield* emit({ _tag: 'ReplayMoved', replay: null });
-          // Handles anything the frontier held, and replays the cursor speak from its start.
-          yield* settle;
+          // Handles anything the frontier held, even while paused, and replays the cursor speak
+          // from its start.
+          yield* settleFrom(current.cursor);
         } else {
           yield* emit({ _tag: 'ReplayMoved', replay: position });
-          if (yield* subscribed) yield* requestPlayback;
+          yield* requestPlayback;
         }
       });
+
+    /**
+     * Moves presentation on from the presented action, shared by a finished playback and `Next`:
+     * forward replay steps after the replayed speak; at the frontier the cursor steps after its
+     * speak, or reaches the unreached action it rests on.
+     */
+    const advance = (current: SessionState) => {
+      if (current.replay !== null) return advanceReplay(current.replay);
+      const onSpeak = current.actions[current.cursor]?.type === 'speak';
+      return settleFrom(onSpeak ? current.cursor + 1 : current.cursor);
+    };
 
     // Commands
 
@@ -733,9 +786,9 @@ export const make = (config: SessionConfig) =>
         const phase = derivePhase(current);
         switch (command._tag) {
           case 'SendMessage': {
-            if (phase !== 'idle' && phase !== 'generationFailed') {
-              return yield* reject(command._tag, current);
-            }
+            if (!canSend(current)) return yield* reject(command._tag, current);
+            // A message is the listener's intent to continue: it releases a pause.
+            if (current.paused) yield* emit({ _tag: 'PauseChanged', paused: false });
             return yield* beginIteration({
               type: 'user_message',
               id: makeActionId(),
@@ -743,15 +796,18 @@ export const make = (config: SessionConfig) =>
             });
           }
           case 'RetryGeneration': {
-            if (phase !== 'generationFailed') return yield* reject(command._tag, current);
+            if (phase !== 'generationFailed' || current.paused) {
+              return yield* reject(command._tag, current);
+            }
             return yield* beginIteration();
           }
           case 'PlaybackFinished': {
             // Stale by identity, or nobody is subscribed: the cursor stays frozen (ADR 0001).
             if (current.playback?.playbackId !== command.playbackId) return;
             if (!(yield* subscribed)) return;
-            if (current.replay !== null) return yield* advanceReplay(current.replay);
-            return yield* settleFrom(current.cursor + 1);
+            // Paused: the cursor and the request hold; a finish reported after `Play` advances.
+            if (current.paused) return;
+            return yield* advance(current);
           }
           case 'Interrupt': {
             // The user declines an open blocking tool (a question) to say something else: it is
@@ -779,12 +835,30 @@ export const make = (config: SessionConfig) =>
               return yield* reject(command._tag, current);
             }
             yield* emit({ _tag: 'ReplayMoved', replay: target });
-            if (yield* subscribed) yield* requestPlayback;
-            return;
+            return yield* requestPlayback;
           }
           case 'Start': {
-            if (phase !== 'ready') return yield* reject(command._tag, current);
+            if (phase !== 'ready' || current.paused) return yield* reject(command._tag, current);
             return yield* beginIteration('start');
+          }
+          case 'Pause': {
+            if (phase === 'halted') return yield* reject(command._tag, current);
+            if (!current.paused) yield* emit({ _tag: 'PauseChanged', paused: true });
+            return;
+          }
+          case 'Play': {
+            if (phase === 'halted') return yield* reject(command._tag, current);
+            if (current.paused) yield* emit({ _tag: 'PauseChanged', paused: false });
+            if (phase === 'ready') return yield* beginIteration('start');
+            if (!current.paused) return;
+            // Resumes what is presented: the same request on this connection, else a fresh one.
+            // At the frontier, an action the pause held is reached now.
+            if (current.replay !== null) return yield* keepPlaying;
+            return yield* settleFrom(current.cursor);
+          }
+          case 'Next': {
+            if (!canAdvance(current)) return yield* reject(command._tag, current);
+            return yield* advance(current);
           }
           case 'ToolCommand': {
             if (phase === 'halted') return yield* reject(command._tag, current);
@@ -816,8 +890,11 @@ export const make = (config: SessionConfig) =>
           yield* Queue.offer(previous, { _tag: 'Superseded' });
           yield* Queue.end(previous);
         }
-        yield* Queue.offer(queue, { _tag: 'Snapshot', state: yield* Ref.get(state) });
-        // Replays the presented line from its start under a new playback ID.
+        const current = yield* Ref.get(state);
+        yield* Queue.offer(queue, { _tag: 'Snapshot', state: current });
+        // A request made to the former connection never carries over. Paused, none replaces it
+        // until `Play`; otherwise the presented line replays from its start under a new ID.
+        if (current.paused && current.playback !== null) yield* emit({ _tag: 'PlaybackCleared' });
         yield* requestPlayback;
         return queue;
       }),

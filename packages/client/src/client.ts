@@ -31,14 +31,16 @@ export class Client extends Context.Service<
   Client,
   {
     /**
-     * The actions up to the cursor, the phase, open tool executions, pending tool outcomes and the
-     * presented speak. `None` until the first snapshot.
+     * The actions up to the cursor, the phase (presented and at the frontier), whether paused, the
+     * available controls, open tool executions, pending tool outcomes and the presented speak.
+     * `None` until the first snapshot.
      */
     readonly view: Subscribable<Option.Option<ConversationView>>;
     readonly connection: Subscribable<Connection>;
     /**
-     * The line to play now. It becomes `None` when the Harness moves on (finished, interrupted),
-     * and on reconnect or supersede, so the application stops playing.
+     * The line to play now. It becomes `None` when the Harness moves on (finished, interrupted,
+     * withdrawn), and on reconnect or supersede, so the application stops playing. A pause leaves
+     * it in place: the application pauses the clip and keeps its position.
      */
     readonly playback: Subscribable<Option.Option<PlaybackInstruction>>;
     readonly sendMessage: (text: string) => Effect.Effect<void, CommandRejected | TransportError>;
@@ -49,6 +51,21 @@ export class Client extends Context.Service<
     readonly back: () => Effect.Effect<void, CommandRejected | TransportError>;
     /** Sends the preloaded start (phase `ready`); generation begins after it. */
     readonly start: () => Effect.Effect<void, CommandRejected | TransportError>;
+    /**
+     * Holds presentation and new iterations; running work continues. Keep the playing clip and its
+     * position: `play()` resumes the same instruction. Idempotent.
+     */
+    readonly pause: () => Effect.Effect<void, CommandRejected | TransportError>;
+    /**
+     * Releases a pause and continues from the presented line (a new instruction only if the
+     * previous one was withdrawn), or sends the preloaded start. Otherwise a no-op.
+     */
+    readonly play: () => Effect.Effect<void, CommandRejected | TransportError>;
+    /**
+     * Skips the presented line, or processes the action at the cursor, landing on the next line or
+     * the end. Stays paused when paused, with no new instruction.
+     */
+    readonly next: () => Effect.Effect<void, CommandRejected | TransportError>;
     /**
      * Encodes `payload` with the tool package's command schema and sends it to that execution. The
      * Harness validates it against the execution's own schema, and rejects it as `invalid` (the

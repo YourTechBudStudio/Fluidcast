@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { Layer } from 'effect';
+import { Layer, Schema } from 'effect';
 import { HttpRouter } from 'effect/unstable/http';
 
-import { noSessionStatus, sessionPaths } from '@fluidcast/app-contract';
+import {
+  CommandBody,
+  CommandFailure,
+  commandStatus,
+  noSessionStatus,
+  sessionPaths,
+  SubscriptionMessageJson,
+} from '@fluidcast/app-contract';
+import { CommandRejected } from '@yourtechbudstudio/fluidcast-harness/protocol';
 
 import { fakeActiveLayer, fakeBuild, startOver, withApp } from './fixtures.test.ts';
 import { conversationRoutes } from './routes.ts';
@@ -37,6 +45,25 @@ describe('POST /api/session/:sessionId/commands', () => {
         executionId: 'gone',
         reason: 'stale',
       });
+    });
+  });
+
+  it('applies Pause, Play and Next, and answers Next with nothing ahead with a CommandRejected', async () => {
+    await withApp(app(), async (send) => {
+      const id = await startOver(send);
+      for (const command of [{ _tag: 'Pause' }, { _tag: 'Pause' }, { _tag: 'Play' }]) {
+        // Each body is exactly what the shared command schema encodes.
+        const json = Schema.encodeSync(CommandBody)(Schema.decodeUnknownSync(CommandBody)(command));
+        const response = await send(sessionPaths(id).commands, { method: 'POST', json });
+        assert.equal(response.status, commandStatus.applied);
+      }
+      const rejected = await send(sessionPaths(id).commands, {
+        method: 'POST',
+        json: { _tag: 'Next' },
+      });
+      assert.equal(rejected.status, commandStatus.rejected);
+      const body = Schema.decodeUnknownSync(CommandFailure)(await rejected.json());
+      assert.deepEqual(body, new CommandRejected({ command: 'Next', phase: 'idle' }));
     });
   });
 
@@ -73,6 +100,43 @@ describe('GET /api/session/:sessionId/events', () => {
       // The body ends, so reading it completes.
       const body = await response.text();
       assert.ok(body.startsWith('data: {"_tag":"Snapshot"'));
+    });
+  });
+
+  it('carries the pause in the snapshot and as an event, decodable with the shared schema', async () => {
+    await withApp(app(), async (send) => {
+      const id = await startOver(send);
+      const paused = await send(sessionPaths(id).commands, {
+        method: 'POST',
+        json: { _tag: 'Pause' },
+      });
+      assert.equal(paused.status, commandStatus.applied);
+      const response = await send(sessionPaths(id).events);
+      assert.ok(response.body);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      // The snapshot arrives first; the subscription is then live.
+      let text = decoder.decode((await reader.read()).value);
+      const played = await send(sessionPaths(id).commands, {
+        method: 'POST',
+        json: { _tag: 'Play' },
+      });
+      assert.equal(played.status, commandStatus.applied);
+      while (!text.includes('PauseChanged')) {
+        const chunk = await reader.read();
+        assert.ok(!chunk.done, 'the stream ended before the event');
+        text += decoder.decode(chunk.value);
+      }
+      await reader.cancel();
+      const messages = text
+        .split('\n')
+        .filter((frame) => frame.startsWith('data: '))
+        .map((frame) => Schema.decodeUnknownSync(SubscriptionMessageJson)(frame.slice(6)));
+      const [snapshot, ...events] = messages;
+      assert.equal(snapshot?._tag, 'Snapshot');
+      assert.equal(snapshot._tag === 'Snapshot' && snapshot.state.paused, true);
+      assert.deepEqual(snapshot._tag === 'Snapshot' && snapshot.state.pendingProgress, []);
+      assert.deepEqual(events, [{ _tag: 'PauseChanged', paused: false }]);
     });
   });
 });

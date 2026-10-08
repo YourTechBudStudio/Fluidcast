@@ -1,6 +1,6 @@
 /**
  * Progress snapshots: while a busy period runs, a schedule asks a language model for one sentence
- * describing the worker's recent transcript and offers it to the Harness, which uses or drops it.
+ * describing the worker's recent transcript and offers it to the Harness, which accepts (uses or keeps) or drops it.
  */
 import { Effect, Ref, Schedule, Stream } from 'effect';
 import { LanguageModel } from 'effect/unstable/ai';
@@ -65,7 +65,7 @@ export const oneSentence = (reply: string): string | undefined => {
 
 /**
  * Runs for as long as its fiber lives (the execution's scope). Each tick skips unless the
- * transcript gained activity since the last *used* snapshot, so a dropped or rejected snapshot is
+ * transcript gained activity since the last *accepted* snapshot, so a dropped or rejected snapshot is
  * retried on the next tick. Model failures are logged by identifiers and skipped, never faults;
  * neither the entries nor the text are logged.
  */
@@ -81,7 +81,7 @@ export const progressLoop = (options: {
   readonly offer: (text: string) => Effect.Effect<boolean>;
 }): Effect.Effect<void> =>
   Effect.gen(function* () {
-    const usedUpTo = yield* Ref.make(options.start);
+    const acceptedUpTo = yield* Ref.make(options.start);
     const failed = (error: string) =>
       Effect.logWarning('worker progress failed').pipe(
         Effect.annotateLogs({ error }),
@@ -89,7 +89,7 @@ export const progressLoop = (options: {
       );
     const tick = Effect.gen(function* () {
       const entries = yield* options.transcript;
-      if (!entries.slice(yield* Ref.get(usedUpTo)).some(isActivity)) return;
+      if (!entries.slice(yield* Ref.get(acceptedUpTo)).some(isActivity)) return;
       const lines = entries
         .slice(options.start)
         .filter(isActivity)
@@ -118,7 +118,7 @@ export const progressLoop = (options: {
         );
       const text = reply === undefined ? undefined : oneSentence(reply);
       if (text === undefined) return;
-      if (yield* options.offer(text)) yield* Ref.set(usedUpTo, entries.length);
+      if (yield* options.offer(text)) yield* Ref.set(acceptedUpTo, entries.length);
     });
     yield* Effect.schedule(tick, options.schedule);
   });

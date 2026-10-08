@@ -35,7 +35,9 @@ export interface InvocationContext<Command> {
   /** The next validated client command for this execution. Take it again for another. */
   readonly awaitCommand: Effect.Effect<Command>;
   /**
-   * Offers a progress update. `true`: the model will read it now. `false`: dropped, never queued.
+   * Offers a progress update. `true`: accepted, for the model to read now or, while presentation
+   * is held, kept as this execution's latest update (a newer one replaces it; completion drops it).
+   * `false`: dropped, never queued.
    * Call it only from the execution's own work, never from `assign` or `context`: they run under
    * the session lock, and `progress` takes it.
    */

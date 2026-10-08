@@ -99,6 +99,9 @@ const progressOf = (id: string, handle: string, line: string): Action => ({
 const view = (partial: Partial<ConversationView>): ConversationView => ({
   actions: [],
   phase: 'idle',
+  frontierPhase: 'idle',
+  paused: false,
+  controls: { back: false, next: false, play: false, pause: true, send: true },
   speakers: [{ id: 'host', name: 'Host' }],
   executions: [],
   pendingResults: [],

@@ -10,6 +10,7 @@ import {
   ActionId,
   LabeledContext,
   ToolErrored,
+  ToolProgress,
   ToolResult,
   UserMessage,
   type Speak,
@@ -57,6 +58,10 @@ export type Execution = typeof Execution.Type;
 export const PendingResult = Schema.Union([ToolResult, ToolErrored]);
 export type PendingResult = typeof PendingResult.Type;
 
+/** The latest progress update an execution offered while it could not be used yet. */
+export const PendingProgress = Schema.Struct({ executionId: ExecutionId, text: Schema.String });
+export type PendingProgress = typeof PendingProgress.Type;
+
 /** A preloaded start waiting for `Start`: its message, and the context read before it. */
 export const PendingStart = Schema.Struct({
   message: UserMessage,
@@ -73,8 +78,12 @@ export type PendingStart = typeof PendingStart.Type;
  *   submitted, so the log reads exactly as the model saw it.
  * - `replay` is the speak being re-presented behind the cursor after `Back`, or null. It is always
  *   below `cursor`.
+ * - `pendingProgress` holds at most one progress update per open execution, the latest, kept while
+ *   it could not be used (paused, or replacing one kept earlier). Submitted with the results.
  * - `start` is a preloaded start waiting for `Start`. Like `pendingResults`, it is beside the log
  *   until submitted.
+ * - `paused` holds presentation and new iterations (`Pause`, `Play`). Running generation and tools
+ *   continue. Orthogonal to the phase.
  * - `speakers` and `speech` are fixed by the session's config and never change.
  */
 export const SessionState = Schema.Struct({
@@ -84,8 +93,10 @@ export const SessionState = Schema.Struct({
   playback: Schema.NullOr(Playback),
   executions: Schema.Array(Execution),
   pendingResults: Schema.Array(PendingResult),
+  pendingProgress: Schema.Array(PendingProgress),
   replay: Schema.NullOr(Schema.Int),
   start: Schema.NullOr(PendingStart),
+  paused: Schema.Boolean,
   speakers: Schema.Array(SpeakerLabel),
   speech: Schema.Struct({ mimeType: Schema.String }),
 });
@@ -131,18 +142,35 @@ export const ToolJoined = Schema.TaggedStruct('ToolJoined', {
   executionId: ExecutionId,
   handle: Schema.String,
 });
-/** The execution ended. Any model-visible outcome was queued just before. */
+/** The execution ended. Any model-visible outcome was queued just before; its kept progress is dropped. */
 export const ToolCompleted = Schema.TaggedStruct('ToolCompleted', { executionId: ExecutionId });
 /** A model-visible outcome waits to be submitted. */
 export const ResultQueued = Schema.TaggedStruct('ResultQueued', { result: PendingResult });
-/** Every pending result was submitted to the model: they are appended to the log in order. */
-export const ResultsSubmitted = Schema.TaggedStruct('ResultsSubmitted', {});
+/**
+ * Every pending result, then `progress` (the kept progress updates, in execution start order, with
+ * each execution's handles at submission), was submitted to the model and appended to the log.
+ * Both queues are now empty.
+ */
+export const ResultsSubmitted = Schema.TaggedStruct('ResultsSubmitted', {
+  progress: Schema.Array(ToolProgress),
+});
+/** An execution's progress update is kept, replacing any it kept before. */
+export const ProgressQueued = Schema.TaggedStruct('ProgressQueued', PendingProgress.fields);
+/** Every kept progress update was dropped: a halt means none can be submitted. */
+export const ProgressDiscarded = Schema.TaggedStruct('ProgressDiscarded', {});
 /** The preloaded start was submitted: its context, then its message, are appended to the log. */
 export const StartSubmitted = Schema.TaggedStruct('StartSubmitted', {});
 /** The replay position moved, or ended (`null`). Any outstanding playback is cleared. */
 export const ReplayMoved = Schema.TaggedStruct('ReplayMoved', {
   replay: Schema.NullOr(Schema.Int),
 });
+/** Presentation is held (`Pause`) or released (`Play`). */
+export const PauseChanged = Schema.TaggedStruct('PauseChanged', { paused: Schema.Boolean });
+/**
+ * The outstanding playback request no longer holds: a paused session took a new subscription.
+ * Stop the old clip; `Play` requests the line again.
+ */
+export const PlaybackCleared = Schema.TaggedStruct('PlaybackCleared', {});
 
 export const SessionEvent = Schema.Union([
   ActionAppended,
@@ -155,8 +183,12 @@ export const SessionEvent = Schema.Union([
   ToolCompleted,
   ResultQueued,
   ResultsSubmitted,
+  ProgressQueued,
+  ProgressDiscarded,
   StartSubmitted,
   ReplayMoved,
+  PauseChanged,
+  PlaybackCleared,
 ]);
 export type SessionEvent = typeof SessionEvent.Type;
 
@@ -191,6 +223,18 @@ export const ToolCommand = Schema.TaggedStruct('ToolCommand', {
 export const Back = Schema.TaggedStruct('Back', {});
 /** Submits the preloaded start (phase `ready`); generation begins after it. */
 export const Start = Schema.TaggedStruct('Start', {});
+/** Holds presentation and new iterations. Idempotent. */
+export const Pause = Schema.TaggedStruct('Pause', {});
+/**
+ * Releases a pause and continues from the presented action, or submits the preloaded start
+ * (phase `ready`). Otherwise a no-op. Idempotent.
+ */
+export const Play = Schema.TaggedStruct('Play', {});
+/**
+ * Moves presentation forward as if the presented speak finished, or processes the buffered action
+ * at the cursor, even while paused. Never requests playback while paused.
+ */
+export const Next = Schema.TaggedStruct('Next', {});
 
 export const Command = Schema.Union([
   SendMessage,
@@ -200,6 +244,9 @@ export const Command = Schema.Union([
   ToolCommand,
   Back,
   Start,
+  Pause,
+  Play,
+  Next,
 ]);
 export type Command = typeof Command.Type;
 
@@ -212,6 +259,9 @@ export class CommandRejected extends Schema.TaggedError<CommandRejected>()('Comm
     'ToolCommand',
     'Back',
     'Start',
+    'Pause',
+    'Play',
+    'Next',
   ]),
   phase: Phase,
 }) {}
@@ -267,11 +317,28 @@ export const reduce = (state: SessionState, event: SessionEvent): SessionState =
         executions: state.executions.filter(
           (execution) => execution.executionId !== event.executionId,
         ),
+        pendingProgress: state.pendingProgress.filter(
+          (progress) => progress.executionId !== event.executionId,
+        ),
       };
     case 'ResultQueued':
       return { ...state, pendingResults: [...state.pendingResults, event.result] };
     case 'ResultsSubmitted':
-      return { ...state, actions: [...state.actions, ...state.pendingResults], pendingResults: [] };
+      return {
+        ...state,
+        actions: [...state.actions, ...state.pendingResults, ...event.progress],
+        pendingResults: [],
+        pendingProgress: [],
+      };
+    case 'ProgressQueued': {
+      const { _tag, ...progress } = event;
+      const others = state.pendingProgress.filter(
+        (candidate) => candidate.executionId !== progress.executionId,
+      );
+      return { ...state, pendingProgress: [...others, progress] };
+    }
+    case 'ProgressDiscarded':
+      return { ...state, pendingProgress: [] };
     case 'StartSubmitted': {
       if (state.start === null) return state;
       const { message, context } = state.start;
@@ -283,6 +350,10 @@ export const reduce = (state: SessionState, event: SessionEvent): SessionState =
     }
     case 'ReplayMoved':
       return { ...state, replay: event.replay, playback: null };
+    case 'PauseChanged':
+      return { ...state, paused: event.paused };
+    case 'PlaybackCleared':
+      return { ...state, playback: null };
   }
 };
 
@@ -338,4 +409,55 @@ export const derivePhase = (state: SessionState): Phase => {
   if (state.actions.at(-1)?.type === 'interrupted') return 'idle';
   if (state.pendingResults.length > 0 || state.executions.length > 0) return 'working';
   return 'idle';
+};
+
+/** `derivePhase` at the execution frontier, as if no replay were presented. */
+export const frontierPhase = (state: SessionState): Phase =>
+  derivePhase({ ...state, replay: null });
+
+/**
+ * Whether `SendMessage` is accepted: never once halted; in phase `idle` or `generationFailed`; and,
+ * while paused, also when the only thing left is queued results (nothing generating, presented,
+ * replayed or running), which the message then submits with it.
+ */
+export const canSend = (state: SessionState): boolean => {
+  if (isHalted(state)) return false;
+  const phase = derivePhase(state);
+  if (phase === 'idle' || phase === 'generationFailed') return true;
+  return (
+    state.paused &&
+    state.generation === 'idle' &&
+    state.replay === null &&
+    state.cursor === state.actions.length &&
+    state.executions.length === 0 &&
+    state.pendingResults.length > 0
+  );
+};
+
+/** Whether `Next` has something to move past or process: a replay, or an action at the cursor. */
+export const canAdvance = (state: SessionState): boolean =>
+  !isHalted(state) && (state.replay !== null || state.cursor < state.actions.length);
+
+/**
+ * Which player controls do something now. For presentation: `Pause` and `Play` are also accepted
+ * as no-ops when these are false, and the Harness validates every command again.
+ */
+export interface Controls {
+  readonly back: boolean;
+  readonly next: boolean;
+  /** Releases a pause, or submits a preloaded start. */
+  readonly play: boolean;
+  readonly pause: boolean;
+  readonly send: boolean;
+}
+
+export const controls = (state: SessionState): Controls => {
+  const halted = isHalted(state);
+  return {
+    back: !halted && backTarget(state) !== undefined,
+    next: canAdvance(state),
+    play: !halted && (state.paused || state.start !== null),
+    pause: !halted && !state.paused,
+    send: canSend(state),
+  };
 };

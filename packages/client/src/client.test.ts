@@ -20,6 +20,7 @@ import { TestClock } from 'effect/testing';
 
 import { ActionId, type Action } from '@yourtechbudstudio/fluidcast-core/actions';
 import {
+  CommandRejected,
   ExecutionId,
   PlaybackId,
   ToolCommandRejected,
@@ -48,8 +49,10 @@ const state = (actions: ReadonlyArray<Action>, cursor: number): SessionState => 
   playback: null,
   executions: [],
   pendingResults: [],
+  pendingProgress: [],
   replay: null,
   start: null,
+  paused: false,
   speakers: [{ id: 'host', name: 'Host' }],
   speech: { mimeType: 'audio/ogg' },
 });
@@ -75,7 +78,9 @@ const fakeTransport = (options: { readonly url: boolean }) =>
     const subscribeCalls = yield* Ref.make(0);
     const sent = yield* Ref.make<ReadonlyArray<Command>>([]);
     // The next `send` fails with this instead of succeeding, if set.
-    const rejectNext = yield* Ref.make<ToolCommandRejected | undefined>(undefined);
+    const rejectNext = yield* Ref.make<CommandRejected | ToolCommandRejected | undefined>(
+      undefined,
+    );
     const downloads = new Map<
       string,
       { gate: Deferred.Deferred<void>; exit: Exit.Exit<unknown, unknown> | undefined }
@@ -140,7 +145,8 @@ const fakeTransport = (options: { readonly url: boolean }) =>
       connect,
       subscribeCalls: Ref.get(subscribeCalls),
       sent: Ref.get(sent),
-      rejectNext: (rejected: ToolCommandRejected) => Ref.set(rejectNext, rejected),
+      rejectNext: (rejected: CommandRejected | ToolCommandRejected) =>
+        Ref.set(rejectNext, rejected),
       /** Action IDs whose audio was requested, in order. */
       fetched: () => [...downloads.keys()],
       release: (actionId: string) => Deferred.succeed(download(actionId).gate, undefined),
@@ -490,6 +496,98 @@ describe('Client', () => {
           yield* Effect.flip(client.sendToolCommand(Count, execution, { count: 3 })),
           rejection,
         );
+      }),
+    ));
+
+  it('sends Pause, Play and Next, passing a CommandRejected through', () =>
+    run(
+      Effect.gen(function* () {
+        const { client, connect, sent, rejectNext } = yield* setup({ url: true });
+        const connection = yield* connect;
+        yield* connection.send({ _tag: 'Snapshot', state: state([user], 1) });
+        yield* eventually(client.connection.get, (value) => value === 'connected');
+
+        yield* client.pause();
+        yield* client.play();
+        yield* client.next();
+        assert.deepEqual(yield* sent, [{ _tag: 'Pause' }, { _tag: 'Play' }, { _tag: 'Next' }]);
+
+        const rejection = new CommandRejected({ command: 'Next', phase: 'idle' });
+        yield* rejectNext(rejection);
+        assert.deepEqual(yield* Effect.flip(client.next()), rejection);
+      }),
+    ));
+
+  it('projects the pause, the frontier phase and the controls from the full state', () =>
+    run(
+      Effect.gen(function* () {
+        const { client, connect } = yield* setup({ url: true });
+        const connection = yield* connect;
+        const failed: Action = {
+          type: 'generation_failed',
+          id: ActionId.make('failed'),
+          error: { tag: 'ProviderError', message: 'x' },
+        };
+        // The cursor is on `a`; `b` is buffered beyond the view's actions.
+        yield* connection.send({
+          _tag: 'Snapshot',
+          state: { ...state([user, speak('a'), speak('b'), failed], 1), generation: 'failed' },
+        });
+        const first = Option.getOrThrow(yield* eventually(client.view.get, Option.isSome));
+        assert.equal(first.actions.length, 2);
+        assert.equal(first.paused, false);
+        assert.deepEqual(first.controls, {
+          back: false,
+          next: true,
+          play: false,
+          pause: true,
+          send: false,
+        });
+
+        yield* connection.send(
+          { _tag: 'PauseChanged', paused: true },
+          { _tag: 'CursorMoved', cursor: 4 },
+          { _tag: 'ReplayMoved', replay: 2 },
+        );
+        const replaying = Option.getOrThrow(
+          yield* eventually(
+            client.view.get,
+            (value) => Option.isSome(value) && value.value.presented?.id === 'b',
+          ),
+        );
+        assert.equal(replaying.paused, true);
+        assert.equal(replaying.phase, 'speaking');
+        assert.equal(replaying.frontierPhase, 'generationFailed');
+        assert.deepEqual(replaying.controls, {
+          back: true,
+          next: true,
+          play: true,
+          pause: false,
+          send: false,
+        });
+      }),
+    ));
+
+  it('keeps the instruction across a pause, and withdraws it on PlaybackCleared', () =>
+    run(
+      Effect.gen(function* () {
+        const { client, connect } = yield* setup({ url: true });
+        const connection = yield* connect;
+        yield* connection.send(
+          { _tag: 'Snapshot', state: state([user, speak('a')], 1) },
+          requested('p-a', 'a'),
+        );
+        yield* eventually(client.playback.get, Option.isSome);
+        yield* connection.send({ _tag: 'PauseChanged', paused: true });
+        yield* eventually(client.view.get, (value) => Option.isSome(value) && value.value.paused);
+        const held = yield* client.playback.get;
+        assert.equal(Option.getOrThrow(held).playbackId, 'p-a');
+
+        yield* connection.send({ _tag: 'PlaybackCleared' });
+        yield* eventually(client.playback.get, Option.isNone);
+        yield* connection.send({ _tag: 'PauseChanged', paused: false }, requested('p-a2', 'a'));
+        const fresh = yield* eventually(client.playback.get, Option.isSome);
+        assert.equal(fresh.value.playbackId, 'p-a2');
       }),
     ));
 });

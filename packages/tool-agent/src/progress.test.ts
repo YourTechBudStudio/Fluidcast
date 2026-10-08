@@ -138,7 +138,7 @@ describe('progressLoop', () => {
       }),
     ));
 
-  it('skips a tick with nothing new since the last used snapshot', () =>
+  it('skips a tick with nothing new since the last accepted snapshot', () =>
     run(
       Effect.gen(function* () {
         const loop = yield* setup({ entries: [text('Reading.')] });

@@ -50,8 +50,10 @@ export const stateOf = (
   pendingResults: (extra.pendingResults ?? []).map(
     (draft) => ({ ...draft, id: makeActionId() }) as PendingResult,
   ),
+  pendingProgress: [],
   replay: null,
   start: null,
+  paused: false,
   speakers: extra.speakers ?? [{ id: 'host', name: 'Host' }],
   speech: { mimeType: 'audio/ogg' },
 });

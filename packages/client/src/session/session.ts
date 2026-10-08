@@ -2,13 +2,16 @@ import { Effect, FiberHandle, Option, Ref, Result, Schema, Stream, SubscriptionR
 
 import type { Speak } from '@yourtechbudstudio/fluidcast-core/actions';
 import {
+  controls,
   derivePhase,
   effectiveActions,
+  frontierPhase,
   presentedSpeak,
   reduce,
   SpeechNotFound,
   type Command,
   type CommandRejected,
+  type Controls,
   type ExecutionId,
   type Phase,
   type ToolCommandRejected,
@@ -25,7 +28,20 @@ import { reconnectSchedule } from './reconnect.ts';
 /** What a player shows: the actions up to the cursor, the derived phase, and the tool work in flight. */
 export interface ConversationView {
   readonly actions: SessionState['actions'];
+  /** The presented phase: `speaking` while an earlier line replays. */
   readonly phase: Phase;
+  /**
+   * The phase at the execution frontier, beneath any replay: what the conversation is doing (a
+   * question waits, work runs, generation failed) while an earlier line is presented.
+   */
+  readonly frontierPhase: Phase;
+  /** Presentation and new iterations are held (`pause()`), orthogonal to the phase. */
+  readonly paused: boolean;
+  /**
+   * Which controls do something now, derived from the full session state (not `actions`, which
+   * stops at the cursor). Combine with `connection`: commands need a connection.
+   */
+  readonly controls: Controls;
   readonly speakers: ReadonlyArray<SpeakerLabel>;
   /** Open tool executions, in start order. Each one's call is in `actions`. */
   readonly executions: SessionState['executions'];
@@ -88,6 +104,9 @@ export const makeSession = (transport: Transport['Service'], audio: Audio) =>
           Option.some({
             actions: effectiveActions(state),
             phase: derivePhase(state),
+            frontierPhase: frontierPhase(state),
+            paused: state.paused,
+            controls: controls(state),
             speakers: state.speakers,
             executions: state.executions,
             pendingResults: state.pendingResults,
@@ -140,8 +159,13 @@ export const makeSession = (transport: Transport['Service'], audio: Audio) =>
               return yield* new TransportError({ reason: 'Malformed' });
             }
             const next = reduce(current, message);
-            // The presented line changed: the player stops the old clip at once.
-            if (message._tag === 'CursorMoved' || message._tag === 'ReplayMoved') {
+            // The presented line changed, or its request no longer holds: the player stops the
+            // old clip at once.
+            if (
+              message._tag === 'CursorMoved' ||
+              message._tag === 'ReplayMoved' ||
+              message._tag === 'PlaybackCleared'
+            ) {
               yield* stopPlayback;
             }
             yield* project(next);
@@ -188,6 +212,9 @@ export const makeSession = (transport: Transport['Service'], audio: Audio) =>
       retry: () => sendPlain({ _tag: 'RetryGeneration' }),
       back: () => sendPlain({ _tag: 'Back' }),
       start: () => sendPlain({ _tag: 'Start' }),
+      pause: () => sendPlain({ _tag: 'Pause' }),
+      play: () => sendPlain({ _tag: 'Play' }),
+      next: () => sendPlain({ _tag: 'Next' }),
       finished: (playbackId: PlaybackId): Effect.Effect<void, CommandRejected | TransportError> =>
         sendPlain({ _tag: 'PlaybackFinished', playbackId }),
       sendToolCommand: <C>(

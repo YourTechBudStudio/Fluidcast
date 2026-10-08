@@ -22,9 +22,12 @@ import {
 import { ToolError, ToolFault, type Tool, type ToolPolicy } from '../tool.ts';
 import type { SessionConfig } from './config.ts';
 import {
+  canSend,
   CommandRejected,
+  controls,
   currentAction,
   derivePhase,
+  frontierPhase,
   effectiveActions,
   ExecutionId,
   PlaybackId,
@@ -1913,8 +1916,10 @@ const emptyState: SessionState = {
   playback: null,
   executions: [],
   pendingResults: [],
+  pendingProgress: [],
   replay: null,
   start: null,
+  paused: false,
   speakers: [],
   speech: { mimeType: 'audio/ogg' },
 };
@@ -2653,4 +2658,764 @@ describe('Session tool abilities', () => {
         assert.equal(joined.executions[0]?.startedAt, 1_234_000);
       }).pipe(Effect.provide(TestClock.layer())),
     ));
+});
+
+// Pause, Play and Next
+
+/** Wraps a fake tool so a test can offer progress from its execution of a label. */
+const progressive = (base: Tool<{ readonly label: string }, typeof Replied.Type, Reply>) => {
+  const progress = new Map<string, (text: string) => Effect.Effect<boolean>>();
+  const tool: Tool<{ readonly label: string }, typeof Replied.Type, Reply> = {
+    ...base,
+    run: (input, context) => {
+      progress.set(input.label, context.progress);
+      return base.run(input, context);
+    },
+  };
+  const offer = (label: string, text: string) => {
+    const offerFor = progress.get(label);
+    assert.ok(offerFor, `no execution of ${label} ran`);
+    return offerFor(text);
+  };
+  return { tool, offer };
+};
+
+const countOf = (messages: ReadonlyArray<SubscriptionMessage>, tag: SubscriptionMessage['_tag']) =>
+  messages.filter((message) => message._tag === tag).length;
+
+const progressTexts = (state: SessionState) =>
+  state.actions.flatMap((action) => (action.type === 'tool_progress' ? [action.text] : []));
+
+describe('Session pause', () => {
+  it('holds presentation mid-stream while generation appends, keeps the request, and resumes it on Play', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        const model = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'SendMessage', text: 'Hi' });
+        yield* model.say(`[${line('host', 'One.')}`);
+        const playing = yield* ctx.waitFor((current) => current.playback !== null);
+        assert.ok(playing.playback);
+        yield* ctx.command({ _tag: 'Pause' });
+        yield* ctx.command({ _tag: 'Pause' });
+
+        yield* model.say(`,${line('host', 'Two.')},${call('view', 'v')}]`);
+        yield* model.end;
+        const held = yield* ctx.waitFor((current) => current.generation === 'idle');
+        assert.equal(held.paused, true);
+        assert.deepEqual(actionTypes(held), ['user_message', 'speak', 'speak', 'tool_call']);
+        assert.equal(held.cursor, playing.cursor);
+        assert.deepEqual(held.playback, playing.playback);
+        assert.deepEqual(held.executions, []);
+        assert.equal(derivePhase(held), 'speaking');
+
+        // A finish reported while paused holds the cursor and the request.
+        yield* ctx.command({ _tag: 'PlaybackFinished', playbackId: playing.playback.playbackId });
+        assert.equal((yield* ctx.state).cursor, playing.cursor);
+        assert.deepEqual((yield* ctx.state).playback, playing.playback);
+
+        // Play resumes the same request on this connection: nothing is requested again.
+        yield* assertAgreement(subscription, ctx.state);
+        const requests = countOf(yield* subscription.messages, 'PlaybackRequested');
+        yield* ctx.command({ _tag: 'Play' });
+        yield* ctx.command({ _tag: 'Play' });
+        const resumed = yield* ctx.state;
+        assert.equal(resumed.paused, false);
+        assert.deepEqual(resumed.playback, playing.playback);
+        yield* assertAgreement(subscription, ctx.state);
+        assert.equal(countOf(yield* subscription.messages, 'PlaybackRequested'), requests);
+        assert.equal(countOf(yield* subscription.messages, 'PauseChanged'), 2);
+
+        // The finish reported after Play advances; a duplicate is harmless.
+        yield* ctx.command({ _tag: 'PlaybackFinished', playbackId: playing.playback.playbackId });
+        yield* ctx.command({ _tag: 'PlaybackFinished', playbackId: playing.playback.playbackId });
+        const two = yield* ctx.state;
+        assert.equal(two.cursor, 2);
+        assert.equal(two.playback?.actionId, two.actions[2]?.id);
+        yield* finishLine(ctx);
+        yield* executionOf(ctx, 'call_1');
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('leaves a call appended at the paused end-of-log cursor unreached until Play', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        const model = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'SendMessage', text: 'Hi' });
+        yield* ctx.command({ _tag: 'Pause' });
+        yield* model.say(`[${call('fetch', 'f')},${line('host', 'One.')}]`);
+        yield* model.end;
+        const held = yield* ctx.waitFor((current) => current.generation === 'idle');
+        // The cursor names the call, but it has not executed.
+        assert.equal(held.cursor, 1);
+        assert.equal(held.actions[1]?.type, 'tool_call');
+        assert.deepEqual(held.executions, []);
+        assert.equal(held.playback, null);
+        assert.equal(derivePhase(held), 'working');
+        assert.equal(yield* ctx.calls, 1);
+
+        yield* ctx.command({ _tag: 'Play' });
+        const played = yield* ctx.state;
+        assert.equal(played.executions.length, 1);
+        assert.equal(played.cursor, 2);
+        assert.equal(played.playback?.actionId, played.actions[2]?.id);
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('does not let a continuation timer scheduled before Pause submit, and continues after Play', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        yield* TestClock.withLive(subscribe(ctx.session));
+        yield* TestClock.withLive(exchange(ctx, 'Hi', [call('fetch', 'f')]));
+        yield* TestClock.withLive(reply(ctx, 'call_1', { reply: 'data' }));
+        yield* TestClock.withLive(ctx.waitFor((current) => current.pendingResults.length === 1));
+        // The timer is now sleeping on the test clock.
+        yield* TestClock.withLive(Effect.sleep('20 millis'));
+        yield* ctx.command({ _tag: 'Pause' });
+        yield* TestClock.adjust('1 second');
+        yield* TestClock.withLive(Effect.sleep('20 millis'));
+        const held = yield* ctx.state;
+        assert.equal(held.generation, 'idle');
+        assert.equal(held.pendingResults.length, 1);
+        assert.equal(yield* ctx.calls, 1);
+
+        const next = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'Play' });
+        yield* TestClock.adjust('1 second');
+        assert.equal(
+          lastUser(yield* TestClock.withLive(next.prompt)),
+          '<tool_result call="call_1" tool="fetch">f: data</tool_result>',
+        );
+      }).pipe(Effect.provide(TestClock.layer())),
+    ));
+
+  it('accepts Play with nothing to do, and guards generation-start commands while paused', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        const before = (yield* subscription.messages).length;
+        yield* ctx.command({ _tag: 'Play' });
+        assert.equal((yield* subscription.messages).length, before);
+
+        // Paused while generating: a message is rejected and the pause stands.
+        const model = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'SendMessage', text: 'Hi' });
+        yield* ctx.command({ _tag: 'Pause' });
+        assert.deepEqual(
+          yield* rejection(ctx.command({ _tag: 'SendMessage', text: 'Again' })),
+          new CommandRejected({ command: 'SendMessage', phase: 'working' }),
+        );
+        assert.equal((yield* ctx.state).paused, true);
+        // Paused at a failure: Retry is rejected until Play.
+        yield* model.fail;
+        yield* ctx.waitFor((current) => current.generation === 'failed');
+        assert.deepEqual(
+          yield* rejection(ctx.command({ _tag: 'RetryGeneration' })),
+          new CommandRejected({ command: 'RetryGeneration', phase: 'generationFailed' }),
+        );
+        // Paused and idle-like: a message is accepted and releases the pause.
+        const again = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'SendMessage', text: 'Again' });
+        assert.equal((yield* ctx.state).paused, false);
+        yield* again.say('[]');
+        yield* again.end;
+        yield* ctx.waitFor((current) => current.generation === 'idle');
+        assert.equal(yield* ctx.calls, 2);
+
+        // Paused with nothing to do: Play only releases the pause.
+        yield* ctx.command({ _tag: 'Pause' });
+        yield* ctx.command({ _tag: 'Play' });
+        assert.equal((yield* ctx.state).paused, false);
+        assert.equal(yield* ctx.calls, 2);
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('rejects Start while paused, and Play submits the preloaded start', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* setupWith([], undefined, undefined, { message: 'Begin' });
+        yield* subscribe(ctx.session);
+        yield* ctx.command({ _tag: 'Pause' });
+        assert.deepEqual(
+          yield* rejection(ctx.command({ _tag: 'Start' })),
+          new CommandRejected({ command: 'Start', phase: 'ready' }),
+        );
+        assert.equal(controls(yield* ctx.state).play, true);
+        const model = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'Play' });
+        assert.equal(lastUser(yield* model.prompt), '<user_message>Begin</user_message>');
+        assert.equal((yield* ctx.state).paused, false);
+      }),
+    ));
+
+  it('rejects Pause, Play, Next and a paused send once halted, even with queued results', () =>
+    run(
+      Effect.gen(function* () {
+        const worker = pooledTool('worker');
+        const ctx = yield* setupWith([worker.tool, fetch]);
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [
+          call('worker', 'a'),
+          call('fetch', 'ok'),
+          call('fetch', 'bad'),
+        ]);
+        yield* ctx.command({ _tag: 'Pause' });
+        assert.equal(yield* worker.offer('a', 'Kept.'), true);
+        yield* reply(ctx, 'call_2', { reply: 'fine' });
+        yield* ctx.waitFor((current) => current.pendingResults.length === 1);
+        yield* reply(ctx, 'call_3', { fault: 'down' });
+        const halted = yield* ctx.waitFor((current) => derivePhase(current) === 'halted');
+        assert.equal(halted.paused, true);
+        assert.equal(halted.pendingResults.length, 1);
+        assert.deepEqual(halted.pendingProgress, []);
+        assert.equal(canSend(halted), false);
+        assert.equal(yield* worker.offer('a', 'Late.'), false);
+        for (const command of [
+          { _tag: 'Pause' },
+          { _tag: 'Play' },
+          { _tag: 'Next' },
+          { _tag: 'SendMessage', text: 'Hi' },
+        ] as const) {
+          assert.deepEqual(
+            yield* rejection(ctx.command(command)),
+            new CommandRejected({ command: command._tag, phase: 'halted' }),
+          );
+        }
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('clears the request for a new subscription while paused; Play then requests afresh', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [line('host', 'One.')]);
+        const first = yield* ctx.waitFor((current) => current.playback !== null);
+        assert.ok(first.playback);
+        yield* ctx.command({ _tag: 'Pause' });
+
+        const second = yield* subscribe(ctx.session);
+        yield* second.waitFor(
+          (message): message is Extract<SubscriptionMessage, { _tag: 'PlaybackCleared' }> =>
+            message._tag === 'PlaybackCleared',
+        );
+        yield* assertAgreement(second, ctx.state);
+        assert.equal(countOf(yield* second.messages, 'PlaybackRequested'), 0);
+        assert.equal((yield* ctx.state).playback, null);
+        // The former connection's request no longer advances anything.
+        yield* ctx.command({ _tag: 'PlaybackFinished', playbackId: first.playback.playbackId });
+        assert.equal((yield* ctx.state).cursor, first.cursor);
+
+        yield* ctx.command({ _tag: 'Play' });
+        const request = yield* second.waitFor(isPlaybackRequest);
+        assert.notEqual(request.playbackId, first.playback.playbackId);
+        assert.equal(request.actionId, first.playback.actionId);
+        yield* assertAgreement(second, ctx.state);
+
+        // Unpaused, a new subscription replays the line under a new ID, as before.
+        const third = yield* subscribe(ctx.session);
+        const replayed = yield* third.waitFor(isPlaybackRequest);
+        assert.notEqual(replayed.playbackId, request.playbackId);
+      }),
+    ));
+});
+
+describe('Session Next', () => {
+  it('executes intervening tools and lands on the next speak while paused, without requesting it', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [line('host', 'One.'), call('view', 'v'), line('host', 'Two.')]);
+        yield* ctx.command({ _tag: 'Pause' });
+        yield* assertAgreement(subscription, ctx.state);
+        const requests = countOf(yield* subscription.messages, 'PlaybackRequested');
+
+        yield* ctx.command({ _tag: 'Next' });
+        const two = yield* ctx.state;
+        assert.equal(two.cursor, 3);
+        assert.equal(two.playback, null);
+        assert.equal(two.paused, true);
+        assert.equal(two.executions.length, 1);
+        yield* assertAgreement(subscription, ctx.state);
+        assert.equal(countOf(yield* subscription.messages, 'PlaybackRequested'), requests);
+
+        // The final speak can be skipped; then nothing is left to process.
+        yield* ctx.command({ _tag: 'Next' });
+        assert.equal((yield* ctx.state).cursor, 4);
+        assert.equal((yield* rejection(ctx.command({ _tag: 'Next' })))._tag, 'CommandRejected');
+        assert.equal((yield* ctx.state).cursor, 4);
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('processes an unreached call at the cursor rather than skipping it', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        yield* subscribe(ctx.session);
+        const model = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'SendMessage', text: 'Hi' });
+        yield* ctx.command({ _tag: 'Pause' });
+        yield* model.say(`[${call('fetch', 'f')},${line('host', 'One.')}]`);
+        yield* model.end;
+        yield* ctx.waitFor((current) => current.generation === 'idle');
+        yield* ctx.command({ _tag: 'Next' });
+        const next = yield* ctx.state;
+        assert.equal(next.executions.length, 1);
+        assert.deepEqual(next.executions[0]?.handles, ['call_1']);
+        assert.equal(next.cursor, 2);
+        assert.equal(next.playback, null);
+      }),
+    ));
+
+  it('skips the presented speak when unpaused, like a finished playback; the old request is stale', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [line('host', 'One.'), line('host', 'Two.')]);
+        const one = yield* ctx.waitFor((current) => current.playback !== null);
+        assert.ok(one.playback);
+        yield* ctx.command({ _tag: 'Next' });
+        const two = yield* ctx.state;
+        assert.equal(two.cursor, 2);
+        assert.equal(two.playback?.actionId, two.actions[2]?.id);
+        yield* ctx.command({ _tag: 'PlaybackFinished', playbackId: one.playback.playbackId });
+        assert.equal((yield* ctx.state).cursor, 2);
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('replays only replay-enabled tools while paused, and never reruns replay-disabled work', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [
+          line('host', 'One.'),
+          call('view', 'v'),
+          call('fetch', 'f'),
+          line('host', 'Two.'),
+        ]);
+        yield* playAll(ctx);
+        const executed = (yield* ctx.state).executions.map((execution) => execution.tool);
+        assert.deepEqual(executed, ['view', 'fetch']);
+        yield* ctx.command({ _tag: 'Back' });
+        yield* ctx.command({ _tag: 'Back' });
+        yield* ctx.command({ _tag: 'Pause' });
+        assert.equal((yield* ctx.state).replay, 1);
+
+        yield* ctx.command({ _tag: 'Next' });
+        const two = yield* ctx.state;
+        assert.equal(two.replay, 4);
+        assert.equal(two.playback, null);
+        assert.deepEqual(
+          two.executions.map((execution) => execution.tool),
+          ['view', 'fetch', 'view'],
+        );
+        yield* ctx.command({ _tag: 'Next' });
+        const end = yield* ctx.state;
+        assert.equal(end.replay, null);
+        assert.equal(end.executions.length, 3);
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('rejoins the frontier after a paused replay by reaching a call buffered at the cursor', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [line('host', 'Old.')]);
+        yield* playAll(ctx);
+        const model = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'SendMessage', text: 'More' });
+        yield* ctx.command({ _tag: 'Back' });
+        yield* ctx.command({ _tag: 'Pause' });
+        yield* model.say(`[${call('fetch', 'f')}]`);
+        yield* model.end;
+        const held = yield* ctx.waitFor((current) => current.generation === 'idle');
+        assert.equal(held.replay, 1);
+        assert.equal(held.actions[held.cursor]?.type, 'tool_call');
+        assert.deepEqual(held.executions, []);
+
+        yield* ctx.command({ _tag: 'Next' });
+        const rejoined = yield* ctx.state;
+        assert.equal(rejoined.replay, null);
+        assert.equal(rejoined.cursor, rejoined.actions.length);
+        assert.deepEqual(rejoined.executions[0]?.handles, ['call_1']);
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('rejects Next with nothing to process', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* toolSetup;
+        yield* subscribe(ctx.session);
+        assert.deepEqual(
+          yield* rejection(ctx.command({ _tag: 'Next' })),
+          new CommandRejected({ command: 'Next', phase: 'idle' }),
+        );
+      }),
+    ));
+});
+
+describe('Session queued progress', () => {
+  it('keeps the latest progress while paused, even unsubscribed, and submits it once after Play', () =>
+    run(
+      Effect.gen(function* () {
+        const worker = pooledTool('worker');
+        const ctx = yield* setupWith([worker.tool]);
+        const first = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [call('worker', 'a')]);
+        yield* ctx.command({ _tag: 'Pause' });
+        assert.equal(yield* worker.offer('a', 'One.'), true);
+        yield* Fiber.interrupt(first.fiber);
+        assert.equal(yield* worker.offer('a', 'Two.'), true);
+        const held = yield* ctx.state;
+        assert.deepEqual(
+          held.pendingProgress.map((progress) => progress.text),
+          ['Two.'],
+        );
+        assert.equal(held.generation, 'idle');
+        assert.equal(yield* ctx.calls, 1);
+
+        const subscription = yield* subscribe(ctx.session);
+        const model = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'Play' });
+        assert.equal(
+          lastUser(yield* model.prompt),
+          '<tool_progress call="call_1" tool="worker">Two.</tool_progress>',
+        );
+        const submitted = yield* ctx.state;
+        assert.deepEqual(progressTexts(submitted), ['Two.']);
+        assert.deepEqual(submitted.pendingProgress, []);
+        assert.equal(yield* ctx.calls, 2);
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('keeps separate executions apart, submits in start order, with handles joined after the offer', () =>
+    run(
+      Effect.gen(function* () {
+        const worker = pooledTool('worker');
+        const ctx = yield* setupWith([worker.tool]);
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [call('worker', 'a'), call('worker', 'b')]);
+        yield* ctx.command({ _tag: 'Interrupt' });
+        const steer = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'SendMessage', text: 'Steer' });
+        yield* ctx.command({ _tag: 'Pause' });
+        yield* steer.say(`[${call('worker', 'a')}]`);
+        yield* steer.end;
+        yield* ctx.waitFor((current) => current.generation === 'idle');
+        assert.equal(yield* worker.offer('b', 'B.'), true);
+        assert.equal(yield* worker.offer('a', 'A.'), true);
+        assert.equal((yield* ctx.state).pendingProgress.length, 2);
+
+        // Reaching the buffered call joins it to a's execution.
+        yield* ctx.command({ _tag: 'Next' });
+        assert.deepEqual((yield* ctx.state).executions[0]?.handles, ['call_1', 'call_3']);
+        const model = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'Play' });
+        assert.equal(
+          lastUser(yield* model.prompt),
+          [
+            '<tool_progress calls="call_1 call_3" tool="worker">A.</tool_progress>',
+            '<tool_progress call="call_2" tool="worker">B.</tool_progress>',
+          ].join('\n'),
+        );
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('replaces progress with its final result, and reminders see the result once at submission', () =>
+    run(
+      Effect.gen(function* () {
+        const events: Array<ReminderEvent> = [];
+        const fetching = progressive(fetch);
+        const worker = pooledTool('worker');
+        const ctx = yield* setupWith([fetching.tool, worker.tool], undefined, (event) => {
+          events.push(event);
+          return undefined;
+        });
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [call('fetch', 'f'), call('worker', 'a')]);
+        const before = events.length;
+        yield* ctx.command({ _tag: 'Pause' });
+        assert.equal(yield* fetching.offer('f', 'Fetching.'), true);
+        assert.equal(yield* worker.offer('a', 'Working.'), true);
+        yield* reply(ctx, 'call_1', { reply: 'data' });
+        const held = yield* ctx.waitFor((current) => current.pendingResults.length === 1);
+        assert.deepEqual(
+          held.pendingProgress.map((progress) => progress.text),
+          ['Working.'],
+        );
+        assert.equal(events.length, before);
+
+        const model = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'Play' });
+        assert.equal(
+          lastUser(yield* model.prompt),
+          [
+            '<tool_result call="call_1" tool="fetch">f: data</tool_result>',
+            '<tool_progress call="call_2" tool="worker">Working.</tool_progress>',
+          ].join('\n'),
+        );
+        assert.deepEqual(progressTexts(yield* ctx.state), ['Working.']);
+        assert.deepEqual(
+          events.slice(before).map((event) => event._tag),
+          ['ToolResult'],
+        );
+        // Ordering: running, then one submission of results and progress.
+        yield* assertAgreement(subscription, ctx.state);
+        const messages = yield* subscription.messages;
+        const running = messages.findLastIndex(
+          (message) => message._tag === 'GenerationChanged' && message.generation === 'running',
+        );
+        assert.equal(messages[running + 1]?._tag, 'ResultsSubmitted');
+        assert.equal(countOf(messages, 'ResultsSubmitted'), 1);
+      }),
+    ));
+
+  it('drops kept progress on a response-free completion and on a cancelled question, and rejects late offers', () =>
+    run(
+      Effect.gen(function* () {
+        const silent = progressive(quiet);
+        const asking = progressive(pick);
+        const ctx = yield* setupWith([silent.tool, asking.tool]);
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [call('quiet', 'q'), call('pick', 'p')]);
+        yield* ctx.command({ _tag: 'Pause' });
+        assert.equal(yield* silent.offer('q', 'Quiet.'), true);
+        assert.equal(yield* asking.offer('p', 'Asking.'), true);
+        yield* reply(ctx, 'call_1', { reply: 'x' });
+        const quieted = yield* ctx.waitFor((current) => current.executions.length === 1);
+        assert.deepEqual(
+          quieted.pendingProgress.map((progress) => progress.text),
+          ['Asking.'],
+        );
+        assert.equal(yield* silent.offer('q', 'Late.'), false);
+
+        yield* ctx.command({ _tag: 'Interrupt' });
+        const declined = yield* ctx.state;
+        assert.equal(declined.paused, true);
+        assert.deepEqual(declined.executions, []);
+        assert.deepEqual(declined.pendingProgress, []);
+        assert.equal(yield* asking.offer('p', 'Late.'), false);
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('replaces kept progress while resumed but busy, drops progress without a kept one, and submits the newest', () =>
+    run(
+      Effect.gen(function* () {
+        const worker = pooledTool('worker');
+        const ctx = yield* setupWith([worker.tool]);
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [
+          call('worker', 'a'),
+          call('worker', 'b'),
+          line('host', 'One.'),
+        ]);
+        yield* ctx.command({ _tag: 'Pause' });
+        assert.equal(yield* worker.offer('a', 'A1.'), true);
+        yield* ctx.command({ _tag: 'Play' });
+        assert.equal(derivePhase(yield* ctx.state), 'speaking');
+        assert.equal(yield* worker.offer('a', 'A2.'), true);
+        assert.equal(yield* worker.offer('b', 'B.'), false);
+        assert.deepEqual(
+          (yield* ctx.state).pendingProgress.map((progress) => progress.text),
+          ['A2.'],
+        );
+
+        const model = yield* ctx.turn;
+        yield* finishLine(ctx);
+        assert.equal(
+          lastUser(yield* model.prompt),
+          '<tool_progress call="call_1" tool="worker">A2.</tool_progress>',
+        );
+        assert.deepEqual(progressTexts(yield* ctx.state), ['A2.']);
+        assert.equal(yield* ctx.calls, 2);
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('submits queued results and progress before a message sent after Interrupt, starting one iteration', () =>
+    run(
+      Effect.gen(function* () {
+        const worker = pooledTool('worker');
+        const ctx = yield* setupWith([worker.tool, fetch]);
+        const subscription = yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [call('worker', 'a'), call('fetch', 'f')]);
+        yield* ctx.command({ _tag: 'Pause' });
+        yield* reply(ctx, 'call_2', { reply: 'data' });
+        yield* ctx.waitFor((current) => current.pendingResults.length === 1);
+        assert.equal(yield* worker.offer('a', 'Working.'), true);
+        yield* ctx.command({ _tag: 'Interrupt' });
+        assert.equal((yield* ctx.state).paused, true);
+        assert.equal(yield* ctx.calls, 1);
+
+        const model = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'SendMessage', text: 'Go on' });
+        assert.equal((yield* ctx.state).paused, false);
+        const prompt = lastUser(yield* model.prompt) ?? '';
+        const result = prompt.indexOf('<tool_result');
+        const progress = prompt.indexOf('<tool_progress');
+        const message = prompt.indexOf('Go on');
+        assert.ok(result >= 0 && result < progress && progress < message, prompt);
+        assert.equal(yield* ctx.calls, 2);
+        yield* assertAgreement(subscription, ctx.state);
+      }),
+    ));
+
+  it('accepts a paused send when only queued results remain, but not while work runs', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* setupWith([fetch]);
+        yield* subscribe(ctx.session);
+        yield* exchange(ctx, 'Hi', [call('fetch', 'f'), call('fetch', 'g')]);
+        yield* ctx.command({ _tag: 'Pause' });
+        yield* reply(ctx, 'call_1', { reply: 'one' });
+        yield* ctx.waitFor((current) => current.pendingResults.length === 1);
+        assert.deepEqual(
+          yield* rejection(ctx.command({ _tag: 'SendMessage', text: 'Early' })),
+          new CommandRejected({ command: 'SendMessage', phase: 'working' }),
+        );
+        assert.equal((yield* ctx.state).paused, true);
+        yield* reply(ctx, 'call_2', { reply: 'two' });
+        const settled = yield* ctx.waitFor((current) => current.pendingResults.length === 2);
+        assert.equal(derivePhase(settled), 'working');
+        assert.equal(controls(settled).send, true);
+
+        const model = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'SendMessage', text: 'Now' });
+        assert.equal(
+          lastUser(yield* model.prompt),
+          [
+            '<tool_result call="call_1" tool="fetch">f: one</tool_result>',
+            '<tool_result call="call_2" tool="fetch">g: two</tool_result>',
+            '<user_message>Now</user_message>',
+          ].join('\n'),
+        );
+      }),
+    ));
+
+  it('holds queued input at a paused failure; Play starts nothing and Retry submits it', () =>
+    run(
+      Effect.gen(function* () {
+        const worker = pooledTool('worker');
+        const ctx = yield* setupWith([worker.tool, fetch]);
+        yield* subscribe(ctx.session);
+        const model = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'SendMessage', text: 'Hi' });
+        yield* model.say(`[${call('worker', 'a')},${call('fetch', 'f')},`);
+        yield* model.fail;
+        yield* ctx.waitFor((current) => current.generation === 'failed');
+        yield* ctx.command({ _tag: 'Pause' });
+        yield* reply(ctx, 'call_2', { reply: 'data' });
+        yield* ctx.waitFor((current) => current.pendingResults.length === 1);
+        assert.equal(yield* worker.offer('a', 'Working.'), true);
+
+        yield* ctx.command({ _tag: 'Play' });
+        const played = yield* ctx.state;
+        assert.equal(played.generation, 'failed');
+        assert.equal(played.pendingProgress.length, 1);
+        assert.equal(yield* ctx.calls, 1);
+
+        const retry = yield* ctx.turn;
+        yield* ctx.command({ _tag: 'RetryGeneration' });
+        assert.equal(
+          lastUser(yield* retry.prompt),
+          [
+            '<notice>Your previous response was cut off after the last line. Continue from there.</notice>',
+            '<tool_result call="call_2" tool="fetch">f: data</tool_result>',
+            '<tool_progress call="call_1" tool="worker">Working.</tool_progress>',
+          ].join('\n'),
+        );
+      }),
+    ));
+});
+
+describe('controls', () => {
+  const speak: Action = { type: 'speak', id: makeActionId(), speaker: 'host', text: 'Hi.' };
+  const result = {
+    type: 'tool_result',
+    id: makeActionId(),
+    handles: ['call_1'],
+    tool: 'fetch',
+    result: null,
+  } as const;
+  const faulted: Action = {
+    type: 'tool_faulted',
+    id: makeActionId(),
+    handles: [],
+    tool: 'fetch',
+    error: { tag: 'UnexpectedError', message: 'x' },
+  };
+
+  it('offers Play only to release a pause or start, and Pause only when unpaused', () => {
+    assert.deepEqual(controls(emptyState), {
+      back: false,
+      next: false,
+      play: false,
+      pause: true,
+      send: true,
+    });
+    assert.equal(controls({ ...emptyState, paused: true }).play, true);
+    assert.equal(controls({ ...emptyState, paused: true }).pause, false);
+    const halted = { ...emptyState, actions: [faulted], cursor: 1, paused: true };
+    assert.deepEqual(controls(halted), {
+      back: false,
+      next: false,
+      play: false,
+      pause: false,
+      send: false,
+    });
+  });
+
+  it('offers Next while replaying or before the end, and Back with an earlier speak', () => {
+    const onSpeak = { ...emptyState, actions: [speak], cursor: 0 };
+    assert.equal(controls(onSpeak).next, true);
+    assert.equal(controls(onSpeak).back, false);
+    const replaying = { ...emptyState, actions: [speak, speak], cursor: 2, replay: 1 };
+    assert.equal(controls(replaying).next, true);
+    assert.equal(controls(replaying).back, true);
+  });
+
+  it('accepts a send while paused with only queued results, never once halted', () => {
+    const queued = { ...emptyState, actions: [speak], cursor: 1, pendingResults: [result] };
+    assert.equal(derivePhase(queued), 'working');
+    assert.equal(canSend(queued), false);
+    assert.equal(canSend({ ...queued, paused: true }), true);
+    assert.equal(canSend({ ...queued, paused: true, actions: [speak, faulted], cursor: 2 }), false);
+  });
+
+  it('reads the frontier phase beneath a replay', () => {
+    const failed: Action = {
+      type: 'generation_failed',
+      id: makeActionId(),
+      error: { tag: 'ProviderError', message: 'x' },
+    };
+    const replaying = {
+      ...emptyState,
+      actions: [speak, failed],
+      cursor: 2,
+      replay: 0,
+      generation: 'failed' as const,
+    };
+    assert.equal(derivePhase(replaying), 'speaking');
+    assert.equal(frontierPhase(replaying), 'generationFailed');
+  });
 });

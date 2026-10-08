@@ -21,6 +21,9 @@ import { present, resetPendingOf } from './presentation';
 const EMPTY: ConversationView = {
   actions: [],
   phase: 'idle',
+  frontierPhase: 'idle',
+  paused: false,
+  controls: { back: false, next: false, play: false, pause: false, send: false },
   speakers: [],
   executions: [],
   pendingResults: [],
