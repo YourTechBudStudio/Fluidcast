@@ -127,7 +127,7 @@ export type TimelineRow =
       /** The next action interrupted this line while it played. */
       readonly interrupted: boolean;
       /** Set on the line at the cursor. */
-      readonly now: 'playing' | 'audioFailed' | 'held' | 'queued' | null;
+      readonly now: 'playing' | 'paused' | 'audioFailed' | 'held' | 'queued' | null;
     }
   /** `speech`: a playing line was cut. `wait`: the listener cut in while nothing played. */
   | { readonly kind: 'interrupted'; readonly id: string; readonly during: 'speech' | 'wait' }

@@ -147,6 +147,7 @@ function TimelineItem({
             </Chip>
           )}
           {row.now === 'audioFailed' && <Chip tone="red">Audio failed</Chip>}
+          {row.now === 'paused' && <Chip tone="subtle">Paused</Chip>}
           {row.now === 'held' && <Chip tone="subtle">Tap to resume</Chip>}
         </>
       );
