@@ -8,7 +8,7 @@ import { FormatIcon } from './FormatIcon';
 
 /**
  * A Show's title bar: format tile, title, format chip and ✕. `speaking` adds a breathing dot for narration, which only
- * the phone sheet passes, because the sheet hides the orb.
+ * the sheet passes, because the sheet hides the orb.
  */
 export function ShowHeader({
   input,

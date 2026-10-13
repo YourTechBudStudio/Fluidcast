@@ -207,7 +207,7 @@ function Head({ type, children }: { readonly type?: string; readonly children: R
     <div className="flex min-h-[30px] flex-wrap items-center gap-2 text-sm">
       {children}
       {type && (
-        <span className="ml-auto font-mono text-[11px] text-fg-subtle/75 max-sm:hidden">
+        <span className="ml-auto font-mono text-[11px] text-fg-subtle/75 compact:hidden">
           {type}
         </span>
       )}
@@ -288,13 +288,13 @@ function PromptRow({
           aria-hidden
           className={`shrink-0 text-fg-subtle transition-transform duration-(--duration-ui) ease-expo ${open ? 'rotate-90' : ''}`}
         />
-        <span className="ml-auto font-mono text-[11px] text-fg-subtle/75 max-sm:hidden">
+        <span className="ml-auto font-mono text-[11px] text-fg-subtle/75 compact:hidden">
           prompt · {source}
         </span>
       </button>
       {open ? (
         <pre
-          className={`${bubble} mt-1 max-h-[55vh] overflow-auto px-3.5 py-3 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-fg-muted`}
+          className={`${bubble} mt-1 max-h-[55cqh] overflow-auto px-3.5 py-3 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-fg-muted`}
         >
           {text}
         </pre>
@@ -344,7 +344,7 @@ function ToolRow({
         )}
         {state === 'error' && <Chip tone="red">Error</Chip>}
         {state === 'ok' && (
-          <span className="shrink-0 font-mono text-[11px] text-fg-subtle max-sm:hidden">
+          <span className="shrink-0 font-mono text-[11px] text-fg-subtle compact:hidden">
             {subagent
               ? `${children.filter((child) => child.kind === 'tool').length} steps`
               : `${lines} ${lines === 1 ? 'line' : 'lines'}`}
@@ -401,7 +401,7 @@ function Pre({
         {label}
       </p>
       <pre
-        className={`max-h-[50vh] overflow-auto rounded-md border px-3.5 py-2.5 font-mono text-[12px] leading-5 whitespace-pre-wrap ${error ? 'border-red/25 bg-red/6 text-red/90' : 'border-line/30 bg-scrim/40 text-fg-muted'}`}
+        className={`max-h-[50cqh] overflow-auto rounded-md border px-3.5 py-2.5 font-mono text-[12px] leading-5 whitespace-pre-wrap ${error ? 'border-red/25 bg-red/6 text-red/90' : 'border-line/30 bg-scrim/40 text-fg-muted'}`}
       >
         {children}
       </pre>

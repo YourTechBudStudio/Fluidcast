@@ -7,7 +7,7 @@ import { clientRuntime } from '../connection';
 import type { PlaybackControls, PlaybackStatus } from './model';
 import { browserMedia, makePlayer } from './player';
 
-/** The page's one player. Kept alive: it owns the audio element and the `AudioContext`. */
+/** This instance's player. Kept alive: it owns the audio element and the `AudioContext`. */
 const playerAtom = Atom.keepAlive(clientRuntime.atom(Effect.flatMap(browserMedia, makePlayer)));
 
 const statusResultAtom = clientRuntime.atom((get) =>
@@ -47,5 +47,16 @@ export function usePlaybackAnalyser(): () => AnalyserNode | null {
   return useMemo(() => {
     const ready = AsyncResult.value(player);
     return () => (Option.isSome(ready) ? ready.value.analyser() : null);
+  }, [player]);
+}
+
+const noUnlock = () => undefined;
+
+/** Unlocks this instance's audio output from a gesture inside it; a no-op until the player is built. */
+export function usePlaybackUnlock(): () => void {
+  const player = useAtomValue(playerAtom);
+  return useMemo(() => {
+    const ready = AsyncResult.value(player);
+    return Option.isSome(ready) ? ready.value.unlock : noUnlock;
   }, [player]);
 }

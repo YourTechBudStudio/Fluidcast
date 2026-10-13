@@ -1,5 +1,5 @@
 /**
- * The product mark at the left of the top bar. `compact` keeps only the dot on phones, so the top bar has room for all
+ * The product mark at the left of the top bar. `compact` keeps only the dot in a compact player, so the top bar has room for all
  * its controls.
  */
 export function Brand({ compact = false }: { readonly compact?: boolean }) {
@@ -9,7 +9,7 @@ export function Brand({ compact = false }: { readonly compact?: boolean }) {
         aria-hidden
         className="size-2 rounded-full bg-linear-135 from-cyan to-violet shadow-[0_0_12px_rgb(145_215_227/0.5)]"
       />
-      <span className={compact ? 'max-sm:sr-only' : ''}>Fluidcast</span>
+      <span className={compact ? 'compact:sr-only' : ''}>Fluidcast</span>
     </div>
   );
 }

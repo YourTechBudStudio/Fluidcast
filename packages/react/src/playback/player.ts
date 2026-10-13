@@ -18,7 +18,7 @@ import {
 
 import type { MediaError, PlaybackStatus } from './model';
 
-/** The page's audio output, owned by the player for the lifetime of its scope. */
+/** One player instance's audio output, owned for the lifetime of its scope. */
 export interface Player {
   readonly status: SubscriptionRef.SubscriptionRef<PlaybackStatus>;
   /** The analyser over what is playing, once audio has been unlocked; visuals read it each frame. */
@@ -27,6 +27,8 @@ export interface Player {
   readonly retryClip: Effect.Effect<void>;
   /** The gesture that unblocks autoplay: resumes audio and replays the held line from the start. */
   readonly resume: Effect.Effect<void>;
+  /** Resumes this instance's audio output; effective only inside a user gesture on the instance. */
+  readonly unlock: () => void;
 }
 
 /** The parts of an `<audio>` element the player uses. */
@@ -56,8 +58,9 @@ const IDLE: PlaybackStatus = { kind: 'idle' };
 const RESUME_GRACE = '250 millis';
 
 /**
- * One `<audio>` element routed through an analyser, and the page-wide unlock: any gesture on the page (a tap, a click
- * on Play or Send, Enter in the composer) resumes the `AudioContext`.
+ * One `<audio>` element routed through an analyser. Its `unlock` resumes the `AudioContext`; the player root calls it
+ * on any gesture inside the instance (a tap, a click on Play or Send, Enter in the composer), so a gesture in one
+ * player never unlocks another.
  */
 export const browserMedia = Effect.gen(function* () {
   const element = new Audio();
@@ -82,17 +85,6 @@ export const browserMedia = Effect.gen(function* () {
     void ensureGraph()
       .context.resume()
       .catch(() => {});
-  yield* Effect.acquireRelease(
-    Effect.sync(() => {
-      document.addEventListener('pointerdown', unlock, true);
-      document.addEventListener('keydown', unlock, true);
-    }),
-    () =>
-      Effect.sync(() => {
-        document.removeEventListener('pointerdown', unlock, true);
-        document.removeEventListener('keydown', unlock, true);
-      }),
-  );
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
       element.pause();
@@ -360,5 +352,11 @@ export const makePlayer = (media: PlayerMedia) =>
       }),
     );
 
-    return { status, analyser: media.analyser, retryClip, resume } satisfies Player;
+    return {
+      status,
+      analyser: media.analyser,
+      retryClip,
+      resume,
+      unlock: media.unlock,
+    } satisfies Player;
   });

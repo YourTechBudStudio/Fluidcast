@@ -29,22 +29,23 @@ const failure = (error: unknown): RenderFailure => {
 };
 
 /**
- * Renders the Show called by `handle`. Markdown and Mermaid output is injected into the app's DOM; HTML runs in its own frame. An HTML
+ * Renders the Show called by `handle`, with diagram ids in the player instance's render `scope`. Markdown and Mermaid output is injected into the app's DOM; HTML runs in its own frame. An HTML
  * frame's own errors happen inside it and are not reported.
  */
 export const renderShow = (
   input: ShowInput,
   handle: string,
+  scope: string,
 ): Effect.Effect<RenderedShow, RenderFailure> => {
   switch (input.format) {
     case 'markdown':
       return Effect.tryPromise({
-        try: () => renderMarkdown(input.content, handle),
+        try: () => renderMarkdown(input.content, handle, scope),
         catch: failure,
       }).pipe(Effect.map((markup) => ({ kind: 'markup', ...markup }) as const));
     case 'mermaid':
       return Effect.tryPromise({
-        try: () => renderMermaid(input.content, renderIdOf(handle, 0)),
+        try: () => renderMermaid(input.content, renderIdOf(scope, handle, 0)),
         catch: failure,
       }).pipe(Effect.map((diagram) => ({ kind: 'diagram', ...diagram }) as const));
     case 'html':

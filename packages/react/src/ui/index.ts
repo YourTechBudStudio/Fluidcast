@@ -4,6 +4,7 @@ export {
   PlayerInstanceContext,
   ROOT_CLASS,
   usePlayerInstance,
+  useRootKeydown,
   type PlayerInstance,
 } from './instance';
 export { Kbd } from './Kbd';
@@ -27,6 +28,8 @@ export { Swap } from './Swap';
 export { palette, rgb, type PaletteName, type Rgb } from './tokens';
 export { typingTarget } from './typingTarget';
 export { useMeasuredHeight } from './useMeasuredHeight';
-export { PHONE, useMedia } from './useMedia';
+export { useDomId } from './useDomId';
+export { useElementWidth } from './useElementWidth';
+export { useMedia } from './useMedia';
 export { useNearViewport } from './useNearViewport';
 export { useReducedMotion } from './useReducedMotion';

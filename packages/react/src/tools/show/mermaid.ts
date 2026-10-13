@@ -7,12 +7,13 @@ import { palette } from '../../ui';
 const RENDER_ID_PREFIX = 'fcshowmmd-';
 
 /**
- * The render id of a Show's diagram: its call handle, then its position among the Show's diagrams. Each Show renders
- * once per page load, so the id is unique, and it names the Show it belongs to. The position has three digits, so no
- * id is the start of another (`…-001` is not in `…-012`).
+ * The render id of a Show's diagram: the player instance's render scope, its call handle, then its position among the
+ * Show's diagrams. Each Show renders once per instance, and handles are model-written so two sessions can repeat one;
+ * the scope keeps ids unique across players on one page. The position has three digits, so no id is the start of
+ * another (`…-001` is not in `…-012`).
  */
-export const renderIdOf = (handle: string, position: number): string =>
-  `${RENDER_ID_PREFIX}${handle.replace(/[^a-zA-Z0-9_-]/g, '')}-${String(position).padStart(3, '0')}`;
+export const renderIdOf = (scope: string, handle: string, position: number): string =>
+  `${RENDER_ID_PREFIX}${scope}-${handle.replace(/[^a-zA-Z0-9_-]/g, '')}-${String(position).padStart(3, '0')}`;
 
 /** Mermaid is large, so it loads on the first diagram and never before. */
 const load = () =>

@@ -1,5 +1,6 @@
 // Invariants of the built stylesheet (`dist/styles.css`, built before tests run): everything the player styles is
-// confined to its root, and the only global additions are font imports, `@font-face`, `@property` and `fc-` keyframes.
+// confined to its root, the only global additions are font imports, `@font-face`, `@property` and `fc-` keyframes,
+// and nothing sizes from the viewport: breakpoints and lengths follow the root's own box.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -62,5 +63,37 @@ describe('dist/styles.css', () => {
       css.nodes.slice(0, 3).map((node) => (isAt(node, 'import') ? node.params : null)),
       FONTS,
     );
+  });
+
+  it('has no viewport width or height media query', () => {
+    // Any width/height feature, plain, min-/max- or in a range (`(width < 40rem)`, `(min-height: …)`, `(400px <= width)`).
+    const viewportFeature = /\b(?:(?:min|max)-)?(?:device-)?(?:width|height)\b/;
+    const queries = [];
+    css.walkAtRules('media', (rule) => {
+      if (viewportFeature.test(rule.params)) queries.push(rule.params);
+    });
+    assert.deepEqual(queries, []);
+  });
+
+  it('uses no viewport unit', () => {
+    const unit = /(?:^|[^\w-])-?(?:\d*\.)?\d+(?:d|s|l)?v(?:h|w|min|max|i|b)\b/;
+    const uses = [];
+    css.walkDecls((decl) => {
+      if (unit.test(decl.value)) uses.push(`${decl.prop}: ${decl.value}`);
+    });
+    css.walkAtRules((rule) => {
+      if (unit.test(rule.params)) uses.push(`@${rule.name} ${rule.params}`);
+    });
+    assert.deepEqual(uses, []);
+  });
+
+  it('makes the root its own named size container', () => {
+    const declarations = new Map();
+    css.walkRules((rule) => {
+      if (rule.selector !== ':scope') return;
+      rule.walkDecls((decl) => void declarations.set(decl.prop, decl.value));
+    });
+    assert.equal(declarations.get('container'), 'fluidcast-player / size');
+    assert.equal(declarations.get('overflow'), 'hidden');
   });
 });

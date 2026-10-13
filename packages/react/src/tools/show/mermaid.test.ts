@@ -35,13 +35,18 @@ describe('withMountId', () => {
 });
 
 describe('renderIdOf', () => {
-  it("names the Show's handle and a three-digit position, so no id starts another", () => {
-    expect(renderIdOf('call_7', 0)).toBe('fcshowmmd-call_7-000');
-    expect(renderIdOf('call_7', 12)).toBe('fcshowmmd-call_7-012');
-    expect(renderIdOf('call_7', 12).startsWith(renderIdOf('call_7', 1))).toBe(false);
+  it("names the instance's scope, the Show's handle and a three-digit position, so no id starts another", () => {
+    expect(renderIdOf('s1', 'call_7', 0)).toBe('fcshowmmd-s1-call_7-000');
+    expect(renderIdOf('s1', 'call_7', 12)).toBe('fcshowmmd-s1-call_7-012');
+    expect(renderIdOf('s1', 'call_7', 12).startsWith(renderIdOf('s1', 'call_7', 1))).toBe(false);
+  });
+
+  it('keeps equal handles in two instances apart', () => {
+    expect(renderIdOf('s1', 'call_7', 0)).not.toBe(renderIdOf('s2', 'call_7', 0));
+    expect(renderIdOf('s12', 'call_7', 0).startsWith(renderIdOf('s1', 'call_7', 0))).toBe(false);
   });
 
   it('keeps only characters safe in ids and CSS selectors', () => {
-    expect(renderIdOf('call:7»', 1)).toBe('fcshowmmd-call7-001');
+    expect(renderIdOf('s1', 'call:7»', 1)).toBe('fcshowmmd-s1-call7-001');
   });
 });

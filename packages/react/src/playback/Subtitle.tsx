@@ -27,7 +27,7 @@ export function Subtitle({ line }: { readonly line: SubtitleLine | null }) {
   return (
     <div
       aria-live="polite"
-      className="relative h-[calc(3*1.4em)] w-full max-w-220 font-display text-[clamp(18px,2.2vw,23px)] leading-[1.4] font-light tracking-[-0.01em] max-sm:h-[calc(4*1.4em)]"
+      className="relative h-[calc(3*1.4em)] w-full max-w-220 font-display text-[clamp(18px,2.2cqw,23px)] leading-[1.4] font-light tracking-[-0.01em] compact:h-[calc(4*1.4em)]"
     >
       <AnimatePresence initial={false}>
         {line && (

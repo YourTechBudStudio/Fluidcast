@@ -12,7 +12,7 @@ import { connectionAtom, conversationAtom, sendFailureAtom, unresolvedShowsAtom 
 import { findCall, latestShowHandle, showCorrectionOf, showOf } from './tools';
 
 /**
- * Whether the Show panel is open, and on which Show: `handle: null` means the latest. Page-local, and the only
+ * Whether the Show panel is open, and on which Show: `handle: null` means the latest. Instance-local, and the only
  * client-local tool state: everything else about Shows derives from the view.
  */
 export interface ShowPanelState {
@@ -27,17 +27,26 @@ export const showPanelAtom = Atom.make<ShowPanelState>({ open: false, handle: nu
 /** A settled render: what every place showing a Show displays once rendering is done. */
 type Settled = Exclude<ShowBody, { readonly state: 'rendering' }>;
 
+let renderScopes = 0;
+
 /**
- * Each Show call rendered once per page load, shared by the reporter, the panel and the transcript miniatures. A
+ * This instance's diagram id scope (`s1`, `s2`, …): computed once per registry, so two players on one page never render
+ * diagrams under the same id, even when their sessions repeat a call handle.
+ */
+const renderScopeAtom = Atom.make(() => `s${++renderScopes}`).pipe(Atom.keepAlive);
+
+/**
+ * Each Show call rendered once per instance, shared by the reporter, the panel and the transcript miniatures. A
  * call never changes once in the view, so it is read once.
  */
 export const showRenderAtom = Atom.family((handle: string) =>
   Atom.make((get): Effect.Effect<Settled> => {
     const input = showOf(findCall(get.once(conversationAtom), handle));
+    const scope = get.once(renderScopeAtom);
     if (!input) {
       return Effect.succeed({ state: 'failed', reason: 'This show is not in the conversation.' });
     }
-    return renderShow(input, handle).pipe(
+    return renderShow(input, handle, scope).pipe(
       Effect.match({
         onSuccess: (rendered): Settled => ({ state: 'rendered', rendered }),
         onFailure: ({ reason }): Settled => ({ state: 'failed', reason }),
@@ -49,7 +58,7 @@ export const showRenderAtom = Atom.family((handle: string) =>
 export const bodyOf = (result: AsyncResult.AsyncResult<Settled>): ShowBody =>
   AsyncResult.isSuccess(result) ? result.value : { state: 'rendering' };
 
-/** The Show the panel (or the phone sheet) displays: the one it was opened on, else the latest. */
+/** The Show the panel (or the sheet) displays: the one it was opened on, else the latest. */
 export const shownShowAtom = Atom.make((get): ShownShow | null => {
   const view = get(conversationAtom);
   const latest = latestShowHandle(view);

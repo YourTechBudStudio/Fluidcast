@@ -8,7 +8,7 @@ const shortSessionId = (id: string) => `${id.slice(0, 8)}…${id.slice(-4)}`;
 export function PendingSessionId() {
   return (
     <span className="inline-flex min-h-11 shrink-0 items-center gap-2 px-3 font-mono text-[12px] text-fg-muted">
-      <span className="text-fg-subtle max-sm:hidden">session</span>
+      <span className="text-fg-subtle compact:hidden">session</span>
       <span>not available yet</span>
     </span>
   );
@@ -40,7 +40,7 @@ export function CopySessionId({ id }: { readonly id: string }) {
       ) : (
         <Copy size={14} strokeWidth={1.8} aria-hidden />
       )}
-      <span className="text-fg-subtle max-sm:hidden">session</span>
+      <span className="text-fg-subtle compact:hidden">session</span>
       <span aria-live="polite" className={copied ? 'text-green' : ''}>
         {copied ? 'Copied' : shortSessionId(id)}
       </span>

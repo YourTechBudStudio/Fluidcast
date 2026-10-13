@@ -3,7 +3,6 @@ import {
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
-  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -11,7 +10,7 @@ import {
 
 import type { AskCommand, AskInput } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 
-import { Button, Kbd, Swap, typingTarget } from '../../ui';
+import { Button, Kbd, Swap, typingTarget, useRootKeydown } from '../../ui';
 import { AskAnswer } from './AskCard';
 import {
   ASK_KIND_LABEL,
@@ -83,35 +82,31 @@ export function AskForm({
     else submit(answerForOption(input, draft, index));
   };
 
-  // Number keys pick options, or Continue, when no typing target has focus. A checkpoint's Continue also takes Enter,
-  // unless a focused control would take that Enter itself.
-  const latestChoose = useRef(choose);
-  latestChoose.current = choose;
-  useEffect(() => {
-    if (mode !== 'open' || keys === 0) return;
-    const onKey = (event: globalThis.KeyboardEvent) => {
+  // Number keys pick options, or Continue, when no typing target in this player has focus. A checkpoint's Continue
+  // also takes Enter, unless a focused control would take that Enter itself.
+  useRootKeydown(
+    (event) => {
       if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
       if (typingTarget(event.target)) return;
       if (event.key === 'Enter') {
         if (!checkpoint || event.shiftKey || interactive(event.target)) return;
         event.preventDefault();
-        latestChoose.current(0);
+        choose(0);
         return;
       }
       const n = Number(event.key);
       if (Number.isInteger(n) && n >= 1 && n <= Math.min(9, keys)) {
         event.preventDefault();
-        latestChoose.current(n - 1);
+        choose(n - 1);
       }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [mode, keys, checkpoint]);
+    },
+    mode === 'open' && keys > 0,
+  );
 
   const picks = draft.picked.length;
 
   return (
-    <section aria-label="Question" className="relative p-4 pb-3.5 max-sm:p-3.5 max-sm:pb-3">
+    <section aria-label="Question" className="relative p-4 pb-3.5 compact:p-3.5 compact:pb-3">
       <div className="flex min-h-8 items-center justify-between gap-4 px-1">
         <span
           key={mode}
@@ -181,7 +176,7 @@ export function AskForm({
                         />
                       )}
                       {i < 9 && (
-                        <span className="max-sm:hidden">
+                        <span className="compact:hidden">
                           <Kbd>{i + 1}</Kbd>
                         </span>
                       )}
@@ -341,7 +336,7 @@ function SentAnswer({
       <div className="min-w-0 flex-1">
         <AskAnswer answer={answer} />
       </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 max-sm:basis-full">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 compact:basis-full">
         <span className="inline-flex items-center gap-1.5 font-mono text-[11.5px] tracking-[0.03em] text-fg-subtle">
           {narrating ? (
             <>
@@ -354,7 +349,7 @@ function SentAnswer({
             </>
           )}
         </span>
-        {extra && <span className="max-sm:basis-full max-sm:[&>button]:w-full">{extra}</span>}
+        {extra && <span className="compact:basis-full compact:[&>button]:w-full">{extra}</span>}
       </div>
     </div>
   );

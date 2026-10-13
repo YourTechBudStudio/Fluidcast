@@ -1,12 +1,14 @@
+import { useDomId } from '../ui';
 import type { VisualId } from './catalog';
 
 /** A small, static preview of a visual for pickers: no tile, just the shape in its idle colours. */
 export function VisualSwatch({ id }: { readonly id: VisualId }) {
+  const band = useDomId('swatch-band');
   if (id === 'electric-spectrum') {
     return (
       <svg width="34" height="22" viewBox="0 0 34 22" aria-hidden className="shrink-0">
         <defs>
-          <linearGradient id="swatch-band" x1="0" x2="1">
+          <linearGradient id={band} x1="0" x2="1">
             <stop offset="0" stopColor="var(--color-cyan)" stopOpacity="0" />
             <stop offset=".3" stopColor="var(--color-cyan)" />
             <stop offset=".6" stopColor="var(--color-blue)" />
@@ -17,13 +19,13 @@ export function VisualSwatch({ id }: { readonly id: VisualId }) {
         <path
           d="M2 11 C 9 11, 11 6, 17 11 S 26 15, 32 11"
           fill="none"
-          stroke="url(#swatch-band)"
+          stroke={`url(#${band})`}
           strokeWidth="1.4"
         />
         <path
           d="M2 11 C 9 11, 12 15, 17 11 S 25 7, 32 11"
           fill="none"
-          stroke="url(#swatch-band)"
+          stroke={`url(#${band})`}
           strokeWidth="1.1"
           opacity=".6"
         />

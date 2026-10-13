@@ -126,7 +126,7 @@ export function Composer({ mode, onSend, onInterrupt, onRetry, onRetryClip }: Co
 
   return (
     <form onSubmit={(event) => event.preventDefault()}>
-      <div className="flex flex-wrap items-end gap-2 py-2 pr-2 pl-4.5 max-sm:pl-3.5">
+      <div className="flex flex-wrap items-end gap-2 py-2 pr-2 pl-4.5 compact:pl-3.5">
         <textarea
           ref={box}
           rows={1}
@@ -139,7 +139,7 @@ export function Composer({ mode, onSend, onInterrupt, onRetry, onRetryClip }: Co
           className="max-h-30 min-h-11 min-w-0 flex-1 resize-none bg-transparent py-[11px] text-base leading-[22px] text-fg outline-none placeholder:text-fg-subtle disabled:cursor-not-allowed disabled:text-fg-subtle"
         />
         <div
-          className={`flex shrink-0 gap-1.5 ${actions.length > 1 ? 'max-sm:basis-full max-sm:justify-end' : ''}`}
+          className={`flex shrink-0 gap-1.5 ${actions.length > 1 ? 'compact:basis-full compact:justify-end' : ''}`}
         >
           {actions.map((action) => (
             <span

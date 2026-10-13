@@ -52,6 +52,9 @@ function SessionScreen() {
   return <PlayerScreen key={id} sessionId={id} />;
 }
 
+/** Focuses the player root as it attaches, so its shortcuts (E, W, S, B) work without a first click. Stable on purpose. */
+const focusPlayer = (root: HTMLDivElement | null) => root?.focus({ preventScroll: true });
+
 /**
  * One session: the app strip with Reset, then the player over this session's connection. The connection is built once
  * per session; when the session changes or ends, React unmounts the player, which releases its Client, audio and
@@ -65,7 +68,7 @@ function PlayerScreen({ sessionId }: { readonly sessionId: string }) {
         <ResetControl sessionId={sessionId} />
       </div>
       <div className="min-h-0">
-        <FluidcastPlayer connection={connection} />
+        <FluidcastPlayer connection={connection} ref={focusPlayer} />
       </div>
     </div>
   );

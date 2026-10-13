@@ -7,20 +7,15 @@ import { persistedAtom } from './persisted';
 const colour = persistedAtom<string>('test.colour', (raw) => raw, String, 'blue');
 
 describe('persistedAtom', () => {
-  it("gives every registry's copy the latest write, even without storage", () => {
-    const root = AtomRegistry.make();
-    const session = AtomRegistry.make();
-    root.mount(colour);
-    session.mount(colour);
-    expect(root.get(colour)).toBe('blue');
+  it("keeps each registry's value its own, even without storage", () => {
+    const first = AtomRegistry.make();
+    const second = AtomRegistry.make();
+    first.mount(colour);
+    second.mount(colour);
+    expect(first.get(colour)).toBe('blue');
 
-    session.set(colour, 'violet');
-    expect(session.get(colour)).toBe('violet');
-    expect(root.get(colour)).toBe('violet');
-
-    // A disposed registry's copy stops following; the others still do.
-    session.dispose();
-    root.set(colour, 'cyan');
-    expect(root.get(colour)).toBe('cyan');
+    first.set(colour, 'violet');
+    expect(first.get(colour)).toBe('violet');
+    expect(second.get(colour)).toBe('blue');
   });
 });

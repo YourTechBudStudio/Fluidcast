@@ -1,6 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react';
 
-/** Follows a media query live, such as Tailwind's `max-sm` breakpoint (`PHONE`). */
+/** Follows a media query live, such as `prefers-reduced-motion`. Layout never uses it: the player sizes from its root. */
 export function useMedia(query: string): boolean {
   const subscribe = useCallback(
     (onChange: () => void) => {
@@ -16,6 +16,3 @@ export function useMedia(query: string): boolean {
     () => false,
   );
 }
-
-/** Tailwind's `max-sm`: narrower than 640 px. */
-export const PHONE = '(width < 40rem)';

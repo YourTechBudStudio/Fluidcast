@@ -53,6 +53,7 @@
     "@types/react-dom": "^19.3.0",
     "@yourtechbudstudio/fluidcast-typescript-config": "workspace:*",
     "effect": "catalog:",
+    "happy-dom": "^21.0.1",
     "oxc-parser": "^0.151.0",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",

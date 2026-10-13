@@ -12,6 +12,21 @@
 /* "container" appears in the source as a word (portal containers), not as Tailwind's viewport-sized utility. */
 @source not inline('container');
 
+/*
+ * Breakpoints follow the player root's own width, never the viewport: the root is the `fluidcast-player` container.
+ * `compact` matches `COMPACT_BELOW_PX` in `player/layout.ts`; `narrow` makes the top bar icon-only.
+ */
+@custom-variant compact {
+  @container fluidcast-player (width < 640px) {
+    @slot;
+  }
+}
+@custom-variant narrow {
+  @container fluidcast-player (width < 1024px) {
+    @slot;
+  }
+}
+
 /* Design tokens, copied from Isagi (Catppuccin Macchiato). Dark only. */
 @theme {
   /* Type families */
@@ -102,10 +117,15 @@
   }
 }
 
-/* The player root: the host sizes it; it keeps its own stacking context and takes focus without a ring. */
+/*
+ * The player root: the host sizes it. It is the size container every breakpoint and `cq*` unit resolves against, keeps
+ * its own stacking context, clips to its box, and takes focus without a ring.
+ */
 :root {
+  container: fluidcast-player / size;
   position: relative;
   isolation: isolate;
+  overflow: hidden;
   width: 100%;
   height: 100%;
   color-scheme: dark;

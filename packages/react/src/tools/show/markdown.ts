@@ -11,10 +11,14 @@ export interface RenderedMarkup {
 }
 
 /**
- * Renders the Markdown Show `handle`, with each `mermaid` fence drawn as a diagram in its place. A diagram Mermaid cannot render
+ * Renders the Markdown Show `handle` for the player instance's render `scope`, with each `mermaid` fence drawn as a diagram in its place. A diagram Mermaid cannot render
  * stays as its source, marked invalid, so the rest of the page still shows; the model is not told.
  */
-export async function renderMarkdown(source: string, handle: string): Promise<RenderedMarkup> {
+export async function renderMarkdown(
+  source: string,
+  handle: string,
+  scope: string,
+): Promise<RenderedMarkup> {
   const sources: Array<string> = [];
   const html = render(source, (language, content) => {
     if (language === 'mermaid') sources.push(content);
@@ -25,7 +29,7 @@ export async function renderMarkdown(source: string, handle: string): Promise<Re
   const diagrams: Array<RenderedDiagram | undefined> = [];
   for (const [position, diagram] of sources.entries()) {
     diagrams.push(
-      await renderMermaid(diagram, renderIdOf(handle, position)).catch(() => undefined),
+      await renderMermaid(diagram, renderIdOf(scope, handle, position)).catch(() => undefined),
     );
   }
   let next = 0;

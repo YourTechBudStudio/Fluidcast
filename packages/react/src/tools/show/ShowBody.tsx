@@ -7,7 +7,7 @@ import { mountIdOf, withMountId } from './mermaid';
 import type { ShowCorrection } from './model';
 import type { RenderedShow } from './render';
 
-/** Where one Show's render stands. Each Show renders once per page load; every place that shows it reads the same result. */
+/** Where one Show's render stands. Each Show renders once per player instance; every place that shows it reads the same result. */
 export type ShowBody =
   | { readonly state: 'rendering' }
   | { readonly state: 'rendered'; readonly rendered: RenderedShow }

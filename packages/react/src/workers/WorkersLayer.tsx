@@ -39,7 +39,7 @@ export function WorkersLayer({ onClose }: { readonly onClose: () => void }) {
 
   return (
     <div className="absolute inset-0 flex flex-col">
-      <header className="relative z-10 px-4 max-sm:px-3">
+      <header className="relative z-10 px-4 compact:px-3">
         <div className="mx-auto flex max-w-220 flex-wrap items-center gap-x-1.5 gap-y-0 border-b border-line/25 pb-1">
           <h2
             tabIndex={-1}
@@ -68,7 +68,7 @@ export function WorkersLayer({ onClose }: { readonly onClose: () => void }) {
               icon={<X size={16} strokeWidth={1.8} aria-hidden />}
               onClick={onClose}
             >
-              <span className="max-sm:hidden">
+              <span className="compact:hidden">
                 <Kbd>W</Kbd>
               </span>
             </Button>
@@ -119,7 +119,7 @@ function Scroller({
   return (
     <>
       {connection === 'reconnecting' && (
-        <p className="mx-auto flex w-full max-w-220 items-center gap-2 px-7 pt-2 font-mono text-[11.5px] text-fg-subtle max-sm:px-6">
+        <p className="mx-auto flex w-full max-w-220 items-center gap-2 px-7 pt-2 font-mono text-[11.5px] text-fg-subtle compact:px-6">
           <i className="size-1.5 rounded-full bg-fg-subtle motion-safe:animate-breathe" />
           Reconnecting… showing what arrived before the connection dropped.
         </p>
@@ -130,7 +130,7 @@ function Scroller({
           const el = event.currentTarget;
           atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_PX;
         }}
-        className="min-h-0 flex-1 overflow-y-auto px-4 pt-5 pb-8 [mask-image:linear-gradient(transparent,#000_20px)] max-sm:px-3"
+        className="min-h-0 flex-1 overflow-y-auto px-4 pt-5 pb-8 [mask-image:linear-gradient(transparent,#000_20px)] compact:px-3"
       >
         <div className={`mx-auto max-w-220 ${connection === 'reconnecting' ? 'opacity-70' : ''}`}>
           {children}
@@ -157,13 +157,13 @@ function StatusDot({
   );
 }
 
-/** The worker's status, without a clock (the status line carries elapsed time). Hidden on phones. */
+/** The worker's status, without a clock (the status line carries elapsed time). Hidden when compact. */
 function WorkerState({ status }: { readonly status: WorkerStatus }) {
   const tone =
     status === 'working' ? 'text-violet' : status === 'failed' ? 'text-red' : 'text-fg-subtle';
   return (
     <span
-      className={`inline-flex min-h-11 items-center font-mono text-[12px] max-sm:hidden ${tone}`}
+      className={`inline-flex min-h-11 items-center font-mono text-[12px] compact:hidden ${tone}`}
     >
       {STATUS_LABEL[status]}
     </span>
@@ -172,7 +172,7 @@ function WorkerState({ status }: { readonly status: WorkerStatus }) {
 
 function Empty() {
   return (
-    <div className="flex flex-col items-center gap-3 pt-[12vh] text-center">
+    <div className="flex flex-col items-center gap-3 pt-[12cqh] text-center">
       <span className="grid size-12 place-items-center rounded-full bg-elevated/60 text-fg-subtle shadow-[0_0_0_1px_rgb(91_96_120/0.45)]">
         <SquareTerminal size={20} strokeWidth={1.6} aria-hidden />
       </span>

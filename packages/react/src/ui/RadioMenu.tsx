@@ -18,7 +18,7 @@ export interface RadioMenuProps<V extends string> {
   readonly onChange: (value: V) => void;
   /** Trigger content; the trigger itself is a 44 px ghost button. */
   readonly trigger: ReactNode;
-  /** Extra trigger classes, such as tighter padding on phones. */
+  /** Extra trigger classes, such as tighter padding in a narrow player. */
   readonly className?: string;
 }
 

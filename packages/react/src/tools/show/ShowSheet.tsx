@@ -6,7 +6,7 @@ import { ShowContent } from './ShowContent';
 import { ShowHeader } from './ShowHeader';
 
 /**
- * The Show at phone width: a full-width sheet over the top bar and the stage. The layout places it as a grid item
+ * The Show where the side panel does not fit (`layoutFor`): a full-width sheet over the top bar and the stage. The layout places it as a grid item
  * spanning those rows, so the dock below stays in place. It slides up from the bottom; reduced motion fades it.
  */
 export function ShowSheet({

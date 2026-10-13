@@ -22,16 +22,14 @@ import {
   usePlaybackControls,
 } from '../playback';
 import { AskForm, ShowPanel, ShowSheet } from '../tools';
-import { Button, PHONE, typingTarget, useMedia, useReducedMotion } from '../ui';
+import { Button, typingTarget, usePlayerInstance, useReducedMotion, useRootKeydown } from '../ui';
 import { analyserSource, createAnalysis, Visual } from '../visuals';
 import { WorkersLayer } from '../workers';
 import { Dock } from './Dock';
 import { focusTargetOnSwitch, type Layer, nextLayer } from './layers';
+import { layoutFor, SHOW_PANEL_MIN_PX, SHOW_PANEL_SHARE } from './layout';
 import { layerAtom, visualAtom } from './state';
 import { TopBar } from './TopBar';
-
-/** One analysis handle for the page. The player's analyser feeds it; visuals read it per frame. */
-const analysis = createAnalysis();
 
 const inMenu = (target: EventTarget | null) =>
   target instanceof Element && target.closest('[role="menu"]') !== null;
@@ -48,7 +46,9 @@ export function Player() {
   const [panel, setPanel] = useAtom(showPanelAtom);
   const shown = useAtomValue(shownShowAtom);
   const reducedMotion = useReducedMotion();
-  const phone = useMedia(PHONE);
+  const { compact, show } = layoutFor(usePlayerInstance().width);
+  // This instance's analysis handle. Its analyser feeds it; the visual reads it per frame.
+  const analysis = useMemo(() => createAnalysis(), []);
   const { moment, composer, ask, interruptible, transport, latestShow } = presentation;
   const transcriptOpen = layer === 'transcript';
   const workersOpen = layer === 'workers';
@@ -89,8 +89,8 @@ export function Player() {
   }, [layer]);
 
   const panelOpen = panel.open && shown !== null;
-  // At phone width an open Show covers the top bar and the stage.
-  const sheetCovers = phone && panelOpen;
+  // Where the panel does not fit, an open Show is a sheet covering the top bar and the stage.
+  const sheetCovers = show === 'sheet' && panelOpen;
   const closePanel = () => setPanel({ ...panel, open: false });
   // Opening from the top bar or `S` shows the latest Show; the transcript opens a specific one.
   const togglePanel = () =>
@@ -99,48 +99,35 @@ export function Player() {
   useEffect(() => {
     analysis.connect(analyserSource(analyser));
     return () => analysis.connect(null);
-  }, [analyser]);
+  }, [analysis, analyser]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
-      if (event.key === 'Escape') {
-        if (interruptible && !inMenu(event.target)) {
-          event.preventDefault();
-          commands.interrupt();
-        }
-        return;
+  // Keys reach this handler only while focus is inside this player.
+  useRootKeydown((event) => {
+    if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
+    if (event.key === 'Escape') {
+      if (interruptible && !inMenu(event.target)) {
+        event.preventDefault();
+        commands.interrupt();
       }
-      if (typingTarget(event.target)) return;
-      const key = event.key.toLowerCase();
-      if (key === 'e' || key === 'w') {
-        event.preventDefault();
-        switchLayer(nextLayer(layer, key));
-      } else if (key === 's' && latestShow !== null) {
-        event.preventDefault();
-        setPanel(panelOpen ? { ...panel, open: false } : { open: true, handle: null });
-      } else if (key === 'b' && transport.back) {
-        event.preventDefault();
-        commands.back();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [
-    commands,
-    interruptible,
-    transport.back,
-    latestShow,
-    layer,
-    switchLayer,
-    panel,
-    panelOpen,
-    setPanel,
-  ]);
+      return;
+    }
+    if (typingTarget(event.target)) return;
+    const key = event.key.toLowerCase();
+    if (key === 'e' || key === 'w') {
+      event.preventDefault();
+      switchLayer(nextLayer(layer, key));
+    } else if (key === 's' && latestShow !== null) {
+      event.preventDefault();
+      setPanel(panelOpen ? { ...panel, open: false } : { open: true, handle: null });
+    } else if (key === 'b' && transport.back) {
+      event.preventDefault();
+      commands.back();
+    }
+  });
 
   const inputs = useMemo(
     () => ({ state: presentation.visual, analysis, reducedMotion, held: presentation.held }),
-    [presentation.visual, presentation.held, reducedMotion],
+    [presentation.visual, presentation.held, analysis, reducedMotion],
   );
 
   // A paused line is selected, not narrated.
@@ -192,7 +179,7 @@ export function Player() {
           }}
         />
       </div>
-      <main className="relative col-start-1 row-start-2 flex min-h-0 max-sm:overflow-hidden">
+      <main className="relative col-start-1 row-start-2 flex min-h-0 compact:overflow-hidden">
         {/* The player column holds three layers: the stage, the transcript (E) and the Worker layer (W). The Show panel
             sits beside it. */}
         <div className="relative min-w-0 flex-1">
@@ -203,10 +190,10 @@ export function Player() {
             }}
             tabIndex={-1}
             inert={sheetCovers || !stageOpen}
-            className={`${layerClass(stageOpen)} flex flex-col items-center justify-center px-6 pb-2 outline-none max-sm:px-4`}
+            className={`${layerClass(stageOpen)} flex flex-col items-center justify-center px-6 pb-2 outline-none compact:px-4`}
           >
             <div
-              className={`relative w-full shrink-0 transition-[height] duration-(--duration-room) ease-expo motion-reduce:transition-none ${panelOpen && !phone ? 'h-[clamp(160px,32vh,360px)]' : 'h-[clamp(250px,46vh,460px)] max-sm:h-[clamp(170px,30vh,300px)]'}`}
+              className={`relative w-full shrink-0 transition-[height] duration-(--duration-room) ease-expo motion-reduce:transition-none ${panelOpen && show === 'panel' ? 'h-[clamp(160px,32cqh,360px)]' : 'h-[clamp(250px,46cqh,460px)] compact:h-[clamp(170px,30cqh,300px)]'}`}
             >
               <Visual id={visual} inputs={inputs} active={!sheetCovers && stageOpen} />
               <TapToResume
@@ -215,7 +202,7 @@ export function Player() {
                 onActivate={moment === 'ready' ? () => void commands.play() : playback.resume}
               />
             </div>
-            <div className="mt-[clamp(12px,3vh,36px)] flex w-full justify-center">
+            <div className="mt-[clamp(12px,3cqh,36px)] flex w-full justify-center">
               <Subtitle line={presentation.subtitle} />
             </div>
           </section>
@@ -251,15 +238,18 @@ export function Player() {
           </section>
         </div>
 
-        {!phone && (
+        {show === 'panel' && (
           <aside
             aria-label="Show"
             inert={!panelOpen}
-            className={`min-w-0 transition-[flex-basis,opacity] duration-(--duration-surface) ease-expo motion-reduce:transition-opacity ${panelOpen ? 'basis-[60%] opacity-100' : 'basis-0 opacity-0'}`}
+            // Sized from the layout constants, so the panel renders only where `layoutFor` found it fits.
+            style={{ flexBasis: panelOpen ? `${SHOW_PANEL_SHARE * 100}%` : 0 }}
+            className={`min-w-0 transition-[flex-basis,opacity] duration-(--duration-surface) ease-expo motion-reduce:transition-opacity ${panelOpen ? 'opacity-100' : 'opacity-0'}`}
           >
             {/* No overflow clipping here: the card's soft shadow needs room. Closing slides the card off the right edge. */}
             <div
-              className={`h-full min-w-[440px] pt-1 pr-4 pb-1 transition-transform duration-(--duration-surface) ease-expo motion-reduce:transition-none ${panelOpen ? 'translate-x-0' : 'translate-x-8 motion-reduce:translate-x-0'}`}
+              style={{ minWidth: SHOW_PANEL_MIN_PX }}
+              className={`h-full pt-1 pr-4 pb-1 transition-transform duration-(--duration-surface) ease-expo motion-reduce:transition-none ${panelOpen ? 'translate-x-0' : 'translate-x-8 motion-reduce:translate-x-0'}`}
             >
               {shown && <ShowPanel key={shown.handle} show={shown} onClose={closePanel} />}
             </div>
@@ -267,12 +257,12 @@ export function Player() {
         )}
       </main>
 
-      {phone && (
+      {show === 'sheet' && (
         <ShowSheet show={shown} open={panelOpen} speaking={narrating} onClose={closePanel} />
       )}
 
-      <footer className="relative z-20 col-start-1 row-start-3 px-4 pt-3 pb-5 max-sm:px-3 max-sm:pt-2.5 max-sm:pb-3">
-        <div className="mb-3.5 max-sm:mb-2.5">
+      <footer className="relative z-20 col-start-1 row-start-3 px-4 pt-3 pb-5 compact:px-3 compact:pt-2.5 compact:pb-3">
+        <div className="mb-3.5 compact:mb-2.5">
           <StatusLine
             moment={presentation.status}
             paused={presentation.paused}
@@ -311,10 +301,10 @@ export function Player() {
             </div>
           ) : (
             // One Composer at a fixed place in the tree, so crossing the breakpoint keeps the draft. Wide: the transport
-            // at its leading edge. Phone: a strip below it, as under a question. Focus order follows what is on screen.
+            // at its leading edge. Compact: a strip below it, as under a question. Focus order follows what is on screen.
             <div>
               <div className="flex items-end">
-                {!phone && (
+                {!compact && (
                   <PlayerControls
                     {...controls}
                     className="my-2 ml-1.5 border-r border-line/30 pr-1"
@@ -330,7 +320,7 @@ export function Player() {
                   />
                 </div>
               </div>
-              {phone && (
+              {compact && (
                 <div className="flex justify-center border-t border-line/25 px-2 py-1">
                   <PlayerControls {...controls} />
                 </div>

@@ -6,7 +6,7 @@
   height: 100%;
   min-height: 260px;
 }
-/* On phones the diagram shrinks to whatever room the sheet has. */
+/* In the sheet the diagram shrinks to whatever room the sheet has. */
 .show-fit .show-diagram {
   min-height: 0;
 }

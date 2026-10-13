@@ -53,9 +53,17 @@ export function Transcript({
   useEffect(() => {
     const el = scroller.current;
     if (!el || !visible) return;
+    const behavior = reduced ? 'auto' : 'smooth';
     const current = el.querySelector('[data-current="true"]');
-    if (current) current.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
-    else el.scrollTo({ top: el.scrollHeight, behavior: reduced ? 'auto' : 'smooth' });
+    if (!current) {
+      el.scrollTo({ top: el.scrollHeight, behavior });
+      return;
+    }
+    // Centers the current row by scrolling this scroller alone: `scrollIntoView` would also scroll the host's page.
+    const box = el.getBoundingClientRect();
+    const row = current.getBoundingClientRect();
+    const top = el.scrollTop + row.top - box.top - (box.height - row.height) / 2;
+    el.scrollTo({ top, behavior });
   }, [rows, visible, reduced]);
 
   return (
@@ -586,7 +594,7 @@ function Head({ type, children }: { readonly type?: string; readonly children: R
 
 function Type({ children }: { readonly children: string }) {
   return (
-    <span className="ml-auto pt-0 font-mono text-[11px] text-fg-subtle/75 max-sm:hidden">
+    <span className="ml-auto pt-0 font-mono text-[11px] text-fg-subtle/75 compact:hidden">
       {children}
     </span>
   );

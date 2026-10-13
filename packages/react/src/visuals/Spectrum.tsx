@@ -1,4 +1,4 @@
-import { rgb, type PaletteName } from '../ui';
+import { rgb, type PaletteName, useDomId } from '../ui';
 import { GlVisual } from './GlVisual';
 import { createSpectrumRenderer } from './spectrum/renderer';
 import type { VisualInputs, VisualState } from './types';
@@ -29,29 +29,24 @@ const STRANDS = [
 });
 
 function Fallback({ state, held }: { readonly state: VisualState; readonly held: boolean }) {
+  const fade = useDomId('spectrum-fb-fade');
+  const mask = useDomId('spectrum-fb-mask');
   return (
     <div className="visual-fallback spectrum-fallback" data-state={state} data-held={held}>
       <svg viewBox="0 0 1000 200" preserveAspectRatio="none">
         <defs>
-          <linearGradient id="spectrum-fb-fade" x1="0" x2="1" y1="0" y2="0">
+          <linearGradient id={fade} x1="0" x2="1" y1="0" y2="0">
             <stop offset="0" stopColor="#fff" stopOpacity="0" />
             <stop offset=".16" stopColor="#fff" stopOpacity=".7" />
             <stop offset=".5" stopColor="#fff" stopOpacity="1" />
             <stop offset=".84" stopColor="#fff" stopOpacity=".7" />
             <stop offset="1" stopColor="#fff" stopOpacity="0" />
           </linearGradient>
-          <mask
-            id="spectrum-fb-mask"
-            maskUnits="userSpaceOnUse"
-            x="0"
-            y="-200"
-            width="1000"
-            height="600"
-          >
-            <rect x="0" y="-200" width="1000" height="600" fill="url(#spectrum-fb-fade)" />
+          <mask id={mask} maskUnits="userSpaceOnUse" x="0" y="-200" width="1000" height="600">
+            <rect x="0" y="-200" width="1000" height="600" fill={`url(#${fade})`} />
           </mask>
         </defs>
-        <g mask="url(#spectrum-fb-mask)">
+        <g mask={`url(#${mask})`}>
           <g className="fb-amp">
             {STRANDS.map((s) => (
               <path
