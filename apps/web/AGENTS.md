@@ -1,36 +1,32 @@
 # Web
 
-The reference browser player: a voice-and-visual stage on top of the Client SDK, over an HTTP transport to the reference backend, with real audio playback driving the visuals.
+The reference browser application: it owns routing, setup, session start and Reset over an HTTP transport to the reference backend, and presents each session through the React player (`@yourtechbudstudio/fluidcast-react`).
 
 ## Stack
 
 - Vite and React 19.
-- Styling: Tailwind v4, tokens in `src/styles.css` (`ui/tokens.ts` mirrors them for WebGL and SVG only).
+- Styling: Tailwind v4 for the app's own screens, tokens in `src/styles.css`. The player brings its own compiled, scoped stylesheet, imported once in `main.tsx`.
 - Primitives: Base UI. Animation: `motion`. Icons: `lucide-react`.
 - State: Effect Atom only. No zustand or react-query.
 - Routing: React Router (`react-router`) in data mode, with `createBrowserRouter` in `app/Root.tsx`. Routes choose screens and hold no state of their own.
-- Visuals: raw WebGL. Per-frame audio analysis never goes through atoms or React state.
 
 ## Structure
 
 ```text
 src/
-  main.tsx        # Entry
-  app/            # Root composition, routes, layout, shortcuts, persisted preferences
-  client/         # The session's Client SDK instance, its transport, and the session lifecycle (status, start, Reset)
-  conversation/   # Atoms from the client's view, commands, presentation, composer, transcript
-  playback/       # The audio player, its controls and subtitle
-  tools/          # Tool rendering (Show, Ask), unaware of the conversation
-  visuals/        # WebGL visuals and audio analysis
-  ui/             # Shared primitives, tokens and motion
+  main.tsx        # Entry: the app and both stylesheets
+  app/            # Root composition, routes, the mode screen, the Reset strip, persisted preferences
+  client/         # The HTTP adapter: transport, session lifecycle (status, start, Reset) and the player's connection
 ```
 
-- Each module publishes through `index.ts`. Allowed dependencies between modules are enforced by `tests/architecture.test.mjs`.
+- The player is used only through its public entries (`FluidcastPlayer` and `./styles.css`). The app keeps its own copies of the small primitives its screens need instead of importing the player's internals.
+- Each module publishes through `index.ts`. Allowed dependencies between modules, the player boundary and where the reference contract may be imported are enforced by `tests/architecture.test.mjs`.
 - Pure logic is unit-tested with Vitest (`src/**/*.test.ts`).
 - The browser is a projection: nothing is shown before it comes back on the subscription.
 
 ## Rules
 
+- Player behaviour belongs in `packages/react`, not here. The app supplies the connection, visibility and focus, and owns only its own screens and chrome.
 - Motion uses one curve (`--ease-expo`) and the 110, 190, 320 and 600 ms durations. No springs or overshoot. Honour reduced motion.
 - Interactive controls have an accessible name, work from the keyboard and keep a hit area of at least 44 px.
-- Status copy lives in `conversation/copy.ts`. Error lines always say what failed.
+- Error lines always say what failed.
