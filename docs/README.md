@@ -15,6 +15,7 @@ These documents capture product intent, architectural scope, and consequential d
 - [Harness lifecycle](architecture/harness-lifecycle.md): Execution, continuation, interruption, and recovery.
 - [Tools and the worker](architecture/tools-and-agents.md): The tool contract, initial tools, and the session's one worker.
 - [Client integration](architecture/client-integration.md): Connection, playback, and audio boundaries.
+- [React player](architecture/react-player.md): The complete embeddable player and its host contract.
 
 ## Research: what has been measured
 

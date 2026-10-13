@@ -14,7 +14,7 @@ Generating voice-oriented actions and managing an ongoing conversation are diffe
 
 **The backend Harness is the conversation authority.** It owns history, action state, the playback cursor, tool execution and iteration scheduling. Provider credentials and provider access stay server-side.
 
-**Applications own integration:** the server, transport wiring, UI and audio playback. Integration is transport-neutral.
+**Applications own integration:** the server, transport wiring and backend session lifecycle. They take UI and browser audio playback from the [React player](../architecture/react-player.md) or supply their own. Integration is transport-neutral.
 
 **Clients are projections of a shared protocol.** The Harness publishes its session contract (a snapshot, events, commands, and a pure definition of how events change state), and Core publishes its action vocabulary, as pure exports that never import provider, server or runtime code. A client receives a snapshot followed by the events after it, with no gap, and derives conversation state with the Harness's own definition. Conversation state is never client-local; clients keep only communication, caching, playback and purely presentational UI state. Late or stale messages are rejected by identity, not timing.
 
@@ -26,6 +26,7 @@ Generating voice-oriented actions and managing an ongoing conversation are diffe
 - Client and Harness cannot diverge through duplicated interpretation, but changing how events change state is a protocol change for both.
 - User input becomes visible after a round trip; optimistic updates are not available by default.
 - Client code never includes provider or server code.
+- The React player is such a client: it keeps only communication, caching, playback and presentational state, and it never creates or destroys backend sessions.
 - These are ownership boundaries, not a requirement for separate services or processes.
 
-See [Core SDK](../architecture/core-sdk.md), [Harness lifecycle](../architecture/harness-lifecycle.md) and [Client integration](../architecture/client-integration.md).
+See [Core SDK](../architecture/core-sdk.md), [Harness lifecycle](../architecture/harness-lifecycle.md), [Client integration](../architecture/client-integration.md) and [React player](../architecture/react-player.md).

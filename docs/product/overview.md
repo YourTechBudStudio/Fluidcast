@@ -29,4 +29,4 @@ See the [interaction model](interaction-model.md) for player controls and recove
 
 Fluidcast is a set of SDKs. Its reference backend and browser applications demonstrate integration patterns and are not distributed as an application. It is not a replacement coding-agent harness or a hosted application platform.
 
-Applications own their server, transport integration, UI, and audio playback. Libraries should remain dependency-light. Initial usage is browser-focused, with authoritative conversation state on the backend.
+Applications own their server, transport integration, and backend session lifecycle. They take UI and audio playback from the React player or build their own. The protocol-level SDKs remain dependency-light; UI dependencies live only in the React player. Initial usage is browser-focused, with authoritative conversation state on the backend.
