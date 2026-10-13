@@ -8,13 +8,14 @@ Fluidcast is a set of SDKs that provide a voice-and-visual interface for working
 
 - `packages/core` is the Core SDK: stateless action generation through provider-neutral language models, and text-to-speech. It stores neither action IDs nor conversation history.
 - `packages/harness` is the Harness SDK: conversation history, action state, the playback cursor, tool execution, and iteration scheduling. It builds on Core.
-- `packages/client` is the Client SDK: communication with the application backend, playback coordination with the harness, and audio prefetching and caching. Applications supply actual playback.
+- `packages/client` is the Client SDK: communication with the application backend, playback coordination with the harness, and audio prefetching and caching. It plays nothing itself: the React player or the application supplies actual playback.
+- `packages/react` is the React player (`@yourtechbudstudio/fluidcast-react`, provisional name): one complete, embeddable browser player built on the Client SDK. Hosts supply a session connection and visibility; routing, setup, and backend session lifecycle stay with the application. See `docs/architecture/react-player.md`.
 - `packages/tool-*` are the tool packages (Show, Ask, Agent): each exports a backend factory the harness registers and a pure schema clients import. The Agent tool package owns agent pools and per-SDK adapters.
 - `packages/presets` holds voice behavior presets (instructions, worked examples, speaker profile, reminders), such as the Guided Walkthrough. The SDKs carry only mechanics.
 - `packages/typescript-config` contains the shared TypeScript configuration.
 - `packages/app-contract` is the reference apps' HTTP contract (route paths, Schemas, SSE framing) shared by the backend and the web app's transport. It is not an SDK surface.
 - `apps/backend` is the reference application backend that wires Core, the harness, and the tools to a transport.
-- `apps/web` is the reference browser application that exercises the experience through the Client SDK.
+- `apps/web` is the reference browser application: it owns routing, setup, session start, and Reset, and presents sessions through the React player.
 - The reference apps are examples of integration and run in development only; Fluidcast ships as SDKs.
 
 ## Rules
