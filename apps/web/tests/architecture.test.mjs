@@ -10,21 +10,27 @@ const root = fileURLToPath(new URL('../src/', import.meta.url));
 const files = readdirSync(root, { recursive: true }).filter((file) => /\.tsx?$/.test(file));
 
 /**
- * Which modules each module may import, always through the target's `index.ts`.
- * `client` owns the page's Client SDK instance and transport; `tools` renders and presents tools without knowing the
- * conversation; `workers` presents the Forward tool's worker without knowing the conversation; `ui` and `visuals` stay
- * product-agnostic.
+ * Which modules each module may import, always through the target's `index.ts`. `app` owns routing, setup, session
+ * start and Reset; `client` is the HTTP adapter over the reference backend. The player itself is the
+ * `@yourtechbudstudio/fluidcast-react` package, used only through its public surface.
  */
 const ALLOWED = {
-  app: ['client', 'conversation', 'playback', 'visuals', 'tools', 'ui', 'workers'],
+  app: ['client'],
   client: [],
-  conversation: ['client', 'playback', 'visuals', 'tools', 'ui'],
-  playback: ['client', 'ui'],
-  tools: ['ui'],
-  visuals: ['ui'],
-  workers: ['client', 'ui'],
-  ui: [],
 };
+
+/** The player package's public entries: its root and its stylesheet. */
+const PLAYER = /^@yourtechbudstudio\/fluidcast-react(\/|$)/;
+const PLAYER_ENTRIES = [
+  '@yourtechbudstudio/fluidcast-react',
+  '@yourtechbudstudio/fluidcast-react/styles.css',
+];
+
+/** Files outside `client` that use the reference backend's contract (its agents, statuses and start failures). */
+const CONTRACT_USERS = ['state', 'agents', 'route', 'startFailure'].flatMap((name) => [
+  path.join('app', `${name}.ts`),
+  path.join('app', `${name}.test.ts`),
+]);
 
 const modules = Object.keys(ALLOWED);
 
@@ -83,7 +89,7 @@ test('modules import each other only through index.ts, and only along allowed ed
       if (file === 'main.tsx') {
         assert.ok(
           target === 'styles.css' || target === path.join('app', 'index.ts'),
-          `${file}: the entry point composes only app, not ${target}`,
+          `${file}: the entry point composes only app and its stylesheet, not ${target}`,
         );
         continue;
       }
@@ -116,16 +122,36 @@ test('the tool packages are imported only through their pure ./schema entry', ()
   }
 });
 
-test('mermaid loads lazily: only through a dynamic import inside tools', () => {
-  const mermaid = (specifier) => specifier === 'mermaid' || specifier.startsWith('mermaid/');
-  for (const file of files) {
-    const { static: statics, dynamic } = specifiersOf(file);
-    assert.ok(
-      !statics.some(mermaid),
-      `${file}: imports mermaid statically; load it with import() so it stays out of the main bundle`,
+test('the entry point imports only app, its stylesheet and the player stylesheet', () => {
+  for (const specifier of importsOf('main.tsx')) {
+    if (specifier.startsWith('.')) continue;
+    if (!PLAYER.test(specifier)) continue;
+    assert.equal(
+      specifier,
+      '@yourtechbudstudio/fluidcast-react/styles.css',
+      `main.tsx: imports ${specifier}; the entry point takes only the player's stylesheet`,
     );
-    if (dynamic.some(mermaid)) {
-      assert.equal(file.split(path.sep)[0], 'tools', `${file}: only tools may load mermaid`);
+  }
+});
+
+test('the player is used only through its public entries', () => {
+  for (const file of files) {
+    for (const specifier of importsOf(file)) {
+      if (!PLAYER.test(specifier)) continue;
+      assert.ok(
+        PLAYER_ENTRIES.includes(specifier),
+        `${file}: imports ${specifier}; use the package root or /styles.css only`,
+      );
     }
+  }
+});
+
+test('the reference contract stays in the HTTP adapter and the files that use it today', () => {
+  for (const file of files) {
+    if (!importsOf(file).includes('@fluidcast/app-contract')) continue;
+    assert.ok(
+      file.split(path.sep)[0] === 'client' || CONTRACT_USERS.includes(file),
+      `${file}: imports @fluidcast/app-contract; only client/ and ${CONTRACT_USERS.join(', ')} may`,
+    );
   }
 });

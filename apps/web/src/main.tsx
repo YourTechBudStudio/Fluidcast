@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 
 import { Root } from './app';
 
+import '@yourtechbudstudio/fluidcast-react/styles.css';
 import './styles.css';
 
 const rootElement = document.querySelector('#root');

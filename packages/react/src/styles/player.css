@@ -1,0 +1,122 @@
+/*
+ * The player's stylesheet. `scripts/build-css.mjs` compiles it with Tailwind, then scopes every rule to the player root
+ * (`.fluidcast-player`): `:root` below means that root. Keyframes carry the `fc-` prefix, because `@keyframes` names
+ * stay global.
+ */
+@import 'tailwindcss' source(none);
+@import '../visuals/visuals.css';
+@import '../tools/tools.css';
+@import '../ui/markdown.css';
+
+@source '../';
+/* "container" appears in the source as a word (portal containers), not as Tailwind's viewport-sized utility. */
+@source not inline('container');
+
+/* Design tokens, copied from Isagi (Catppuccin Macchiato). Dark only. */
+@theme {
+  /* Type families */
+  --font-display: 'Sora Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Source Sans 3 Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Fira Code Variable', ui-monospace, SFMono-Regular, monospace;
+
+  /* Surfaces — the deep canvas and its elevations */
+  --color-canvas: #24273a;
+  --color-subtle: #2e3244;
+  --color-elevated: #363a4f;
+  --color-overlay: #3a3f57;
+  --color-line: #5b6078;
+  --color-scrim: #141622;
+
+  /* Foreground / text steps */
+  --color-fg: #cad3f5;
+  --color-fg-muted: #a5adcb;
+  --color-fg-subtle: #6e738d;
+
+  /* Accent palette (raw Catppuccin names) */
+  --color-blue: #8aadf4;
+  --color-violet: #c6a0f6;
+  --color-amber: #f5a97f;
+  --color-green: #a6da95;
+  --color-red: #ed8796;
+  --color-cyan: #91d7e3;
+
+  /* Attention semantics — alias the palette by meaning. */
+  --color-working: var(--color-violet);
+  --color-waiting: var(--color-cyan);
+  --color-idle: var(--color-fg-subtle);
+  --color-error: var(--color-red);
+
+  /* Motion — one easing curve everywhere (fast start, soft landing) */
+  --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-micro: 110ms;
+  --duration-ui: 190ms;
+  --duration-surface: 320ms;
+  --duration-room: 600ms;
+
+  /* Radii */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  /* Depth — soft, layered, never a crisp drop shadow */
+  --shadow-soft: 0 16px 48px rgb(0 0 0 / 0.4);
+  --shadow-lift: 0 24px 64px rgb(0 0 0 / 0.45);
+
+  /* Ambient attention motion — calm, never frantic. */
+  --animate-breathe: fc-breathe 2.6s var(--ease-expo) infinite;
+  --animate-glow: fc-glow 2.8s var(--ease-expo) infinite;
+}
+
+@keyframes fc-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes fc-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-waiting) 40%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-waiting) 0%, transparent);
+  }
+}
+
+/* Composer buttons settle in when the available actions change. */
+@keyframes fc-act-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+@keyframes fc-status-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* The player root: the host sizes it; it keeps its own stacking context and takes focus without a ring. */
+:root {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  color-scheme: dark;
+  font-family: var(--font-sans);
+  color: var(--color-fg);
+  -webkit-font-smoothing: antialiased;
+  outline: none;
+}
+
+/* Scrollbars — slim, inset, and quiet. */
+* {
+  scrollbar-color: color-mix(in srgb, var(--color-line) 36%, transparent) transparent;
+  scrollbar-width: thin;
+}

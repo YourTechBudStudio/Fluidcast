@@ -20,12 +20,6 @@ import { failureOf, fromStatus, isTransportError, sseStream, toTransportError } 
 // The backend session's lifecycle: which session is live, starting one, and Reset.
 
 /**
- * The backend session this registry belongs to. The root seeds it in each session's own registry (`initialValues`); it
- * is never read outside one.
- */
-export const sessionIdAtom = Atom.make('').pipe(Atom.keepAlive);
-
-/**
  * Which backend session is live: `NoSession` now, or `Active(id)`, then again on each change. `sseStream` already
  * JSON-decodes each frame, so it takes `SessionStatus` itself.
  */

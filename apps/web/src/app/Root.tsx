@@ -1,11 +1,14 @@
-import { RegistryProvider, useAtomValue } from '@effect/atom-react';
+import { useAtomValue } from '@effect/atom-react';
 import { Option } from 'effect';
+import { useMemo } from 'react';
 import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 
-import { sessionIdAtom, sessionStatusAtom } from '../client';
+import { FluidcastPlayer } from '@yourtechbudstudio/fluidcast-react';
+
+import { referenceConnection, sessionStatusAtom } from '../client';
 import { ModeScreen } from './ModeScreen';
-import { Player } from './Player';
+import { ResetControl } from './ResetControl';
 import { routeFor } from './route';
 
 /**
@@ -39,19 +42,32 @@ function StatusGate() {
 }
 
 /**
- * The live session's player, in an atom registry of its own seeded with the session's ID. The ID comes from the
- * status, never the URL, so a stale or typed URL never builds a Client. When the session changes or ends, React
- * unmounts this registry and disposing it closes the session's Client, player and every page-local atom.
+ * The live session's player. The ID comes from the status, never the URL, so a stale or typed URL never connects.
  */
 function SessionScreen() {
   const status = useAtomValue(sessionStatusAtom);
   // The gate renders this route only while the status names this session.
   if (Option.isNone(status) || status.value._tag !== 'Active') return null;
   const id = status.value.id;
+  return <PlayerScreen key={id} sessionId={id} />;
+}
+
+/**
+ * One session: the app strip with Reset, then the player over this session's connection. The connection is built once
+ * per session; when the session changes or ends, React unmounts the player, which releases its Client, audio and
+ * streams without ending the backend session.
+ */
+function PlayerScreen({ sessionId }: { readonly sessionId: string }) {
+  const connection = useMemo(() => referenceConnection(sessionId), [sessionId]);
   return (
-    <RegistryProvider key={id} initialValues={[[sessionIdAtom, id]]}>
-      <Player />
-    </RegistryProvider>
+    <div className="relative z-10 grid h-full grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)]">
+      <div className="flex min-h-[38px] items-center justify-end px-3 pt-1">
+        <ResetControl sessionId={sessionId} />
+      </div>
+      <div className="min-h-0">
+        <FluidcastPlayer connection={connection} />
+      </div>
+    </div>
   );
 }
 

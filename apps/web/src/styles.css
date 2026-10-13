@@ -1,4 +1,6 @@
-@import 'tailwindcss';
+/* The app's own screens. The player brings its own compiled, scoped stylesheet (imported in `main.tsx`), so this
+   Tailwind scans only the app's source. */
+@import 'tailwindcss' source('./');
 
 /* Self-hosted fonts; no CDN dependency. */
 @import '@fontsource-variable/sora';
@@ -58,7 +60,6 @@
 
   /* Ambient attention motion — calm, never frantic. */
   --animate-breathe: breathe 2.6s var(--ease-expo) infinite;
-  --animate-glow: glow 2.8s var(--ease-expo) infinite;
 }
 
 @keyframes breathe {
@@ -68,16 +69,6 @@
   }
   50% {
     opacity: 1;
-  }
-}
-
-@keyframes glow {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-waiting) 40%, transparent);
-  }
-  50% {
-    box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-waiting) 0%, transparent);
   }
 }
 
@@ -130,14 +121,7 @@ body::after {
   scrollbar-width: thin;
 }
 
-/* Composer buttons settle in when the available actions change. */
-@keyframes act-in {
-  from {
-    opacity: 0;
-    transform: scale(0.94);
-  }
-}
-
+/* Error lines fade in (`ErrorLine`, Reset's failure). */
 @keyframes status-in {
   from {
     opacity: 0;

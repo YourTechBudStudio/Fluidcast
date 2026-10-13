@@ -11,10 +11,10 @@ export default defineConfig({
       '/api': 'http://127.0.0.1:4700',
     },
   },
-  // Unit tests cover pure logic and the player over fake media; `tests/` adds the provider-free integration test across
-  // the Harness, Client and player. The architecture test runs on node:test.
+  // Unit tests cover the app's pure logic; the player's own tests live in its package. The architecture test runs on
+  // node:test.
   test: {
-    include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+    include: ['src/**/*.test.ts'],
     environment: 'node',
   },
 });

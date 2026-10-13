@@ -1,17 +1,23 @@
-import { useAtom, useAtomValue } from '@effect/atom-react';
+import { useAtom } from '@effect/atom-react';
 import { Option } from 'effect';
 import { AsyncResult, Atom } from 'effect/reactivity';
 import { ArrowRight, Sparkles } from 'lucide-react';
-import { useId, useMemo, useState } from 'react';
+import { useId, useState } from 'react';
 
 import { startSessionAtom } from '../client';
-import { SegmentedControl, Swap, useReducedMotion } from '../ui';
-import { createAnalysis, Visual } from '../visuals';
 import { AGENT_NAME, AGENT_OPTIONS } from './agents';
 import { Brand } from './Brand';
 import { ErrorLine, Spinner } from './feedback';
+import { SegmentedControl } from './SegmentedControl';
 import { startFailureCopy } from './startFailure';
-import { agentAtom, visualAtom } from './state';
+import { agentAtom } from './state';
+import { Swap } from './Swap';
+
+/** Two soft pastel halos, blue and violet, pooling where the start bar sits: the page's atmosphere, held still. */
+const BACKDROP = [
+  'radial-gradient(ellipse 42% 48% at 40% 66%, rgb(138 173 244 / 0.2), transparent 72%)',
+  'radial-gradient(ellipse 38% 44% at 62% 60%, rgb(198 160 246 / 0.16), transparent 72%)',
+].join(', ');
 
 /** Where to find a session ID, for either agent. Claude Code's `/status` does not show it (checked against its command reference). */
 const ID_HINT = 'Copy it from a previous session’s Worker view.';
@@ -25,10 +31,6 @@ const ID_HINT = 'Copy it from a previous session’s Worker view.';
 export function ModeScreen() {
   const [result, start] = useAtom(startSessionAtom);
   const [agent, setAgent] = useAtom(agentAtom);
-  const visual = useAtomValue(visualAtom);
-  const reducedMotion = useReducedMotion();
-  // No player here: the visual has its own analysis with no source, so it never reacts to audio.
-  const analysis = useMemo(() => createAnalysis(), []);
   const inputId = useId();
   const readoutId = useId();
   const [value, setValue] = useState('');
@@ -52,16 +54,6 @@ export function ModeScreen() {
         : `Leave it empty to start a new brainstorm with ${name}.`
       : `Continues this ${name} session. The voice walks you through its last answer first.`;
 
-  const inputs = useMemo(
-    () => ({
-      state: busy ? ('thinking' as const) : ('idle' as const),
-      analysis,
-      reducedMotion,
-      held: false,
-    }),
-    [busy, analysis, reducedMotion],
-  );
-
   return (
     <div className="relative z-10 grid h-full grid-rows-[auto_minmax(0,1fr)]">
       <header className="flex min-h-17 items-center px-4.5 py-3.5 max-sm:px-3">
@@ -70,10 +62,12 @@ export function ModeScreen() {
 
       <main className="flex min-h-0 flex-col items-center justify-center px-6 pb-[10vh] max-sm:px-4">
         <div className="relative flex w-full max-w-[680px] flex-col items-center">
-          {/* The visual sits behind the bar like a glow it rises from. */}
-          <div className="relative -mb-[clamp(60px,10vh,110px)] h-[clamp(220px,40vh,400px)] w-full max-sm:h-[clamp(170px,30vh,260px)]">
-            <Visual id={visual} inputs={inputs} active />
-          </div>
+          {/* A still glow behind the bar, which rises from it. Decoration only. */}
+          <div
+            aria-hidden
+            className="pointer-events-none relative -mb-[clamp(60px,10vh,110px)] h-[clamp(220px,40vh,400px)] w-full max-sm:h-[clamp(170px,30vh,260px)]"
+            style={{ background: BACKDROP }}
+          />
           <h1 className="relative mb-6 text-center font-display text-[clamp(24px,3.4vw,34px)] leading-tight font-medium tracking-[-0.025em] text-fg">
             Start talking it through.
           </h1>

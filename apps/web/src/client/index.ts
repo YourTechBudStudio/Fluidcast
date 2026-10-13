@@ -1,3 +1,2 @@
-export { clientRuntime } from './runtime';
-export { resetSession, sessionIdAtom, sessionStatusAtom, startSessionAtom } from './session';
-export { watchTranscript, watchWorker } from './workers';
+export { referenceConnection } from './connection';
+export { resetSession, sessionStatusAtom, startSessionAtom } from './session';
