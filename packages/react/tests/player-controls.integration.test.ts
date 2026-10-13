@@ -9,7 +9,7 @@ import type { ExecutionId } from '@yourtechbudstudio/fluidcast-harness/protocol'
 import { showTool } from '@yourtechbudstudio/fluidcast-tool-show';
 import { ShowCommand } from '@yourtechbudstudio/fluidcast-tool-show/schema';
 
-import { fakeMedia } from '../src/playback/fakeMedia';
+import { fakeGate, fakeMedia } from '../src/playback/fakeMedia';
 import { makePlayer } from '../src/playback/player';
 
 /**
@@ -97,7 +97,9 @@ describe('player controls across the Harness, Client and player', () => {
           );
           const client = Context.get(context, Client);
           const fake = fakeMedia();
-          const player = yield* makePlayer(fake.media).pipe(Effect.provide(context));
+          // The listener's intent and presence are the React side's; here they always allow presenting.
+          const { gate } = yield* fakeGate();
+          const player = yield* makePlayer(fake.media, gate).pipe(Effect.provide(context));
 
           const view = Effect.map(client.view.get, Option.getOrThrow);
           const status = SubscriptionRef.get(player.status);

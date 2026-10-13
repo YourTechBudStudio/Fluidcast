@@ -28,6 +28,6 @@ export type PlaybackStatus =
 export interface PlaybackControls {
   /** Fetches a fresh clip for the failed line and plays it again. */
   readonly retryClip: () => void;
-  /** The user gesture that unblocks autoplay. */
+  /** The tap that plays a held line from its start: it unlocks audio and records the listener's intent. */
   readonly resume: () => void;
 }

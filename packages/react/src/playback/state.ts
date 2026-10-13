@@ -4,11 +4,16 @@ import { AsyncResult, Atom } from 'effect/reactivity';
 import { useMemo } from 'react';
 
 import { clientRuntime } from '../connection';
+import { gateOf, usePlaybackGate } from './gate';
 import type { PlaybackControls, PlaybackStatus } from './model';
 import { browserMedia, makePlayer } from './player';
 
 /** This instance's player. Kept alive: it owns the audio element and the `AudioContext`. */
-const playerAtom = Atom.keepAlive(clientRuntime.atom(Effect.flatMap(browserMedia, makePlayer)));
+const playerAtom = Atom.keepAlive(
+  clientRuntime.atom((get) =>
+    Effect.flatMap(browserMedia, (media) => makePlayer(media, gateOf(get.registry))),
+  ),
+);
 
 const statusResultAtom = clientRuntime.atom((get) =>
   Stream.unwrap(
@@ -31,13 +36,26 @@ const resumeAtom = clientRuntime.fn((_: void, get) =>
   Effect.flatMap(get.result(playerAtom), (player) => player.resume),
 );
 
-/** How the UI asks the player to act. */
+/**
+ * How the UI asks the player to act. Both are the listener asking this instance to present: each records that intent
+ * synchronously, then dispatches.
+ */
 export function usePlaybackControls(): PlaybackControls {
+  const { authorize } = usePlaybackGate();
   const retryClip = useAtomSet(retryClipAtom);
   const resume = useAtomSet(resumeAtom);
   return useMemo(
-    () => ({ retryClip: () => retryClip(), resume: () => resume() }),
-    [retryClip, resume],
+    () => ({
+      retryClip: () => {
+        authorize();
+        retryClip();
+      },
+      resume: () => {
+        authorize();
+        resume();
+      },
+    }),
+    [authorize, retryClip, resume],
   );
 }
 

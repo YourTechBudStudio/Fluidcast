@@ -58,7 +58,7 @@ const focusPlayer = (root: HTMLDivElement | null) => root?.focus({ preventScroll
 /**
  * One session: the app strip with Reset, then the player over this session's connection. The connection is built once
  * per session; when the session changes or ends, React unmounts the player, which releases its Client, audio and
- * streams without ending the backend session.
+ * streams without ending the backend session. The player is always shown here: hiding the browser tab does not pause.
  */
 function PlayerScreen({ sessionId }: { readonly sessionId: string }) {
   const connection = useMemo(() => referenceConnection(sessionId), [sessionId]);
@@ -68,7 +68,7 @@ function PlayerScreen({ sessionId }: { readonly sessionId: string }) {
         <ResetControl sessionId={sessionId} />
       </div>
       <div className="min-h-0">
-        <FluidcastPlayer connection={connection} ref={focusPlayer} />
+        <FluidcastPlayer connection={connection} visible ref={focusPlayer} />
       </div>
     </div>
   );

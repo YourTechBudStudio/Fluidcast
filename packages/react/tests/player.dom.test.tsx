@@ -9,6 +9,7 @@ import {
   key,
   mount,
   press,
+  settle,
   type,
   unmountAll,
   waitFor,
@@ -19,12 +20,13 @@ import {
   scriptedSession,
   showMarkdown,
   speak,
+  TransportError,
 } from './support/session';
 
 /**
  * The public `FluidcastPlayer` in a DOM, over real Harness sessions: what one instance does never reaches another, keys
  * reach only the focused player, layout follows each root's own width, and unmounting releases the instance without
- * ending its session. Playback always starts from an explicit intent (sending a message), never at mount.
+ * ending its session. Playback starts only from the listener's intent, and only while the host shows the player.
  */
 
 /** A Show, then a line, then a question: the Show is available at once, the question once the line has played. */
@@ -62,6 +64,20 @@ const player = (scope: ParentNode) => {
   return {
     root,
     button,
+    /** Whether a button with this label is rendered. */
+    has: (label: string) =>
+      [...root.querySelectorAll('button')].some(
+        (candidate) =>
+          candidate.getAttribute('aria-label') === label || candidate.textContent?.trim() === label,
+      ),
+    /** Whether a button with this label is rendered and can be pressed. */
+    available: (label: string) =>
+      [...root.querySelectorAll('button')].some(
+        (candidate) =>
+          (candidate.getAttribute('aria-label') === label ||
+            candidate.textContent?.trim() === label) &&
+          candidate.getAttribute('aria-disabled') !== 'true',
+      ),
     pressed: (label: string) => button(label).getAttribute('aria-pressed') === 'true',
     /** The side panel, when the layout has one. */
     panel: () => root.querySelector('aside[aria-label="Show"]'),
@@ -85,27 +101,65 @@ const player = (scope: ParentNode) => {
 };
 type Player = ReturnType<typeof player>;
 
-/** Two players side by side, each over its own session. */
+/** Two players side by side, each over its own session. `show` changes what the host shows. */
 const mountPair = async () => {
   const a = await session();
   const b = await session();
-  const { container } = await mount(
+  const connectionA = a.connection();
+  const connectionB = b.connection();
+  const pair = (visibleA: boolean, visibleB: boolean) => (
     <>
       <div data-player="a">
-        <FluidcastPlayer connection={a.connection()} />
+        <FluidcastPlayer connection={connectionA} visible={visibleA} />
       </div>
       <div data-player="b">
-        <FluidcastPlayer connection={b.connection()} />
+        <FluidcastPlayer connection={connectionB} visible={visibleB} />
       </div>
-    </>,
+    </>
   );
+  const { container, rerender } = await mount(pair(true, true));
   const scope = (name: string) => container.querySelector(`[data-player="${name}"]`)!;
   await waitFor(
     () => a.openSubscriptions() === 1 && b.openSubscriptions() === 1,
     'both subscribed',
   );
-  return { a, b, playerA: player(scope('a')), playerB: player(scope('b')) };
+  return {
+    a,
+    b,
+    playerA: player(scope('a')),
+    playerB: player(scope('b')),
+    show: (visibleA: boolean, visibleB: boolean) => rerender(pair(visibleA, visibleB)),
+  };
 };
+
+/** One player over `s`, whose visibility the test changes on the same connection. */
+const mountOne = async (s: ScriptedSession, visible = true) => {
+  const connection = s.connection();
+  const view = await mount(<FluidcastPlayer connection={connection} visible={visible} />);
+  return {
+    ...view,
+    p: player(view.container),
+    show: (next: boolean) =>
+      view.rerender(<FluidcastPlayer connection={connection} visible={next} />),
+  };
+};
+
+/** `play()` calls on every element so far. */
+const plays = () => [...browser.media.values()].reduce((sum, record) => sum + record.plays, 0);
+const pausesOf = (element: HTMLMediaElement) => browser.media.get(element)?.pauses ?? 0;
+
+/** Silence lands on the player's next turn, well before disposal (500 ms). */
+const SILENCE_MS = 100;
+
+/** Waits until `element` is paused again after `before` pauses, within the silence bound. */
+const silenced = (element: HTMLMediaElement, before: number) =>
+  waitFor(() => pausesOf(element) > before, 'element paused', SILENCE_MS);
+
+const relayedPause = (s: ScriptedSession, paused: boolean) =>
+  s.relayed.some(({ message }) => message._tag === 'PauseChanged' && message.paused === paused);
+
+/** The Pause commands a session received. */
+const pauseCount = (s: ScriptedSession) => s.tags().filter((tag) => tag === 'Pause').length;
 
 /** Sends a message in `p` and waits until its line plays on its own element. */
 const startPlayback = async (p: Player, s: ScriptedSession) => {
@@ -304,13 +358,20 @@ const ORDINARY = new Set([
 describe('releasing an instance', () => {
   it('cleans up without ending the session, which a new player picks up', async () => {
     const s = await session();
-    const view = await mount(<FluidcastPlayer connection={s.connection()} />);
+    const view = await mount(<FluidcastPlayer connection={s.connection()} visible />);
     const first = player(view.container);
     const audio = await startPlayback(first, s);
     await press(first.button('Worker'));
     await waitFor(() => s.openWorkerFeeds() > 0, 'Worker feed open');
 
+    // Silent at once: the element pauses before disposal, while its source and context still exist, with no Pause.
+    const pauses = pausesOf(audio.element);
     await view.unmount();
+    await silenced(audio.element, pauses);
+    expect(audio.element.getAttribute('src')).not.toBeNull();
+    expect(audio.context.closed).toBe(false);
+    expect(s.tags()).not.toContain('Pause');
+
     await afterDisposal();
     expect(s.openSubscriptions()).toBe(0);
     expect(s.openWorkerFeeds()).toBe(0);
@@ -318,21 +379,24 @@ describe('releasing an instance', () => {
     expect(audio.context.closed).toBe(true);
     expect(s.tags().filter((tag) => !ORDINARY.has(tag))).toEqual([]);
 
-    // The session lives on: a new player receives a snapshot holding the conversation so far.
-    await mount(<FluidcastPlayer connection={s.connection()} />);
+    // The session lives on: a new player receives a snapshot holding the conversation so far, and waits for a tap.
+    const before = plays();
+    const next = await mount(<FluidcastPlayer connection={s.connection()} visible />);
     await waitFor(() => s.openSubscriptions() === 1, 'resubscribed');
     const latest = Math.max(...s.relayed.map((entry) => entry.subscription));
     const opening = s.relayed.find((entry) => entry.subscription === latest)?.message;
     expect(opening?._tag).toBe('Snapshot');
     expect(opening?._tag === 'Snapshot' && opening.state.actions.length).toBeGreaterThan(0);
+    await waitFor(() => player(next.container).has('Tap to resume'), 'held');
+    expect(plays()).toBe(before);
   });
 
   it('releases the old instance the same way when the connection changes', async () => {
     const s = await session();
-    const view = await mount(<FluidcastPlayer connection={s.connection()} />);
+    const view = await mount(<FluidcastPlayer connection={s.connection()} visible />);
     const audio = await startPlayback(player(view.container), s);
 
-    await view.rerender(<FluidcastPlayer connection={s.connection()} />);
+    await view.rerender(<FluidcastPlayer connection={s.connection()} visible />);
     await afterDisposal();
     expect(s.openSubscriptions()).toBe(1);
     expect(audio.element.getAttribute('src')).toBeNull();
@@ -347,12 +411,172 @@ describe('releasing an instance', () => {
 describe('Reset', () => {
   it('is not part of the player', async () => {
     const s = await session();
-    const view = await mount(<FluidcastPlayer connection={s.connection()} />);
+    const view = await mount(<FluidcastPlayer connection={s.connection()} visible />);
     await waitFor(() => s.openSubscriptions() === 1, 'subscribed');
     const labels = [...view.container.querySelectorAll('button')].map(
       (button) => `${button.getAttribute('aria-label') ?? ''} ${button.textContent ?? ''}`,
     );
     expect(labels.length).toBeGreaterThan(0);
     expect(labels.filter((label) => /reset/i.test(label))).toEqual([]);
+  });
+});
+
+describe('entering a session', () => {
+  it('waits for a tap on a session that was already speaking, whatever else the listener does', async () => {
+    const s = await session();
+    await s.drive({ _tag: 'SendMessage', text: 'Walk me through it.' });
+    const { p } = await mountOne(s);
+    await waitFor(() => p.has('Tap to resume'), 'held');
+
+    // Unlocking gestures that are not asking for audio.
+    await press(p.button('Transcript'));
+    await press(p.button('Transcript'));
+    await press(p.button('Show'));
+    const field = p.root.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]')!;
+    await press(field);
+    await type(field, 'Hold on');
+    await settle(50);
+    expect(browser.contexts.length).toBe(1);
+    expect(plays()).toBe(0);
+    expect(p.has('Tap to resume')).toBe(true);
+
+    await press(p.button('Tap to resume'));
+    await waitFor(() => plays() === 1, 'line playing');
+  });
+
+  it('plays a preloaded start only on Tap to start', async () => {
+    const s = await scriptedSession(SCRIPT, {
+      start: { message: 'Begin.', context: { label: 'Brief', text: 'Notes.' } },
+    });
+    sessions.push(s);
+    const { p } = await mountOne(s);
+    await waitFor(() => p.has('Tap to start'), 'ready');
+    await press(p.button('Transcript'));
+    await settle(50);
+    expect(s.tags()).toEqual([]);
+
+    await press(p.button('Tap to start'));
+    await waitFor(() => plays() === 1, 'first line playing');
+    expect(s.tags().filter((tag) => tag !== 'ToolCommand')).toEqual(['Play']);
+  });
+
+  it('holds a line that arrives after mount when the listener only looked around', async () => {
+    const s = await session();
+    const generating = s.holdModel();
+    await s.drive({ _tag: 'SendMessage', text: 'Walk me through it.' });
+    const { p } = await mountOne(s);
+    await waitFor(() => s.openSubscriptions() === 1, 'subscribed');
+    await press(p.button('Transcript'));
+    generating.release();
+    await waitFor(() => p.has('Tap to resume'), 'held');
+    expect(plays()).toBe(0);
+  });
+});
+
+describe('visibility', () => {
+  it('pauses the session on hide, silencing at once, and resumes nothing on show', async () => {
+    const s = await session();
+    const { p, show } = await mountOne(s);
+    const audio = await startPlayback(p, s);
+    const source = audio.element.getAttribute('src');
+
+    const pausing = s.holdSend('Pause');
+    const pauses = pausesOf(audio.element);
+    await show(false);
+    // Silence does not wait for the Pause round trip.
+    await silenced(audio.element, pauses);
+    expect(s.tags()).toContain('Pause');
+    expect(relayedPause(s, true)).toBe(false);
+    pausing.release();
+    await waitFor(() => relayedPause(s, true), 'pause relayed');
+
+    const played = plays();
+    await show(true);
+    await settle(50);
+    expect(plays()).toBe(played);
+    expect(s.tags()).not.toContain('Play');
+
+    await press(p.button('Play'));
+    await waitFor(() => plays() === played + 1, 'resumed');
+    expect(audio.element.getAttribute('src')).toBe(source);
+  });
+
+  it('stays silent and holds the line on show when the hide’s Pause fails', async () => {
+    const s = await session();
+    const { p, show } = await mountOne(s);
+    const audio = await startPlayback(p, s);
+    s.failSend('Pause', new TransportError({ reason: 'Unreachable' }));
+    const pauses = pausesOf(audio.element);
+    await show(false);
+    await silenced(audio.element, pauses);
+    await waitFor(() => s.tags().includes('Pause'), 'Pause sent');
+
+    const played = plays();
+    await show(true);
+    await waitFor(() => p.has('Tap to resume'), 'held');
+    expect(plays()).toBe(played);
+  });
+
+  it('never sounds when mounted hidden, and pauses once however often it re-renders', async () => {
+    const s = await session();
+    await s.drive({ _tag: 'SendMessage', text: 'Walk me through it.' });
+    const { show } = await mountOne(s, false);
+    await waitFor(() => relayedPause(s, true), 'session paused');
+    await show(false);
+    await show(false);
+    await settle(50);
+    expect(pauseCount(s)).toBe(1);
+    expect(plays()).toBe(0);
+  });
+
+  it('pauses only the player that was hidden', async () => {
+    const { a, b, playerA, playerB, show } = await mountPair();
+    const audioA = await startPlayback(playerA, a);
+    const audioB = await startPlayback(playerB, b);
+    const pausesA = pausesOf(audioA.element);
+    const pausesB = pausesOf(audioB.element);
+    await show(false, true);
+    await silenced(audioA.element, pausesA);
+    await waitFor(() => relayedPause(a, true), 'A paused');
+    expect(pausesOf(audioB.element)).toBe(pausesB);
+    expect(b.tags()).not.toContain('Pause');
+    expect(relayedPause(b, true)).toBe(false);
+  });
+});
+
+describe('gate writes follow the UI order', () => {
+  it('leaves nothing silenced locally when the hide’s Pause lands after the player is shown again', async () => {
+    const s = await session();
+    await s.drive({ _tag: 'SendMessage', text: 'Walk me through it.' });
+    const building = s.holdConstruction();
+    const { p, show } = await mountOne(s);
+    await show(false);
+    await show(true);
+    building.release();
+    // The late Pause runs once the runtime is built; the session is paused (in its snapshot or a later event).
+    await waitFor(() => pauseCount(s) === 1, 'late Pause sent');
+    await waitFor(() => p.available('Play'), 'paused, Play offered');
+    expect(plays()).toBe(0);
+    await press(p.button('Play'));
+    await waitFor(() => plays() === 1, 'line playing');
+  });
+
+  it('does not let a Play that lands after a hide sound on show', async () => {
+    const s = await session();
+    const { p, show } = await mountOne(s);
+    await startPlayback(p, s);
+    await press(p.button('Pause'));
+    await waitFor(() => relayedPause(s, true), 'paused');
+    const played = plays();
+
+    const playing = s.holdSend('Play');
+    await press(p.button('Play'));
+    await show(false);
+    await waitFor(() => pauseCount(s) === 2, 'hide paused');
+    playing.release();
+    await waitFor(() => relayedPause(s, false), 'Play applied');
+    await show(true);
+    await waitFor(() => p.has('Tap to resume'), 'held');
+    expect(plays()).toBe(played);
   });
 });

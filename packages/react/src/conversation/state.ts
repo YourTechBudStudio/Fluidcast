@@ -13,7 +13,7 @@ import type {
 import { AskCommand } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 
 import { clientRuntime } from '../connection';
-import { playbackAtom } from '../playback';
+import { playbackAtom, usePlaybackGate } from '../playback';
 import type { Connection, ConversationCommands, ConversationView } from './model';
 import { present } from './presentation';
 
@@ -150,8 +150,12 @@ const pauseAtom = clientRuntime.fn((_: void, get) => accepted(get, (client) => c
 // Also sends a preloaded start, as Start does.
 const playAtom = clientRuntime.fn((_: void, get) => accepted(get, (client) => client.play()));
 
-/** The commands the UI sends. Each resolves `true` once the Harness accepted it. */
+/**
+ * The commands the UI sends. Each resolves `true` once the Harness accepted it. Presenting commands are the listener
+ * asking this instance to present: they record that intent synchronously, then dispatch. Interrupt and Pause never do.
+ */
 export function useConversationCommands(): ConversationCommands {
+  const { authorize } = usePlaybackGate();
   const sendMessage = useAtomSet(sendMessageAtom, { mode: 'promise' });
   const interrupt = useAtomSet(interruptAtom, { mode: 'promise' });
   const retryGeneration = useAtomSet(retryGenerationAtom, { mode: 'promise' });
@@ -162,16 +166,34 @@ export function useConversationCommands(): ConversationCommands {
   const play = useAtomSet(playAtom, { mode: 'promise' });
   return useMemo(
     () => ({
-      sendMessage,
+      sendMessage: (text) => {
+        authorize();
+        return sendMessage(text);
+      },
       interrupt: () => interrupt(),
-      retryGeneration: () => retryGeneration(),
-      answerAsk: (execution, answer) => answerAsk({ execution, answer }),
-      back: () => back(),
-      next: () => next(),
+      retryGeneration: () => {
+        authorize();
+        return retryGeneration();
+      },
+      answerAsk: (execution, answer) => {
+        authorize();
+        return answerAsk({ execution, answer });
+      },
+      back: () => {
+        authorize();
+        return back();
+      },
+      next: () => {
+        authorize();
+        return next();
+      },
       pause: () => pause(),
-      play: () => play(),
+      play: () => {
+        authorize();
+        return play();
+      },
     }),
-    [sendMessage, interrupt, retryGeneration, answerAsk, back, next, pause, play],
+    [authorize, sendMessage, interrupt, retryGeneration, answerAsk, back, next, pause, play],
   );
 }
 

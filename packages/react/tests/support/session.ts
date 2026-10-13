@@ -63,6 +63,8 @@ export interface ScriptedSession {
   readonly holdSend: (tag: CommandTag) => Hold;
   /** Holds the construction of connections built from now on, so the player's runtime stays unbuilt until released. */
   readonly holdConstruction: () => Hold;
+  /** Holds the model's next replies until released, so a turn stays generating. */
+  readonly holdModel: () => Hold;
   readonly close: () => Promise<void>;
 }
 
@@ -70,14 +72,26 @@ const synthesizer = SpeechSynthesizer.of({
   synthesize: (request) => Stream.make(new TextEncoder().encode(request.text)),
 });
 
-/** A model that answers its n-th generation with `replies[n]`, repeating the last one. */
-const scriptedModel = (replies: ReadonlyArray<ReadonlyArray<ScriptedAction>>) => {
+/**
+ * A model that answers its n-th generation with `replies[n]`, repeating the last one. While `held()` returns a
+ * Deferred, a reply waits for it.
+ */
+const scriptedModel = (
+  replies: ReadonlyArray<ReadonlyArray<ScriptedAction>>,
+  held: () => Deferred.Deferred<void> | null,
+) => {
   let calls = 0;
   return LanguageModel.make({
     generateText: () => Effect.die('unused'),
     streamText: () => {
       const reply = replies[Math.min(calls++, replies.length - 1)] ?? [];
-      return Stream.make({ type: 'text-delta', id: 't', delta: JSON.stringify(reply) } as const);
+      const wait = held();
+      const text = Stream.make({
+        type: 'text-delta',
+        id: 't',
+        delta: JSON.stringify(reply),
+      } as const);
+      return wait === null ? text : Stream.unwrap(Effect.as(Deferred.await(wait), text));
     },
   });
 };
@@ -96,17 +110,23 @@ const hold = (onRelease: (deferred: Deferred.Deferred<void>) => void) => {
 
 export async function scriptedSession(
   replies: ReadonlyArray<ReadonlyArray<ScriptedAction>>,
+  options: { readonly start?: Parameters<typeof sessionLayer>[0]['start'] } = {},
 ): Promise<ScriptedSession> {
   const scope = await Effect.runPromise(Scope.make());
+  let modelHold: Deferred.Deferred<void> | null = null;
   const harness = sessionLayer({
     instructions: 'Be brief.',
     speakers: [{ id: 'host', name: 'Host', personality: 'Warm.', voice: { name: 'alloy' } }],
     speechFormat: 'opus',
     tools: [showTool(), askTool()],
+    ...(options.start === undefined ? {} : { start: options.start }),
   }).pipe(
     Layer.provide(
       Layer.merge(
-        Layer.effect(LanguageModel.LanguageModel, scriptedModel(replies)),
+        Layer.effect(
+          LanguageModel.LanguageModel,
+          scriptedModel(replies, () => modelHold),
+        ),
         Layer.succeed(SpeechSynthesizer, synthesizer),
       ),
     ),
@@ -190,6 +210,13 @@ export async function scriptedSession(
         if (constructionHold === deferred) constructionHold = null;
       });
       constructionHold = held.deferred;
+      return { release: held.release };
+    },
+    holdModel: () => {
+      const held = hold((deferred) => {
+        if (modelHold === deferred) modelHold = null;
+      });
+      modelHold = held.deferred;
       return { release: held.release };
     },
     close: () => Effect.runPromise(Scope.close(scope, Exit.void)),

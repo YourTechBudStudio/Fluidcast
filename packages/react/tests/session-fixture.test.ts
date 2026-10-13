@@ -1,4 +1,4 @@
-import { Context, Effect, Exit, Fiber, Layer } from 'effect';
+import { Context, Effect, Exit, Fiber, Layer, Stream } from 'effect';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { Transport, TransportError } from '@yourtechbudstudio/fluidcast-client';
@@ -65,6 +65,29 @@ describe('scripted session fixture', () => {
           expect(fiber.pollUnsafe()).toBeUndefined();
           latch.release();
           yield* Fiber.join(fiber);
+        }),
+      ),
+    );
+  });
+
+  it('keeps a turn generating while the model is held, and can start with a preloaded message', async () => {
+    const s = await scriptedSession([[speak('A.')]], {
+      start: { message: 'Begin.', context: { label: 'Brief', text: 'Notes.' } },
+    });
+    sessions.push(s);
+    const generating = s.holdModel();
+    await s.drive({ _tag: 'Start' });
+    const spoken = () => s.relayed.some(({ message }) => message._tag === 'PlaybackRequested');
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const transport = yield* transportOf(s);
+          yield* Effect.forkChild(Stream.runDrain(transport.subscribe()));
+          yield* Effect.sleep('30 millis');
+          expect(spoken()).toBe(false);
+          generating.release();
+          yield* Effect.sleep('30 millis');
+          expect(spoken()).toBe(true);
         }),
       ),
     );

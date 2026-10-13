@@ -1,4 +1,4 @@
-import { Effect, Exit, Layer, Option, Result, Scope, SubscriptionRef } from 'effect';
+import { Deferred, Effect, Exit, Layer, Option, Result, Scope, SubscriptionRef } from 'effect';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -10,7 +10,7 @@ import {
 import type { ActionId } from '@yourtechbudstudio/fluidcast-core/actions';
 import type { PlaybackId } from '@yourtechbudstudio/fluidcast-harness/protocol';
 
-import { fakeMedia } from './fakeMedia';
+import { fakeGate, fakeMedia } from './fakeMedia';
 import type { PlaybackStatus } from './model';
 import { makePlayer } from './player';
 
@@ -46,10 +46,23 @@ const viewOf = (paused: boolean): ConversationView => ({
 
 const unused = () => Effect.die('unused in these tests');
 
-/** The player over a fake element and a fake Client whose view and instruction the test drives. */
-const setup = (options: { readonly audible?: boolean; readonly paused?: boolean } = {}) =>
+/**
+ * The player over a fake element, a fake Client whose view and instruction the test drives, and a fake gate (open
+ * unless the options say otherwise). `audibility` replaces the media's answer, for a test to hold it.
+ */
+const setup = (
+  options: {
+    readonly audible?: boolean;
+    readonly paused?: boolean;
+    readonly authorized?: boolean;
+    readonly audibility?: Effect.Effect<boolean>;
+  } = {},
+) =>
   Effect.gen(function* () {
-    const { media, element, revoked, unlocks, setAudible } = fakeMedia(options);
+    const fake = fakeMedia(options);
+    const { element, revoked, unlocks, setAudible } = fake;
+    const media = options.audibility ? { ...fake.media, audible: options.audibility } : fake.media;
+    const { gate, flags, deliver } = yield* fakeGate({ authorized: options.authorized ?? true });
     const view = yield* SubscriptionRef.make(Option.some(viewOf(options.paused ?? false)));
     const playback = yield* SubscriptionRef.make<Option.Option<PlaybackInstruction>>(Option.none());
     const finished: PlaybackId[] = [];
@@ -71,11 +84,16 @@ const setup = (options: { readonly audible?: boolean; readonly paused?: boolean 
       playable: (actionId) => Effect.sync(() => (fresh.push(actionId), bytes)),
     });
     const scope = yield* Scope.make();
-    const player = yield* makePlayer(media).pipe(
+    const player = yield* makePlayer(media, gate).pipe(
       Effect.provide(Layer.succeed(Client, client)),
       Scope.provide(scope),
     );
-    const settle = Effect.sleep('5 millis');
+    // A moment, then enough scheduler turns for every queued fiber step: a busy machine can delay the timer past the
+    // work it waits for, but not reorder the turns.
+    const settle = Effect.andThen(
+      Effect.sleep('5 millis'),
+      Effect.forEach(Array.from({ length: 50 }), () => Effect.yieldNow, { discard: true }),
+    );
     return {
       element,
       player,
@@ -92,6 +110,25 @@ const setup = (options: { readonly audible?: boolean; readonly paused?: boolean 
       clear: Effect.andThen(SubscriptionRef.set(playback, Option.none()), settle),
       pause: (paused: boolean) =>
         Effect.andThen(SubscriptionRef.set(view, Option.some(viewOf(paused))), settle),
+      /** The listener's intent, written as the command hooks do. */
+      authorize: () => void (flags.authorized = true),
+      /** Closes the gate the way a hide (`revoke`) or an unmount does, before the stream delivers it. */
+      close: (revoke: boolean) => {
+        flags.present = false;
+        if (revoke) flags.authorized = false;
+      },
+      /** The presence stream reaches the player. */
+      deliver: Effect.andThen(deliver, settle),
+      /** Hidden, delivered: the synchronous write and the stream together. */
+      hide: Effect.suspend(() => {
+        flags.present = false;
+        flags.authorized = false;
+        return Effect.andThen(deliver, settle);
+      }),
+      show: Effect.suspend(() => {
+        flags.present = true;
+        return Effect.andThen(deliver, settle);
+      }),
     };
   });
 
@@ -316,6 +353,126 @@ describe('player', () => {
         yield* Scope.close(t.scope, Exit.void);
         expect(t.revoked).toEqual(['blob:1']);
         expect(t.element.src).toBe('');
+      }),
+    ));
+});
+
+describe('player gate', () => {
+  it('holds a line the listener has not asked for, without starting or unlocking it', () =>
+    run(
+      Effect.gen(function* () {
+        const t = yield* setup({ authorized: false });
+        yield* t.play(instruction('a'));
+        expect(kindOf(yield* t.status)).toBe('held');
+        expect(t.element.plays).toBe(0);
+        expect(t.unlocks()).toBe(0);
+      }),
+    ));
+
+  it('plays once authorized, holds back while hidden, and holds again on show without new intent', () =>
+    run(
+      Effect.gen(function* () {
+        const t = yield* setup();
+        yield* t.play(instruction('a'));
+        expect(kindOf(yield* t.status)).toBe('playing');
+        const pauses = t.element.pauses;
+        yield* t.hide;
+        expect(t.element.pauses).toBeGreaterThan(pauses);
+        expect(kindOf(yield* t.status)).toBe('paused');
+        yield* t.show;
+        expect(kindOf(yield* t.status)).toBe('held');
+        expect(t.element.plays).toBe(1);
+        expect(t.finished).toEqual([]);
+      }),
+    ));
+
+  it('stays paused on show while the session is paused', () =>
+    run(
+      Effect.gen(function* () {
+        const t = yield* setup();
+        yield* t.play(instruction('a'));
+        yield* t.pause(true);
+        yield* t.hide;
+        yield* t.show;
+        expect(kindOf(yield* t.status)).toBe('paused');
+        expect(t.element.plays).toBe(1);
+      }),
+    ));
+
+  for (const revoke of [true, false])
+    it(`starts nothing once the gate closed while audibility was awaited (${revoke ? 'hide' : 'unmount'})`, () =>
+      run(
+        Effect.gen(function* () {
+          const audibility = yield* Deferred.make<boolean>();
+          const t = yield* setup({ audibility: Deferred.await(audibility) });
+          yield* t.play(instruction('a'));
+          expect(t.element.plays).toBe(0);
+          t.close(revoke);
+          yield* Deferred.succeed(audibility, true);
+          yield* t.settle;
+          expect(t.element.plays).toBe(0);
+          yield* t.deliver;
+          expect(kindOf(yield* t.status)).toBe('paused');
+          expect(t.element.plays).toBe(0);
+        }),
+      ));
+
+  it('reports no completion that lands after the gate closed, and replays the line on Tap to resume', () =>
+    run(
+      Effect.gen(function* () {
+        const t = yield* setup();
+        yield* t.play(instruction('a'));
+        expect(kindOf(yield* t.status)).toBe('playing');
+        // Hidden: the gate is closed, but the stream has not reached the player yet when the clip ends.
+        t.close(true);
+        t.element.end();
+        yield* t.settle;
+        expect(t.finished).toEqual([]);
+        yield* t.deliver;
+        expect(kindOf(yield* t.status)).toBe('paused');
+        // Shown again without new intent (the hide's Pause failed, so the session is unpaused).
+        yield* t.show;
+        expect(t.finished).toEqual([]);
+        expect(kindOf(yield* t.status)).toBe('held');
+        t.authorize();
+        yield* t.player.resume;
+        yield* t.settle;
+        expect(t.element.plays).toBe(2);
+        expect(t.element.sources).toEqual(['blob:1', 'blob:2']);
+        expect(kindOf(yield* t.status)).toBe('playing');
+        expect(t.finished).toEqual([]);
+      }),
+    ));
+
+  it('reports an ending retained while hidden once released with the gate open, without replaying it', () =>
+    run(
+      Effect.gen(function* () {
+        const t = yield* setup();
+        yield* t.play(instruction('a'));
+        // Not present (as while unmounting), but still authorized.
+        t.close(false);
+        yield* t.deliver;
+        t.element.end();
+        yield* t.settle;
+        expect(t.finished).toEqual([]);
+        yield* t.show;
+        expect(t.finished).toEqual([pid('p-a')]);
+        expect(t.element.plays).toBe(1);
+      }),
+    ));
+
+  it('keeps an ending retained while hidden when released with the gate closed', () =>
+    run(
+      Effect.gen(function* () {
+        const t = yield* setup();
+        yield* t.play(instruction('a'));
+        yield* t.hide;
+        t.element.end();
+        yield* t.settle;
+        yield* t.show;
+        expect(kindOf(yield* t.status)).toBe('held');
+        expect(t.finished).toEqual([]);
+        expect(t.element.plays).toBe(1);
       }),
     ));
 });

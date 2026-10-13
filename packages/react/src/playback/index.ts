@@ -1,3 +1,4 @@
+export { usePlaybackGate, usePresent } from './gate';
 export type { MediaError, PlaybackControls, PlaybackFailure, PlaybackStatus } from './model';
 export { playbackAtom, usePlaybackAnalyser, usePlaybackControls, usePlaybackUnlock } from './state';
 export { Subtitle, type SubtitleLine } from './Subtitle';

@@ -1,5 +1,6 @@
-import { Effect } from 'effect';
+import { Effect, SubscriptionRef } from 'effect';
 
+import type { PlaybackGate } from './gate';
 import type { MediaElement, PlayerMedia } from './player';
 
 // Test support: the player's media without a browser, for the player's tests and the integration test. The app never
@@ -77,3 +78,25 @@ export function fakeMedia(options: { readonly audible?: boolean } = {}) {
     setAudible: (value: boolean) => void (audible = value),
   };
 }
+
+/**
+ * A gate whose flags and presence stream the test moves separately. Closing the flags without delivering presence is
+ * the window a synchronous hide opens before the stream reaches the player.
+ */
+export const fakeGate = (
+  initial: { readonly authorized?: boolean; readonly present?: boolean } = {},
+) =>
+  Effect.gen(function* () {
+    const flags = { authorized: initial.authorized ?? true, present: initial.present ?? true };
+    const delivered = yield* SubscriptionRef.make(flags.present);
+    const gate: PlaybackGate = {
+      open: Effect.sync(() => flags.authorized && flags.present),
+      present: SubscriptionRef.changes(delivered),
+    };
+    return {
+      gate,
+      flags,
+      /** Delivers the current presence flag to the player, as the registry's stream would. */
+      deliver: Effect.suspend(() => SubscriptionRef.set(delivered, flags.present)),
+    };
+  });

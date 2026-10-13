@@ -16,6 +16,7 @@ import {
   type Playable,
 } from '@yourtechbudstudio/fluidcast-client';
 
+import type { PlaybackGate } from './gate';
 import type { MediaError, PlaybackStatus } from './model';
 
 /** One player instance's audio output, owned for the lifetime of its scope. */
@@ -65,6 +66,9 @@ const RESUME_GRACE = '250 millis';
 export const browserMedia = Effect.gen(function* () {
   const element = new Audio();
   element.preload = 'auto';
+  // A cross-origin clip without CORS headers then fails to load (Retry clip) instead of playing silently through the
+  // analyser.
+  element.crossOrigin = 'anonymous';
 
   let graph: { readonly context: AudioContext; readonly analyser: AnalyserNode } | null = null;
   /** Created on first use. The element's output goes through it from then on. */
@@ -120,7 +124,7 @@ type Ending = 'finished' | MediaError;
 interface Attempt {
   /** Its source was released: a later attempt owns the element now. */
   released: boolean;
-  /** The latest pause it observed. */
+  /** The latest hold it observed: the session's pause, or the instance not being shown. */
   paused: boolean;
   /** Its clip could not be obtained or played. */
   failed: boolean;
@@ -135,10 +139,14 @@ interface Attempt {
  *   long as its instruction is current, so events and late promises from an earlier source never reach a later line.
  * - The session's pause (`view.paused`) is the only authority on pausing. Pause keeps the source, position and
  *   playback ID; releasing it resumes that same clip. Nothing starts the element while the latest view says paused.
+ * - The instance's gate decides whether it may present at all. While it is not shown the element is held back as if
+ *   paused. A clip starts, and a completion is reported, only while the gate is open (authorized and present) at that
+ *   moment; otherwise the line is `held` until the listener asks for it.
  * - `ended` reports `finished(playbackId)` for the attempt's own instruction. The Harness ignores it while paused, so
  *   the attempt keeps that evidence and reports it again when the pause is released, instead of replaying the line.
+ *   A closed gate keeps it the same way.
  */
-export const makePlayer = (media: PlayerMedia) =>
+export const makePlayer = (media: PlayerMedia, gate: PlaybackGate) =>
   Effect.gen(function* () {
     const client = yield* Client;
     const { element } = media;
@@ -146,8 +154,12 @@ export const makePlayer = (media: PlayerMedia) =>
     const current = yield* Ref.make<Option.Option<PlaybackInstruction>>(Option.none());
     const attempt = yield* FiberHandle.make<void, never>();
 
-    const pausedChanges = client.view.changes.pipe(
+    /** Whether the element must stay still: the session is paused, or the instance is not shown. */
+    const heldBack = client.view.changes.pipe(
       Stream.map(Option.exists((view) => view.paused)),
+      Stream.changes,
+      Stream.zipLatest(gate.present),
+      Stream.map(([paused, present]) => paused || !present),
       Stream.changes,
     );
 
@@ -215,7 +227,9 @@ export const makePlayer = (media: PlayerMedia) =>
         const running = yield* FiberHandle.make<void, never>();
 
         const settle = (outcome: Ending | 'held') => {
-          if (outcome === 'finished') return report(instruction);
+          // Reporting advances the session, which is presentation: a closed gate keeps the ending for a later release.
+          if (outcome === 'finished')
+            return Effect.flatMap(gate.open, (open) => (open ? report(instruction) : Effect.void));
           if (outcome === 'held') return SubscriptionRef.set(status, { kind: 'held', actionId });
           owner.failed = true;
           return SubscriptionRef.set(status, { kind: 'failed', actionId, error: outcome });
@@ -225,11 +239,15 @@ export const makePlayer = (media: PlayerMedia) =>
         const proceed = Effect.gen(function* () {
           // A failed clip stays failed until Retry clip fetches a fresh one.
           if (owner.failed) return;
+          // Without the listener's intent, or while not shown, nothing starts and nothing is reported.
+          if (!(yield* gate.open)) return yield* settle('held');
           // An ending seen while paused (or just before Pause reached the Harness) is reported now, never replayed.
           if (Deferred.isDoneUnsafe(ending)) return yield* settle(yield* Deferred.await(ending));
           if (!(yield* media.audible)) return yield* settle('held');
-          // The latest view, not only the change this attempt last saw, decides whether the element may start.
-          if (Option.exists(yield* client.view.get, (view) => view.paused)) return;
+          // The latest view and gate, not only what this attempt last saw, decide whether the element may start: either
+          // can change while audibility is awaited.
+          if (!(yield* gate.open) || Option.exists(yield* client.view.get, (view) => view.paused))
+            return;
           const promise = element.play();
           // Whatever happens to this fiber, a late start must not outlive a pause, and must not touch a later clip.
           promise.then(
@@ -259,7 +277,7 @@ export const makePlayer = (media: PlayerMedia) =>
           yield* settle(yield* Deferred.await(ending));
         });
 
-        yield* pausedChanges.pipe(
+        yield* heldBack.pipe(
           Stream.runForEach((paused) =>
             Effect.gen(function* () {
               owner.paused = paused;

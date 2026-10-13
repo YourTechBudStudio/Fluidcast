@@ -20,6 +20,7 @@ import {
   TapToResume,
   usePlaybackAnalyser,
   usePlaybackControls,
+  usePresent,
 } from '../playback';
 import { AskForm, ShowPanel, ShowSheet } from '../tools';
 import { Button, typingTarget, usePlayerInstance, useReducedMotion, useRootKeydown } from '../ui';
@@ -41,6 +42,7 @@ export function Player() {
   const commands = useConversationCommands();
   const playback = usePlaybackControls();
   const analyser = usePlaybackAnalyser();
+  const present = usePresent();
   const visual = useAtomValue(visualAtom);
   const [layer, setLayer] = useAtom(layerAtom);
   const [panel, setPanel] = useAtom(showPanelAtom);
@@ -195,7 +197,7 @@ export function Player() {
             <div
               className={`relative w-full shrink-0 transition-[height] duration-(--duration-room) ease-expo motion-reduce:transition-none ${panelOpen && show === 'panel' ? 'h-[clamp(160px,32cqh,360px)]' : 'h-[clamp(250px,46cqh,460px)] compact:h-[clamp(170px,30cqh,300px)]'}`}
             >
-              <Visual id={visual} inputs={inputs} active={!sheetCovers && stageOpen} />
+              <Visual id={visual} inputs={inputs} active={present && !sheetCovers && stageOpen} />
               <TapToResume
                 visible={moment === 'held' || moment === 'ready'}
                 label={moment === 'ready' ? 'Tap to start' : 'Tap to resume'}

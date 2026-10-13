@@ -1,14 +1,24 @@
 import { RegistryProvider } from '@effect/atom-react';
-import { type ReactElement, type Ref, useCallback, useMemo, useState } from 'react';
+import {
+  type ReactElement,
+  type Ref,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 import { connectionLayerAtom, type PlayerConnection } from '../connection';
-import { usePlaybackUnlock } from '../playback';
+import { useConversationCommands } from '../conversation';
+import { usePlaybackGate, usePlaybackUnlock } from '../playback';
 import { PlayerInstanceContext, ROOT_CLASS, useElementWidth } from '../ui';
 import { Player } from './Player';
 
 export interface FluidcastPlayerProps {
   /** One backend session's connection. Identity matters: a different object is a different player instance. */
   readonly connection: PlayerConnection;
+  /** Whether the host shows the player now. Turning false pauses the session; turning true resumes nothing. */
+  readonly visible: boolean;
   /** The player's root element (focusable, tabIndex -1), for the host to direct keyboard focus. */
   readonly ref?: Ref<HTMLDivElement>;
 }
@@ -28,15 +38,15 @@ const instanceKey = (connection: object): number => {
 /**
  * The complete player for one backend session. Each instance has its own atom registry, seeded with the host's
  * connection, so a new connection identity remounts a fresh instance. Unmounting releases the instance; it never
- * destroys the backend session.
+ * destroys the backend session. Audio plays only after the listener asks this instance for it, and only while shown.
  */
-export function FluidcastPlayer({ connection, ref }: FluidcastPlayerProps): ReactElement {
+export function FluidcastPlayer({ connection, visible, ref }: FluidcastPlayerProps): ReactElement {
   return (
     <RegistryProvider
       key={instanceKey(connection)}
       initialValues={[[connectionLayerAtom, connection]]}
     >
-      <PlayerRoot hostRef={ref} />
+      <PlayerRoot visible={visible} hostRef={ref} />
     </RegistryProvider>
   );
 }
@@ -57,11 +67,37 @@ const assignRef = (ref: Ref<HTMLDivElement> | undefined, element: HTMLDivElement
 };
 
 /**
+ * Follows the host's `visible` in the commit that changes it. Hiding silences the instance and forgets the listener's
+ * intent at once, then pauses the session; showing only makes the instance present again, so nothing resumes by
+ * itself. Unmounting silences it without a `Pause`. Every gate write is synchronous, so the gate always reflects the
+ * latest `visible` however long the connection takes to build; only the `Pause` command may arrive late.
+ */
+function usePresence(visible: boolean) {
+  const gate = usePlaybackGate();
+  const { pause } = useConversationCommands();
+  useLayoutEffect(() => {
+    if (visible) gate.appear();
+    else {
+      gate.disappear({ revoke: true });
+      void pause();
+    }
+    return () => gate.disappear({ revoke: false });
+  }, [visible, gate, pause]);
+}
+
+/**
  * The instance root: the element the stylesheet scopes to, portals render into and shortcuts listen on. Its own width
  * drives the layout, so `Player` renders only once it is measured: the first painted frame is already laid out right.
  * A gesture anywhere inside it unlocks this instance's audio, and only this instance's.
  */
-function PlayerRoot({ hostRef }: { readonly hostRef: Ref<HTMLDivElement> | undefined }) {
+function PlayerRoot({
+  visible,
+  hostRef,
+}: {
+  readonly visible: boolean;
+  readonly hostRef: Ref<HTMLDivElement> | undefined;
+}) {
+  usePresence(visible);
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const width = useElementWidth(root);
   const unlock = usePlaybackUnlock();
