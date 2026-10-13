@@ -34,11 +34,11 @@ tests/            # Architecture, built-stylesheet, integration and DOM (happy-d
 
 ## Rules
 
-- Instances are isolated: no module-level mutable state, and no `window` or `document` listeners. Shortcuts and audio unlock listen on the player root.
+- Instances are isolated: per-instance state lives in the instance's registry, never in module scope, and nothing listens on `window` or `document`. Shortcuts and audio unlock listen on the player root.
 - Layout follows the root's own width: use the `compact:`/`narrow:` variants and `cqw`/`cqh` units, never viewport breakpoints or `vh`/`vw` (enforced by `tests/styles.test.mjs`).
 - Every style rule stays inside `@scope (.fluidcast-player)`, and keyframes carry the `fc-` prefix. TypeScript imports no CSS.
 - Audio starts only through the presentation gate: playback starts only from an explicit intent written through the hooks, and only while the player is visible and mounted. Hiding pauses; showing resumes nothing.
-- The player never destroys the backend session and never focuses itself.
+- The player never destroys the backend session. The host decides when the player receives keys by focusing its root; the player only moves focus within itself.
 - Motion uses one curve (`--ease-expo`) and the 110, 190, 320 and 600 ms durations. No springs or overshoot. Honour reduced motion.
 - Interactive controls have an accessible name, work from the keyboard and keep a hit area of at least 44 px.
 - Status copy lives in `conversation/copy.ts`. Error lines always say what failed.
