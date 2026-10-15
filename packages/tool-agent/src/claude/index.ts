@@ -32,6 +32,12 @@ export interface ClaudeWorkerOptions {
   readonly permissionMode?: PermissionMode;
   /** The worker process environment. Default `process.env`. The SDK replaces, never merges. */
   readonly environment?: Readonly<Record<string, string | undefined>>;
+  /**
+   * A settings file passed to this worker's query only, for per-invocation host instrumentation
+   * (e.g. hooks that report the session to the host) without touching user or project settings.
+   * Default: none.
+   */
+  readonly settings?: string;
 }
 
 /** One skill or command per message, for now: chaining several is not supported. */
@@ -66,5 +72,6 @@ export const claudeWorker = (options: ClaudeWorkerOptions): WorkerType => ({
     effort: options.effort,
     permissionMode: options.permissionMode,
     environment: options.environment ?? process.env,
+    settings: options.settings,
   }),
 });

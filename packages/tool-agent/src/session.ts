@@ -12,6 +12,7 @@ import {
   Deferred,
   Effect,
   FiberHandle,
+  Option,
   Queue,
   Stream,
   SubscriptionRef,
@@ -152,6 +153,10 @@ export interface WorkerSession {
   readonly faults: Stream.Stream<ToolFault>;
   readonly status: Stream.Stream<WorkerSummary>;
   readonly transcript: Stream.Stream<TranscriptMessage>;
+  /** The worker's connection fault, once recorded; never completes otherwise. */
+  readonly fault: Effect.Effect<ToolFault>;
+  /** The session ID in the worker's state now; final once the session's scope has closed. */
+  readonly sessionId: Effect.Effect<string | null>;
 }
 
 /** Builds the worker session in the current scope, attaching a preloaded session. Nothing connects. */
@@ -412,6 +417,21 @@ export const makeWorkerSession = (
       ),
     );
 
+    // Every fault is recorded in the state, whether or not a period was open (`onFault`), so this
+    // sees the ones `faults` does not carry. A failed turn sets `failed` without a `fault`.
+    const fault: Effect.Effect<ToolFault> = SubscriptionRef.changes(state).pipe(
+      Stream.map((current) => current.fault),
+      Stream.filter((recorded): recorded is ToolFault => recorded !== undefined),
+      Stream.runHead,
+      Effect.flatMap(Option.match({ onNone: () => Effect.never, onSome: Effect.succeed })),
+    );
+
+    // A plain read, not a subscription: it still works after the scope closed, when the reader
+    // fiber is gone and the value can no longer change.
+    const sessionId = SubscriptionRef.get(state).pipe(
+      Effect.map((current) => current.sessionId ?? null),
+    );
+
     return {
       assign,
       run,
@@ -421,6 +441,8 @@ export const makeWorkerSession = (
       faults: Stream.fromQueue(faultQueue),
       status,
       transcript,
+      fault,
+      sessionId,
     };
   });
 

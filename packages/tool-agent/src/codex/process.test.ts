@@ -1,10 +1,13 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, before, describe, it } from 'node:test';
 
 import { Effect, Exit, Stream } from 'effect';
 
-import { SpawnFailed, openProcess } from './process.ts';
+import { SpawnFailed, openAppServer, openProcess } from './process.ts';
 
 /** A real, short-lived Node process this test owns, running `script`. */
 const node = (script: string, exitWait: number) =>
@@ -24,10 +27,9 @@ rl.on('close', () => { require('node:fs').writeFileSync(process.argv[1], 'closed
 
 describe('openProcess', () => {
   it('carries lines both ways, and its release closes stdin so the process exits by itself', async () => {
-    const { mkdtemp, readFile } = await import('node:fs/promises');
-    const { tmpdir } = await import('node:os');
-    const { join } = await import('node:path');
-    const marker = join(await mkdtemp(join(tmpdir(), 'fluidcast-codex-')), 'marker');
+    const directory = await mkdtemp(join(tmpdir(), 'fluidcast-codex-'));
+    after(() => rm(directory, { recursive: true, force: true }));
+    const marker = join(directory, 'marker');
     const started = Date.now();
     const lines = await Effect.runPromise(
       Effect.scoped(
@@ -94,5 +96,52 @@ describe('openProcess', () => {
       ),
     );
     assert.deepEqual(exit, Exit.fail(new SpawnFailed()));
+  });
+});
+
+describe('openAppServer', () => {
+  /** A fake `codex` in its own directory that prints each argument on its own line, then exits. */
+  let directory = '';
+  let executable = '';
+  before(async () => {
+    directory = await mkdtemp(join(tmpdir(), 'fluidcast-codex-'));
+    executable = join(directory, 'codex');
+    await writeFile(executable, '#!/bin/sh\nprintf \'%s\\n\' "$@"\n');
+    await chmod(executable, 0o755);
+  });
+  after(() => rm(directory, { recursive: true, force: true }));
+
+  const argumentsOf = (transport: ReturnType<typeof openAppServer>) =>
+    Effect.runPromise(
+      Effect.scoped(transport.pipe(Effect.flatMap((open) => Stream.runCollect(open.lines)))),
+    );
+
+  it('runs `codex app-server` over stdio from PATH by default', async () => {
+    assert.deepEqual(await argumentsOf(openAppServer({ PATH: directory })), [
+      'app-server',
+      '--listen',
+      'stdio://',
+    ]);
+  });
+
+  it('places host arguments around the subcommand, with the given executable', async () => {
+    const launched = openAppServer(
+      { PATH: '/nonexistent' },
+      {
+        executable,
+        beforeSubcommand: ['--dangerously-bypass-hook-trust'],
+        appServer: ['--enable', 'hooks', '-c', 'key=value'],
+      },
+    );
+    assert.deepEqual(await argumentsOf(launched), [
+      '--dangerously-bypass-hook-trust',
+      'app-server',
+      '--listen',
+      'stdio://',
+      '--enable',
+      'hooks',
+      '-c',
+      'key=value',
+    ]);
   });
 });

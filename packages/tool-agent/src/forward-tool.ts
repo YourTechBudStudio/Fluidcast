@@ -2,7 +2,7 @@ import { Effect, type Schedule, type Scope, type Stream } from 'effect';
 import { LanguageModel } from 'effect/ai';
 
 import type { ToolDefinition } from '@yourtechbudstudio/fluidcast-core/generation';
-import type { Tool } from '@yourtechbudstudio/fluidcast-harness';
+import type { Tool, ToolFault } from '@yourtechbudstudio/fluidcast-harness';
 
 import type { Handoff, HandoffPrompt } from './handoff.ts';
 import { defaultProgressPrompt, defaultProgressSchedule } from './progress.ts';
@@ -44,6 +44,19 @@ export interface WorkerHandle {
   readonly status: Stream.Stream<WorkerSummary>;
   /** The worker's transcript: a snapshot, then appended entries. */
   readonly transcript: Stream.Stream<TranscriptMessage>;
+  /**
+   * Completes once, with the fault, when the worker's single connection ends; never otherwise. A
+   * turn that fails without ending the connection is not a fault. Unlike the tool's `faults`, it
+   * also reports a fault that ended an open forward, so a host (e.g. one that instruments its
+   * worker per invocation) can tell when the worker is gone.
+   */
+  readonly fault: Effect.Effect<ToolFault>;
+  /**
+   * The native session ID the worker knows now: the resumed one, or the one `SessionStarted`
+   * reported; `null` before either. A plain read, so a host can read the final ID after the worker's
+   * scope has closed, which `status` cannot give.
+   */
+  readonly sessionId: Effect.Effect<string | null>;
 }
 
 export interface ForwardAgentTool {
@@ -104,6 +117,8 @@ export const forwardAgentTool = (
       worker: {
         status: session.status,
         transcript: session.transcript,
+        fault: session.fault,
+        sessionId: session.sessionId,
       },
     };
   });

@@ -594,6 +594,94 @@ describe('worker session', () => {
     ));
 });
 
+describe('worker handle fault and session ID', () => {
+  it('completes fault with a fault that ended an open period', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* setup();
+        const faulted = yield* Effect.forkChild(ctx.worker.fault);
+        const sent = yield* ctx.send('call_1');
+        const open = yield* ctx.connection();
+        yield* ctx.ids(open, 1);
+        const fault = new ToolFault({ reason: 'ClaudeExited' });
+        yield* open.fail(fault);
+        assert.deepEqual(yield* Fiber.join(faulted), fault);
+        assert.deepEqual(yield* Effect.exit(Fiber.join(sent.fiber)), Exit.fail(fault));
+        assert.deepEqual(yield* ctx.worker.fault, fault, 'a later read sees the recorded fault');
+      }),
+    ));
+
+  it('completes fault with a fault while idle', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* setup();
+        const faulted = yield* Effect.forkChild(ctx.worker.fault);
+        const sent = yield* ctx.send('call_1');
+        const open = yield* ctx.connection();
+        const [id] = yield* ctx.ids(open, 1);
+        yield* open.emit(consumed(id!), entry(turnEnd()), settled);
+        yield* Fiber.join(sent.fiber);
+        assert.ok(yield* stillRunning(faulted), 'a completed turn is not a fault');
+        yield* open.end;
+        assert.deepEqual(yield* Fiber.join(faulted), new ToolFault({ reason: 'WorkerEnded' }));
+      }),
+    ));
+
+  it('does not complete fault on a failed turn', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* setup();
+        const faulted = yield* Effect.forkChild(ctx.worker.fault);
+        const sent = yield* ctx.send('call_1');
+        const open = yield* ctx.connection();
+        const [id] = yield* ctx.ids(open, 1);
+        yield* open.emit(consumed(id!), entry(turnEnd('error_max_turns')), settled);
+        assert.ok(Exit.isFailure(yield* Effect.exit(Fiber.join(sent.fiber))));
+        assert.equal(yield* ctx.context, "The agent's last turn stopped with an error.");
+        assert.ok(yield* stillRunning(faulted));
+        yield* Fiber.interrupt(faulted);
+      }),
+    ));
+
+  it('reads no session ID before the agent reports one, then the reported one', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* setup();
+        assert.equal(yield* ctx.worker.sessionId, null);
+        yield* ctx.send('call_1');
+        const open = yield* ctx.connection();
+        yield* open.emit({ _tag: 'SessionStarted', sessionId: 'agent-session' });
+        assert.equal(yield* eventually(ctx.worker.sessionId, (id) => id !== null), 'agent-session');
+      }),
+    ));
+
+  it('reads the resumed session ID before anything connects', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* setup({
+          fake: { sessions: { 'session-1': { cwd: '/elsewhere', history: [] } } },
+          session: { sessionId: 'session-1' },
+        });
+        assert.equal(yield* ctx.worker.sessionId, 'session-1');
+      }),
+    ));
+
+  it('reads the final session ID after the owning scope closed', () =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const scope = yield* Scope.make();
+        const ctx = yield* setup().pipe(Scope.provide(scope));
+        yield* ctx.send('call_1').pipe(Scope.provide(scope));
+        const open = yield* ctx.connection();
+        yield* open.emit({ _tag: 'SessionStarted', sessionId: 'agent-session' });
+        yield* eventually(ctx.worker.sessionId, (id) => id !== null);
+        yield* Scope.close(scope, Exit.void);
+        assert.equal(yield* open.closed, true);
+        assert.equal(yield* ctx.worker.sessionId, 'agent-session');
+      }),
+    ));
+});
+
 describe('worker session preload', () => {
   const history: ReadonlyArray<TranscriptEntry> = [
     { _tag: 'prompt', parentToolUseId: null, source: 'earlier', text: 'Earlier.' },

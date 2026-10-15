@@ -36,7 +36,10 @@ export const unusedProviders = Layer.merge(
   ),
 );
 
-/** A worker whose status and transcript emit once and then never end, like a live worker's. */
+/**
+ * A worker whose status and transcript emit once and then never end, like a live worker's. It never
+ * faults, and its session ID is the one its status reports.
+ */
 export const fakeWorkerHandle = (sessionId: string | null = 'worker-session'): WorkerHandle => {
   const idle: WorkerSummary = { _tag: 'WorkerSummary', status: 'idle', sessionId };
   return {
@@ -45,6 +48,8 @@ export const fakeWorkerHandle = (sessionId: string | null = 'worker-session'): W
       Stream.make({ _tag: 'TranscriptSnapshot', entries: [] } as const),
       Stream.never,
     ),
+    fault: Effect.never,
+    sessionId: Effect.succeed(sessionId),
   };
 };
 

@@ -93,6 +93,40 @@ describe('threadRequest', () => {
   });
 });
 
+describe('threadRequest thread options', () => {
+  const thread = { config: { hooks: { enabled: true } }, sessionStartSource: 'startup' } as const;
+
+  it('sends config on start and resume, and the session start source on start only', () => {
+    assert.deepEqual(threadRequest({ thread }, newWorker), [
+      'thread/start',
+      {
+        cwd: '/work',
+        approvalPolicy: 'on-request',
+        approvalsReviewer: 'auto_review',
+        config: { hooks: { enabled: true } },
+        sessionStartSource: 'startup',
+      },
+    ]);
+    assert.deepEqual(threadRequest({ thread }, { cwd: '/recorded', resume: 'thread-old' }), [
+      'thread/resume',
+      {
+        threadId: 'thread-old',
+        cwd: '/recorded',
+        approvalPolicy: 'on-request',
+        approvalsReviewer: 'auto_review',
+        config: { hooks: { enabled: true } },
+      },
+    ]);
+  });
+
+  it('sends neither when no thread options are given', () => {
+    const [, start] = threadRequest({ thread: {} }, newWorker);
+    const [, resume] = threadRequest({ thread: {} }, { cwd: '/recorded', resume: 'thread-old' });
+    assert.equal('config' in start || 'sessionStartSource' in start, false);
+    assert.equal('config' in resume, false);
+  });
+});
+
 describe('connectWith', () => {
   it('initializes, reports the new thread, sends messages as turn/start and maps frames', () =>
     run(

@@ -83,13 +83,31 @@ export const openProcess = (options: ProcessOptions): OpenTransport =>
     })),
   );
 
-/** The user's installed Codex app-server, found on `PATH`, over stdio. */
+/** How the app-server is launched: the executable, and arguments around the subcommand. */
+export interface AppServerLaunch {
+  /** Resolved on the environment's `PATH` when not absolute. */
+  readonly executable: string;
+  /** Arguments before `app-server`, e.g. global flags. */
+  readonly beforeSubcommand: ReadonlyArray<string>;
+  /** Arguments after `app-server --listen stdio://`, e.g. feature flags and `-c` overrides. */
+  readonly appServer: ReadonlyArray<string>;
+}
+
+/** The user's installed `codex`, found on `PATH`, with no extra arguments. */
+export const defaultAppServerLaunch: AppServerLaunch = {
+  executable: 'codex',
+  beforeSubcommand: [],
+  appServer: [],
+};
+
+/** A Codex app-server over stdio, by default the user's installed `codex` found on `PATH`. */
 export const openAppServer = (
   environment: Readonly<Record<string, string | undefined>>,
+  launch: AppServerLaunch = defaultAppServerLaunch,
 ): OpenTransport =>
   openProcess({
-    command: 'codex',
-    args: ['app-server', '--listen', 'stdio://'],
+    command: launch.executable,
+    args: [...launch.beforeSubcommand, 'app-server', '--listen', 'stdio://', ...launch.appServer],
     environment,
     exitWait: 3000,
   });

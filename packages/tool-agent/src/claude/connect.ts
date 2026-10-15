@@ -33,6 +33,8 @@ export interface ConnectOptions {
   readonly permissionMode?: PermissionMode | undefined;
   /** The whole worker environment: the SDK replaces the process environment, never merges. */
   readonly environment: Readonly<Record<string, string | undefined>>;
+  /** A settings file for this query only (per-invocation host instrumentation); default: none. */
+  readonly settings?: string | undefined;
 }
 
 export interface WorkerConnection {
@@ -48,6 +50,7 @@ export const queryOptions = (options: ConnectOptions, worker: WorkerConnection):
   ...(worker.resume === undefined ? {} : { resume: worker.resume }),
   ...(options.model === undefined ? {} : { model: options.model }),
   ...(options.effort === undefined ? {} : { effort: options.effort }),
+  ...(options.settings === undefined ? {} : { settings: options.settings }),
   permissionMode: options.permissionMode ?? 'auto',
   settingSources: ['user', 'project', 'local'],
   disallowedTools: ['AskUserQuestion'],

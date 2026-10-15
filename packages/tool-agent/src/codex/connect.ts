@@ -17,6 +17,26 @@ export interface ConnectOptions {
   readonly model?: string | undefined;
   /** Sent with every message (Codex keeps it for later turns); levels vary by model. */
   readonly effort?: string | undefined;
+  /** Per-thread host instrumentation; default: none. */
+  readonly thread?: CodexThreadOptions | undefined;
+}
+
+/**
+ * Per-thread options for per-invocation host instrumentation (e.g. hooks that report the thread to
+ * the host), without touching the user's or project's Codex configuration.
+ */
+export interface CodexThreadOptions {
+  /**
+   * Configuration overrides sent on both `thread/start` and `thread/resume`, for settings Codex
+   * honors only per thread (e.g. hook trust). Process-wide overrides go in the launch's `args`.
+   * Default: none.
+   */
+  readonly config?: Readonly<Record<string, unknown>>;
+  /**
+   * Sent on `thread/start` only, so a new thread's `SessionStart` hooks run; `thread/resume` takes
+   * no source. Default: none.
+   */
+  readonly sessionStartSource?: 'startup';
 }
 
 export interface WorkerConnection {
@@ -32,17 +52,23 @@ const approvals = { approvalPolicy: 'on-request', approvalsReviewer: 'auto_revie
 export const threadRequest = (
   options: ConnectOptions,
   worker: WorkerConnection,
-): readonly [method: string, params: Readonly<Record<string, unknown>>] =>
-  worker.resume === undefined
+): readonly [method: string, params: Readonly<Record<string, unknown>>] => {
+  const config = options.thread?.config;
+  const withConfig = config === undefined ? {} : { config };
+  const source = options.thread?.sessionStartSource;
+  return worker.resume === undefined
     ? [
         'thread/start',
         {
           cwd: worker.cwd,
           ...(options.model === undefined ? {} : { model: options.model }),
           ...approvals,
+          ...withConfig,
+          ...(source === undefined ? {} : { sessionStartSource: source }),
         },
       ]
-    : ['thread/resume', { threadId: worker.resume, cwd: worker.cwd, ...approvals }];
+    : ['thread/resume', { threadId: worker.resume, cwd: worker.cwd, ...approvals, ...withConfig }];
+};
 
 /**
  * One message as `turn/start`: it starts a turn when the thread is idle and joins the running one

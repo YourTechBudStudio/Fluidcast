@@ -205,6 +205,14 @@ describe('connectWith', () => {
     );
   });
 
+  it('passes a per-query settings file only when one is given', () => {
+    assert.equal('settings' in queryOptions({ executable, environment }, worker), false);
+    assert.equal(
+      queryOptions({ executable, environment, settings: '/host/settings.json' }, worker).settings,
+      '/host/settings.json',
+    );
+  });
+
   it('sends input as ordinary user messages with their ids', () =>
     run(
       Effect.gen(function* () {
