@@ -1,9 +1,12 @@
 import { CircleAlert } from 'lucide-react';
-import { useId, useMemo } from 'react';
+import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import type { ShowFormat, ShowInput } from '@yourtechbudstudio/fluidcast-tool-show/schema';
 
-import { mountIdOf, withMountId } from './mermaid';
+import { DiagramViewer } from './diagram/DiagramViewer';
+import { titleOf } from './format';
+import { mountIdOf, type RenderedDiagram, withMountId } from './mermaid';
 import type { ShowCorrection } from './model';
 import type { RenderedShow } from './render';
 
@@ -16,15 +19,18 @@ export type ShowBody =
 /**
  * The body of a Show: rendered Markdown (with any diagrams in it), a Mermaid diagram, the HTML frame (no sandbox, A2), the rendering skeleton,
  * or the failure. `correction` says where its error stands on the way back to the model, when a replacement will come.
+ * Diagrams can be explored (pan, zoom, minimap, full view) unless `still`, as in the transcript's inert miniature.
  */
 export function ShowBodyView({
   input,
   body,
   correction = null,
+  still = false,
 }: {
   readonly input: ShowInput;
   readonly body: ShowBody;
   readonly correction?: ShowCorrection;
+  readonly still?: boolean;
 }) {
   switch (body.state) {
     case 'rendering':
@@ -32,7 +38,11 @@ export function ShowBodyView({
     case 'failed':
       return <Failure format={input.format} reason={body.reason} correction={correction} />;
     case 'rendered':
-      return <Rendered input={input} rendered={body.rendered} />;
+      return still ? (
+        <Still input={input} rendered={body.rendered} />
+      ) : (
+        <Rendered input={input} rendered={body.rendered} />
+      );
   }
 }
 
@@ -43,14 +53,72 @@ function Rendered({
   readonly input: ShowInput;
   readonly rendered: RenderedShow;
 }) {
+  switch (rendered.kind) {
+    case 'markup':
+      return <Markup html={rendered.html} diagrams={rendered.diagrams} title={titleOf(input)} />;
+    case 'diagram':
+      return <DiagramViewer diagram={rendered.diagram} title={titleOf(input)} place="show" />;
+    case 'frame':
+      return <Frame input={input} srcdoc={rendered.srcdoc} />;
+  }
+}
+
+/**
+ * Markdown with a viewer in each diagram's place. The markup is set once; the viewers render into its placeholders
+ * through portals, found as soon as it is in the DOM (before paint).
+ */
+function Markup({
+  html,
+  diagrams,
+  title,
+}: {
+  readonly html: string;
+  readonly diagrams: ReadonlyArray<RenderedDiagram>;
+  readonly title: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [places, setPlaces] = useState<ReadonlyArray<HTMLElement>>([]);
+  useLayoutEffect(() => {
+    setPlaces([...(ref.current?.querySelectorAll<HTMLElement>('[data-diagram]') ?? [])]);
+  }, [html]);
+  return (
+    <>
+      <div ref={ref} className="markdown-prose" dangerouslySetInnerHTML={{ __html: html }} />
+      {places.map((place) => {
+        const diagram = diagrams[Number(place.dataset.diagram)];
+        return (
+          diagram &&
+          createPortal(
+            <DiagramViewer diagram={diagram} title={title} place="inline" />,
+            place,
+            diagram.renderId,
+          )
+        );
+      })}
+    </>
+  );
+}
+
+/** The Show as a picture: diagrams fitted and inert. */
+function Still({
+  input,
+  rendered,
+}: {
+  readonly input: ShowInput;
+  readonly rendered: RenderedShow;
+}) {
   const mountId = mountIdOf(useId());
   const markup = useMemo(() => {
     switch (rendered.kind) {
       case 'diagram':
-        return withMountId(rendered.svg, rendered.renderId, mountId);
+        return withMountId(rendered.diagram.svg, rendered.diagram.renderId, mountId);
       case 'markup':
-        return rendered.renderIds.reduce(
-          (html, renderId, index) => withMountId(html, renderId, `${mountId}-${index}`),
+        return rendered.diagrams.reduce(
+          (html, diagram, index) =>
+            html.replace(
+              `data-diagram="${index}"></div>`,
+              `data-diagram="${index}">${withMountId(diagram.svg, diagram.renderId, `${mountId}-${index}`)}</div>`,
+            ),
           rendered.html,
         );
       case 'frame':
@@ -63,14 +131,18 @@ function Rendered({
     case 'diagram':
       return <div className="show-diagram" dangerouslySetInnerHTML={{ __html: markup }} />;
     case 'frame':
-      return (
-        <iframe
-          title={input.title ?? 'Show'}
-          srcDoc={rendered.srcdoc}
-          className="block h-full min-h-0 w-full flex-1 border-0 bg-transparent"
-        />
-      );
+      return <Frame input={input} srcdoc={rendered.srcdoc} />;
   }
+}
+
+function Frame({ input, srcdoc }: { readonly input: ShowInput; readonly srcdoc: string }) {
+  return (
+    <iframe
+      title={input.title ?? 'Show'}
+      srcDoc={srcdoc}
+      className="block h-full min-h-0 w-full flex-1 border-0 bg-transparent"
+    />
+  );
 }
 
 const SKELETON_LABEL: Record<ShowFormat, string> = {

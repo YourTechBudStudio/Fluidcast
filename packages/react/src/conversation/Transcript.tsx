@@ -551,7 +551,7 @@ function ShowRowCard({
 /** Reads the Show's one shared render; mounted only once the miniature is near the viewport. */
 function Miniature({ handle, input }: { readonly handle: string; readonly input: ShowInput }) {
   const body = bodyOf(useAtomValue(showRenderAtom(handle)));
-  return <ShowBodyView input={input} body={body} />;
+  return <ShowBodyView input={input} body={body} still />;
 }
 
 function Row({

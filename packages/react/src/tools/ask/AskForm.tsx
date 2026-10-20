@@ -86,6 +86,7 @@ export function AskForm({
   // also takes Enter, unless a focused control would take that Enter itself.
   useRootKeydown(
     (event) => {
+      if (event.defaultPrevented) return;
       if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
       if (typingTarget(event.target)) return;
       if (event.key === 'Enter') {

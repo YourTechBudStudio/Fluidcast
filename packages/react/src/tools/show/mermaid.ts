@@ -1,4 +1,5 @@
 import { palette } from '../../ui';
+import { intrinsicSizeOf, type Size } from './diagram/view';
 
 /**
  * Every render id starts with this, so rewriting it in a rendered diagram (`withMountId`) cannot match text a model
@@ -44,6 +45,8 @@ const load = () =>
         labelBoxBkgColor: palette.subtle,
         labelBoxBorderColor: palette.line,
         labelTextColor: palette.fg,
+        // Edge labels ("yes", "no") sit on the canvas, not on Mermaid's computed near-black.
+        edgeLabelBackground: palette.canvas,
         loopTextColor: palette['fg-muted'],
         noteBkgColor: '#3b3551',
         noteTextColor: palette.fg,
@@ -58,10 +61,11 @@ const load = () =>
 
 let mermaid: ReturnType<typeof load> | undefined;
 
-/** A rendered diagram: SVG markup whose element ids all derive from `renderId`. */
+/** A rendered diagram: SVG markup whose element ids all derive from `renderId`, and its own size. */
 export interface RenderedDiagram {
   readonly svg: string;
   readonly renderId: string;
+  readonly size: Size;
 }
 
 /** Renders Mermaid source to SVG under `renderId`. Rejects with Mermaid's own error when the source is invalid. */
@@ -70,7 +74,7 @@ export async function renderMermaid(source: string, renderId: string): Promise<R
   const api = await mermaid;
   try {
     const { svg } = await api.render(renderId, source);
-    return { svg, renderId };
+    return { svg, renderId, size: intrinsicSizeOf(svg) };
   } finally {
     // A failed render can leave its scratch elements in the page.
     document.getElementById(renderId)?.remove();

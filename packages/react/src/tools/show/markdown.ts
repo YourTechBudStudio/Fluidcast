@@ -4,10 +4,13 @@ import { type RenderedDiagram, renderIdOf, renderMermaid } from './mermaid';
 /** One renderer for every Markdown Show. Raw HTML and remote images are allowed (A2, an accepted risk). */
 const render = createMarkdown({ html: true });
 
-/** A rendered Markdown Show: its markup, and the render id of each diagram in it, in order. */
+/**
+ * A rendered Markdown Show: its markup, and the diagrams in it, in order. Each diagram's place in the markup is an
+ * empty `[data-diagram="<index>"]` element, so whoever mounts the markup decides how a diagram is presented.
+ */
 export interface RenderedMarkup {
   readonly html: string;
-  readonly renderIds: ReadonlyArray<string>;
+  readonly diagrams: ReadonlyArray<RenderedDiagram>;
 }
 
 /**
@@ -24,7 +27,7 @@ export async function renderMarkdown(
     if (language === 'mermaid') sources.push(content);
     return undefined;
   });
-  if (sources.length === 0) return { html, renderIds: [] };
+  if (sources.length === 0) return { html, diagrams: [] };
   // Mermaid renders into the page, so diagrams render one at a time.
   const diagrams: Array<RenderedDiagram | undefined> = [];
   for (const [position, diagram] of sources.entries()) {
@@ -33,14 +36,15 @@ export async function renderMarkdown(
     );
   }
   let next = 0;
+  let placed = 0;
   return {
     html: render(source, (language, _content, code) => {
       if (language !== 'mermaid') return undefined;
       const diagram = diagrams[next++];
       return diagram === undefined
         ? `<div class="show-invalid-diagram"><span>Invalid diagram</span>${code()}</div>`
-        : `<div class="show-inline-diagram">${diagram.svg}</div>`;
+        : `<div class="show-inline-diagram" data-diagram="${placed++}"></div>`;
     }),
-    renderIds: diagrams.flatMap((diagram) => (diagram === undefined ? [] : [diagram.renderId])),
+    diagrams: diagrams.filter((diagram) => diagram !== undefined),
   };
 }

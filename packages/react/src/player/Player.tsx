@@ -103,8 +103,9 @@ export function Player() {
     return () => analysis.connect(null);
   }, [analysis, analyser]);
 
-  // Keys reach this handler only while focus is inside this player.
+  // Keys reach this handler only while focus is inside this player, and only those nothing inside it has handled.
   useRootKeydown((event) => {
+    if (event.defaultPrevented) return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
     if (event.key === 'Escape') {
       if (interruptible && !inMenu(event.target)) {

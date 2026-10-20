@@ -1,14 +1,90 @@
-/* Show and Ask styles that Tailwind utilities cannot express: rendered Mermaid output (whole or inside Markdown), the rendering skeleton, and the
+/* Show and Ask styles that Tailwind utilities cannot express: the diagram viewer, rendered Mermaid output (whole or inside Markdown), the rendering skeleton, and the
    Ask options' entrance. Ported from the mocks. Rendered Markdown uses `ui`'s `.markdown-prose`. */
 
-/* ---------- Mermaid Shows: the diagram scales to fit the body ---------- */
+/* ---------- Diagram viewer: pan and zoom, the minimap and the hint (`show/diagram`) ---------- */
+.diagram-inline {
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: rgb(36 39 58 / 55%);
+  box-shadow: inset 0 0 0 1px rgb(91 96 120 / 32%);
+}
+.diagram-viewport {
+  cursor: grab;
+  user-select: none;
+}
+.diagram-viewport[data-dragging] {
+  cursor: grabbing;
+}
+/* A faint dot grid behind a Show's diagram, moved and scaled with it by the viewer. */
+.diagram-grid {
+  background-image: radial-gradient(rgb(91 96 120 / 26%) 1px, transparent 1.3px);
+  background-size: var(--grid-size, 22px) var(--grid-size, 22px);
+  background-position: var(--grid-x, 0) var(--grid-y, 0);
+}
+.diagram-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+.diagram-stage svg,
+.diagram-map svg {
+  display: block;
+}
+/* The minimap shows itself only while the diagram is larger than the view. */
+.diagram-map {
+  background: rgb(30 32 48 / 88%);
+  box-shadow:
+    inset 0 0 0 1px rgb(91 96 120 / 50%),
+    0 10px 30px rgb(0 0 0 / 35%);
+  backdrop-filter: blur(12px);
+  opacity: 0;
+  transform: scale(0.94);
+  transform-origin: 100% 100%;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--duration-surface) var(--ease-expo),
+    transform var(--duration-surface) var(--ease-expo),
+    visibility 0s linear var(--duration-surface);
+}
+.diagram-map[data-shown] {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+.diagram-map-rect {
+  border-radius: 3px;
+  background: rgb(138 173 244 / 12%);
+  box-shadow:
+    inset 0 0 0 1.5px var(--color-blue),
+    0 0 0 999px rgb(20 22 34 / 30%);
+  cursor: grab;
+}
+.diagram-hint {
+  opacity: 0;
+  transform: translate(-50%, -4px);
+  transition:
+    opacity var(--duration-ui) var(--ease-expo),
+    transform var(--duration-ui) var(--ease-expo);
+}
+.diagram-hint[data-shown] {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .diagram-map,
+  .diagram-hint {
+    transition: none;
+  }
+}
+
+/* ---------- The transcript's still miniature: a Mermaid Show's diagram scales to fit ---------- */
 .show-diagram {
   height: 100%;
   min-height: 260px;
-}
-/* In the sheet the diagram shrinks to whatever room the sheet has. */
-.show-fit .show-diagram {
-  min-height: 0;
 }
 .show-diagram svg {
   display: block;
@@ -16,7 +92,7 @@
   height: 100%;
   margin: 0 auto;
 }
-/* A diagram inside a Markdown Show keeps its own size, shrinking to the column. */
+/* A diagram inside a Markdown Show: its viewer, or in the miniature its own size, shrinking to the column. */
 .show-inline-diagram {
   margin: 1.25em 0;
 }

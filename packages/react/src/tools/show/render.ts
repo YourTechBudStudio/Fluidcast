@@ -4,15 +4,19 @@ import type { ShowInput } from '@yourtechbudstudio/fluidcast-tool-show/schema';
 
 import { srcdocOf } from './frame';
 import { renderMarkdown } from './markdown';
-import { renderIdOf, renderMermaid } from './mermaid';
+import { type RenderedDiagram, renderIdOf, renderMermaid } from './mermaid';
 
 /**
- * A Show ready to mount: markup for the app's DOM (with the render ids of the diagrams in it), a diagram, or the
- * `srcdoc` of an HTML frame.
+ * A Show ready to mount: markup for the app's DOM (with the diagrams placed in it), a diagram, or the `srcdoc` of an
+ * HTML frame.
  */
 export type RenderedShow =
-  | { readonly kind: 'markup'; readonly html: string; readonly renderIds: ReadonlyArray<string> }
-  | { readonly kind: 'diagram'; readonly svg: string; readonly renderId: string }
+  | {
+      readonly kind: 'markup';
+      readonly html: string;
+      readonly diagrams: ReadonlyArray<RenderedDiagram>;
+    }
+  | { readonly kind: 'diagram'; readonly diagram: RenderedDiagram }
   | { readonly kind: 'frame'; readonly srcdoc: string };
 
 /** Why a Show could not be rendered, as the renderer said it; this is what the model reads. */
@@ -47,7 +51,7 @@ export const renderShow = (
       return Effect.tryPromise({
         try: () => renderMermaid(input.content, renderIdOf(scope, handle, 0)),
         catch: failure,
-      }).pipe(Effect.map((diagram) => ({ kind: 'diagram', ...diagram }) as const));
+      }).pipe(Effect.map((diagram) => ({ kind: 'diagram', diagram }) as const));
     case 'html':
       return Effect.succeed({ kind: 'frame', srcdoc: srcdocOf(input.content) });
   }
