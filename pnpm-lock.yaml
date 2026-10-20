@@ -165,7 +165,7 @@ settings:
 catalogs:
   default:
     '@anthropic-ai/claude-agent-sdk':
-      specifier: 0.3.283
+      specifier: ^0.3.283
       version: 0.3.283
     '@anthropic-ai/sdk':
       specifier: 0.127.0
