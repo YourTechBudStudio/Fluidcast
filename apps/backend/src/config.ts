@@ -10,6 +10,7 @@ import {
   ConversationSections,
   type ConversationConfig,
   type LlmConfig,
+  type ReasoningEffort,
 } from './conversation/index.ts';
 import { defaultApiKeyEnv, ProvidersSection, ProviderType, type Connection } from './providers.ts';
 import { SpeechSections, type SpeechConfig } from './speech/index.ts';
@@ -261,50 +262,74 @@ const llmConfig = (
 ): Effect.Effect<LlmConfig, string, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const { provider } = file.llm;
-    const settings = {
+    const shared = {
       model: file.llm.model,
-      ...(file.llm.temperature === undefined ? {} : { temperature: file.llm.temperature }),
       ...(file.llm.maxOutputTokens === undefined
         ? {}
         : { maxOutputTokens: file.llm.maxOutputTokens }),
-      ...(provider.reasoningEffort === undefined
-        ? {}
-        : { reasoningEffort: provider.reasoningEffort }),
     };
     if (provider.structuredOutput === true && provider.type !== 'openai-compatible') {
       return yield* Effect.fail(
         `llm.provider.structuredOutput is supported only by the openai-compatible provider type, not ${provider.type}: it sends Chat Completions' response_format with a JSON Schema whose root is an array. Remove it.`,
       );
     }
-    if (file.llm.maxOutputTokens !== undefined && provider.type === 'chatgpt') {
-      return yield* Effect.fail(
-        'llm.maxOutputTokens is not supported with the chatgpt provider type. Remove it.',
-      );
+    /** The OpenAI types' settings: Anthropic takes no `temperature`, and its own effort levels. */
+    const openAi = (reasoningEffort: ReasoningEffort | undefined) => ({
+      ...shared,
+      ...(file.llm.temperature === undefined ? {} : { temperature: file.llm.temperature }),
+      ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
+    });
+    switch (provider.type) {
+      case 'openai-compatible':
+        return {
+          ...openAi(provider.reasoningEffort),
+          type: provider.type,
+          connection: yield* connection(file, environment, provider.type),
+          structuredOutput: provider.structuredOutput ?? false,
+        };
+      case 'openai':
+        return {
+          ...openAi(provider.reasoningEffort),
+          type: provider.type,
+          connection: yield* connection(file, environment, provider.type),
+        };
+      case 'anthropic': {
+        if (file.llm.temperature !== undefined) {
+          return yield* Effect.fail(
+            'llm.temperature is not supported with the anthropic provider type: current Claude models reject non-default sampling. Remove it, and use llm.provider.reasoningEffort to trade quality for speed.',
+          );
+        }
+        return {
+          ...shared,
+          type: provider.type,
+          connection: yield* connection(file, environment, provider.type),
+          ...(provider.reasoningEffort === undefined
+            ? {}
+            : { reasoningEffort: provider.reasoningEffort }),
+          ...(provider.speed === undefined ? {} : { speed: provider.speed }),
+        };
+      }
+      case 'chatgpt': {
+        if (file.llm.maxOutputTokens !== undefined) {
+          return yield* Effect.fail(
+            'llm.maxOutputTokens is not supported with the chatgpt provider type. Remove it.',
+          );
+        }
+        const path = credentialsPath(homeDirectory);
+        yield* readCredentials(path).pipe(
+          Effect.mapError((error) =>
+            error.reason === 'Missing'
+              ? `llm.provider is chatgpt but you are not signed in to ChatGPT (no ${path}). Run pnpm chatgpt:login.`
+              : `${path} is not a valid ChatGPT sign-in. Run pnpm chatgpt:login again.`,
+          ),
+        );
+        return {
+          ...openAi(provider.reasoningEffort),
+          type: provider.type,
+          credentialsPath: path,
+        };
+      }
     }
-    if (provider.type === 'openai-compatible') {
-      return {
-        ...settings,
-        type: provider.type,
-        connection: yield* connection(file, environment, provider.type),
-        structuredOutput: provider.structuredOutput ?? false,
-      };
-    }
-    if (provider.type === 'openai') {
-      return {
-        ...settings,
-        type: provider.type,
-        connection: yield* connection(file, environment, provider.type),
-      };
-    }
-    const path = credentialsPath(homeDirectory);
-    yield* readCredentials(path).pipe(
-      Effect.mapError((error) =>
-        error.reason === 'Missing'
-          ? `llm.provider is chatgpt but you are not signed in to ChatGPT (no ${path}). Run pnpm chatgpt:login.`
-          : `${path} is not a valid ChatGPT sign-in. Run pnpm chatgpt:login again.`,
-      ),
-    );
-    return { ...settings, type: 'chatgpt' as const, credentialsPath: path };
   });
 
 /** Applies defaults and resolves secrets. Fails with a message naming what is missing. */

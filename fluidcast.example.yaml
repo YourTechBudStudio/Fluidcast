@@ -6,7 +6,8 @@ server:
   port: 4700
 
 # How each API-key provider type is reached, shared by every section that uses it. Optional: an
-# absent entry uses OpenAI's base URL and the default key variable (FLUIDCAST_<TYPE>_API_KEY).
+# absent entry uses the provider's own base URL and the default key variable
+# (FLUIDCAST_<TYPE>_API_KEY).
 # The chatgpt LLM type has no entry here: it uses your ChatGPT sign-in instead of a key.
 providers:
   # OpenAI: the Responses API for the LLM, and text-to-speech.
@@ -17,6 +18,10 @@ providers:
   # openai-compatible:
   #   baseUrl: http://localhost:8000/v1
   #   apiKeyEnv: FLUIDCAST_OPENAI_COMPATIBLE_API_KEY
+  # Anthropic's Messages API, with a Claude Platform (console) API key. LLM only.
+  # anthropic:
+  #   baseUrl: https://api.anthropic.com
+  #   apiKeyEnv: FLUIDCAST_ANTHROPIC_API_KEY
 
 llm:
   model: gpt-4.1-mini
@@ -38,7 +43,17 @@ llm:
   # provider:
   #   type: chatgpt
   #   # reasoningEffort: low
-  # Sampling temperature. Absent uses the server's default.
+  # Or Anthropic (the anthropic connection above), with an exact model ID such as
+  # claude-sonnet-5-5, claude-haiku-5-5 or claude-opus-5-5. Prompt caching is automatic. temperature
+  # is not accepted. reasoningEffort is low, medium, high, xhigh or max; absent uses the model's
+  # default. speed: fast is fast mode: Opus models only, premium-priced, with its own rate limit.
+  # Thinking counts against maxOutputTokens, so a small value can produce empty replies.
+  # model: claude-sonnet-5-5
+  # provider:
+  #   type: anthropic
+  #   reasoningEffort: low
+  #   # speed: fast
+  # Sampling temperature. Absent uses the server's default. Not with anthropic.
   # temperature: 0.7
   # The most tokens one reply may use. Absent uses the server's limit. Not with chatgpt.
   # maxOutputTokens: 8192

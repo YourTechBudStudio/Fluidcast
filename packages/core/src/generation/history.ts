@@ -38,7 +38,8 @@ type Run =
  *
  * The newest input (the latest tool results or user message in the final user run) is followed by
  * its reminder, if `options.reminders` gives one, as `<reminder>…</reminder>`. Older
- * inputs never show theirs, so earlier messages stay byte-identical for provider prefix caching.
+ * inputs never show theirs, so earlier messages stay byte-identical for provider prefix caching;
+ * `generate` marks where that stable prefix ends (`withCacheBreakpoints`).
  *
  * A stored result is decoded and rendered with its tool again on every call, so `tools` must be the
  * configuration the log was built with; a mismatch throws.

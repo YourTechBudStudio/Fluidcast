@@ -3,7 +3,10 @@ import { Schema } from 'effect';
 
 import { Voice } from '@yourtechbudstudio/fluidcast-core/speech';
 
-/** How much the model reasons before replying, for models that support it. */
+/**
+ * How much the model reasons before replying, for models that support it. The OpenAI-style types'
+ * levels; `anthropic` has its own (`AnthropicEffort`).
+ */
 export const ReasoningEffort = Schema.Literals([
   'none',
   'minimal',
@@ -13,6 +16,14 @@ export const ReasoningEffort = Schema.Literals([
   'xhigh',
 ]);
 export type ReasoningEffort = typeof ReasoningEffort.Type;
+
+/**
+ * Anthropic's effort levels, sent as `output_config.effort`. Absent leaves the model's default
+ * (`medium` on Opus 5.5 and Haiku 5.5, `high` on Sonnet 5.5). Its own set, not Claude Code's
+ * `ClaudeEffort`: the API and the agent SDK may diverge.
+ */
+export const AnthropicEffort = Schema.Literals(['low', 'medium', 'high', 'xhigh', 'max']);
+export type AnthropicEffort = typeof AnthropicEffort.Type;
 
 /**
  * Constrains the voice's replies to the output's JSON Schema (Core's `outputJsonSchema`) through
@@ -44,6 +55,18 @@ export const LlmProvider = Schema.Union([
     reasoningEffort: Schema.optionalKey(ReasoningEffort),
     structuredOutput,
   }),
+  /**
+   * Anthropic's Messages API. The model is an exact ID such as `claude-sonnet-5-5`. Prompt caching
+   * is automatic. `temperature` is rejected: current Claude models reject non-default sampling.
+   * `speed: fast` is fast mode, on Opus models only, at a premium price and with its own rate
+   * limit; absent is `standard`.
+   */
+  Schema.Struct({
+    type: Schema.Literal('anthropic'),
+    reasoningEffort: Schema.optionalKey(AnthropicEffort),
+    speed: Schema.optionalKey(Schema.Literals(['standard', 'fast'])),
+    structuredOutput,
+  }),
 ]);
 export type LlmProvider = typeof LlmProvider.Type;
 
@@ -51,11 +74,17 @@ export type LlmProvider = typeof LlmProvider.Type;
 export const LlmSection = Schema.Struct({
   model: Schema.NonEmptyString,
   provider: LlmProvider,
-  /** Sampling temperature. Absent uses the server's default, which is often the model's own. */
+  /**
+   * Sampling temperature. Absent uses the server's default, which is often the model's own. Not
+   * accepted with `anthropic`.
+   */
   temperature: Schema.optionalKey(
     Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 2 })),
   ),
-  /** The most tokens one reply may use (`max_output_tokens`). Absent: the server's limit. */
+  /**
+   * The most tokens one reply may use (`max_output_tokens`; `max_tokens` on Anthropic, where
+   * thinking counts against it). Absent: the server's limit.
+   */
   maxOutputTokens: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
 });
 export type LlmSection = typeof LlmSection.Type;

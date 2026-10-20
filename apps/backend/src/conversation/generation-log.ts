@@ -22,6 +22,9 @@ interface GenerationRecord {
     readonly reason: string;
     readonly inputTokens?: number;
     readonly outputTokens?: number;
+    /** Input tokens read from, and written to, the provider's prompt cache. */
+    readonly cacheReadInputTokens?: number;
+    readonly cacheWriteInputTokens?: number;
   };
   /**
    * Core's verdict on the reply, from its own parser:
@@ -47,7 +50,8 @@ interface GenerationLogError {
 
 /**
  * Wraps the `LanguageModel` so every streamed generation is appended to `path` as one JSON line:
- * the prompt, the raw reply, the finish reason and token usage. A development aid for seeing why
+ * the prompt, the raw reply, the finish reason and token usage, including prompt-cache reads and
+ * writes. A development aid for seeing why
  * the model's output failed to parse; writing the log never affects generation.
  */
 export const withGenerationLog = (
@@ -99,6 +103,12 @@ export const withGenerationLog = (
                     ...(part.usage.outputTokens.total === undefined
                       ? {}
                       : { outputTokens: part.usage.outputTokens.total }),
+                    ...(part.usage.inputTokens.cacheRead === undefined
+                      ? {}
+                      : { cacheReadInputTokens: part.usage.inputTokens.cacheRead }),
+                    ...(part.usage.inputTokens.cacheWrite === undefined
+                      ? {}
+                      : { cacheWriteInputTokens: part.usage.inputTokens.cacheWrite }),
                   };
                 }
               }),

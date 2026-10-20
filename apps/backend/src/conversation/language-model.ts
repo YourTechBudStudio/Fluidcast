@@ -1,3 +1,4 @@
+import * as AnthropicLanguageModel from '@effect/ai-anthropic/AnthropicLanguageModel';
 import * as CompatClient from '@effect/ai-openai-compat/OpenAiClient';
 import * as CompatLanguageModel from '@effect/ai-openai-compat/OpenAiLanguageModel';
 import * as OpenAiLanguageModel from '@effect/ai-openai/OpenAiLanguageModel';
@@ -6,40 +7,51 @@ import type { LanguageModel } from 'effect/ai';
 import type { HttpClient } from 'effect/http';
 
 import { chatGptClientLayer } from '../chatgpt/index.ts';
-import { type Connection, openAiClientLayer } from '../providers.ts';
-import type { ReasoningEffort } from './config.ts';
+import { anthropicClientLayer, type Connection, openAiClientLayer } from '../providers.ts';
+import type { AnthropicEffort, ReasoningEffort } from './config.ts';
+
+/** The OpenAI types' sampling and reasoning settings. */
+interface OpenAiSettings {
+  readonly temperature?: number;
+  readonly reasoningEffort?: ReasoningEffort;
+}
 
 /** Resolved LLM settings: the provider type's options and how it is reached, with secrets resolved. */
 export type LlmConfig = {
   readonly model: string;
-  readonly temperature?: number;
-  readonly reasoningEffort?: ReasoningEffort;
   /** The most tokens one reply may use. Not supported with the ChatGPT sign-in. */
   readonly maxOutputTokens?: number;
 } & (
-  | {
+  | ({
       /** OpenAI's API, reached through its connection. */
       readonly type: 'openai';
       readonly connection: Connection;
-    }
-  | {
+    } & OpenAiSettings)
+  | ({
       /** A Chat Completions server, reached through its connection. */
       readonly type: 'openai-compatible';
       readonly connection: Connection;
       /** Whether the voice's replies are constrained to the output's JSON Schema. */
       readonly structuredOutput: boolean;
-    }
-  | {
+    } & OpenAiSettings)
+  | ({
       /** The ChatGPT sign-in, read from (and refreshed into) this file. */
       readonly type: 'chatgpt';
       readonly credentialsPath: string;
+    } & OpenAiSettings)
+  | {
+      /** Anthropic's Messages API, reached through its connection. No sampling settings. */
+      readonly type: 'anthropic';
+      readonly connection: Connection;
+      readonly reasoningEffort?: AnthropicEffort;
+      readonly speed?: 'standard' | 'fast';
     }
 );
 
 /**
  * The `LanguageModel` for the configured provider: OpenAI's Responses API through
- * `@effect/ai-openai` (with an API key or the ChatGPT sign-in), or Chat Completions through
- * `@effect/ai-openai-compat`.
+ * `@effect/ai-openai` (with an API key or the ChatGPT sign-in), Chat Completions through
+ * `@effect/ai-openai-compat`, or Anthropic's Messages API through `@effect/ai-anthropic`.
  */
 export const languageModelLayer = (
   config: LlmConfig,
@@ -48,6 +60,7 @@ export const languageModelLayer = (
   never,
   HttpClient.HttpClient | FileSystem.FileSystem
 > => {
+  if (config.type === 'anthropic') return anthropicLayer(config);
   const effort = config.reasoningEffort;
   const sampling = {
     ...(config.temperature === undefined ? {} : { temperature: config.temperature }),
@@ -84,3 +97,28 @@ export const languageModelLayer = (
       );
   }
 };
+
+/**
+ * Anthropic's Messages API. It sends no `thinking` (current models think adaptively, and the 5.5
+ * models reject disabling it) and no sampling settings. An absent `max_tokens` takes the library's
+ * per-model default.
+ */
+const anthropicLayer = (
+  config: Extract<LlmConfig, { readonly type: 'anthropic' }>,
+): Layer.Layer<LanguageModel.LanguageModel, never, HttpClient.HttpClient> =>
+  AnthropicLanguageModel.layer({
+    model: config.model,
+    config: {
+      ...(config.maxOutputTokens === undefined ? {} : { max_tokens: config.maxOutputTokens }),
+      ...(config.speed === undefined ? {} : { speed: config.speed }),
+      ...(config.reasoningEffort === undefined
+        ? {}
+        : {
+            // The library types `effort` as low | medium | high, lagging the API, and passes the
+            // value through unvalidated, so `xhigh` and `max` reach the request as configured.
+            output_config: { effort: config.reasoningEffort as 'low' | 'medium' | 'high' },
+          }),
+    },
+  }).pipe(
+    Layer.provide(anthropicClientLayer(config.connection, { fastMode: config.speed === 'fast' })),
+  );

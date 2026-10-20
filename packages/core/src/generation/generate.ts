@@ -2,6 +2,7 @@ import { Stream } from 'effect';
 import { AiError, LanguageModel } from 'effect/ai';
 
 import type { Action, Speak, SpeakerProfile } from '../actions/index.ts';
+import { withCacheBreakpoints } from './cache.ts';
 import { ProviderError, type GenerationError } from './errors.ts';
 import type { Example } from './examples.ts';
 import { renderHistory } from './history.ts';
@@ -36,19 +37,21 @@ export interface GenerateOptions {
  * fresh ID, as soon as its array element closes. A tool call is emitted as a draft without a
  * handle, unchecked: the caller assigns its handle and validates it when it takes effect. Core
  * stores nothing; the provider and API come from the `LanguageModel` layer the caller supplies.
+ * The prompt always marks the end of its stable prefix as provider cache breakpoints
+ * (`withCacheBreakpoints`), so callers get prompt caching without configuration.
  */
 export const generate = (
   options: GenerateOptions,
 ): Stream.Stream<Speak | ToolCallDraft, GenerationError, LanguageModel.LanguageModel> =>
   Stream.suspend(() => {
-    const prompt = [
-      { role: 'system' as const, content: buildSystemPrompt(options) },
+    const prompt = withCacheBreakpoints([
+      { role: 'system', content: buildSystemPrompt(options) },
       ...renderHistory(
         options.history,
         options.tools,
         options.reminders === undefined ? {} : { reminders: options.reminders },
       ),
-    ];
+    ]);
     const text = LanguageModel.streamText({ prompt }).pipe(
       Stream.mapError(toProviderError),
       Stream.flatMap((part) => {

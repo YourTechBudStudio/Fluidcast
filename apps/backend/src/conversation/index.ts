@@ -1,5 +1,6 @@
 export { ActiveSession, activeSessionLayer } from './active.ts';
 export {
+  AnthropicEffort,
   ClaudeEffort,
   ConversationSections,
   LlmProvider,

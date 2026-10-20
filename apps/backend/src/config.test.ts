@@ -343,7 +343,7 @@ preset: { voice: { name: alloy, instructions: calm } }
   it('lists every invalid section', async () => {
     const message = await failure(
       `
-llm: { model: m, provider: { type: anthropic } }
+llm: { model: m, provider: { type: gemini } }
 tts: { model: t, format: flac, provider: { type: openai-compatible } }
 preset: { voice: alloy }
 `,
@@ -462,6 +462,136 @@ preset: { voice: { name: alloy } }
     const config = await loaded(chatGptYaml, { ...keys, PATH: '/usr/bin' }, undefined, signedIn());
     assert.deepEqual(config.conversation.worker.environment, {
       // Not configured here: the LLM is the ChatGPT sign-in, which has no key variable.
+      FLUIDCAST_OPENAI_COMPATIBLE_API_KEY: 'compatible-key',
+      PATH: '/usr/bin',
+    });
+  });
+});
+
+describe('loadConfig with Anthropic', () => {
+  const anthropicYaml = `
+llm: { model: claude-sonnet-5-5, provider: { type: anthropic, reasoningEffort: low } }
+tts: { model: t, provider: { type: openai } }
+preset: { voice: { name: alloy } }
+`;
+  const anthropicKeys = { ...keys, FLUIDCAST_ANTHROPIC_API_KEY: 'anthropic-key' };
+
+  /** The resolved `anthropic` LLM settings; fails the test for any other type. */
+  const anthropic = (config: Config) => {
+    const { llm } = config.conversation;
+    return llm.type === 'anthropic' ? llm : assert.fail(llm.type);
+  };
+
+  it("reads the key from FLUIDCAST_ANTHROPIC_API_KEY and reaches Anthropic's API by default", async () => {
+    const llm = anthropic(await loaded(anthropicYaml, anthropicKeys));
+    assert.deepEqual(
+      { ...llm, connection: { ...llm.connection, apiKey: Redacted.value(llm.connection.apiKey) } },
+      {
+        type: 'anthropic',
+        model: 'claude-sonnet-5-5',
+        reasoningEffort: 'low',
+        connection: { apiKey: 'anthropic-key' },
+      },
+    );
+  });
+
+  it('reads the key from a custom apiKeyEnv, and passes the base URL, speed and reply limit', async () => {
+    const llm = anthropic(
+      await loaded(
+        `
+providers:
+  anthropic: { apiKeyEnv: ANTHROPIC_API_KEY, baseUrl: http://127.0.0.1:9 }
+llm:
+  model: claude-opus-5-5
+  maxOutputTokens: 8192
+  provider: { type: anthropic, reasoningEffort: max, speed: fast }
+tts: { model: t, provider: { type: openai } }
+preset: { voice: { name: alloy } }
+`,
+        { ...keys, ANTHROPIC_API_KEY: 'custom-key' },
+      ),
+    );
+    assert.equal(Redacted.value(llm.connection.apiKey), 'custom-key');
+    assert.equal(llm.connection.baseUrl, 'http://127.0.0.1:9');
+    assert.equal(llm.reasoningEffort, 'max');
+    assert.equal(llm.speed, 'fast');
+    assert.equal(llm.maxOutputTokens, 8192);
+  });
+
+  it('names the missing key variable and its setting', async () => {
+    const message = await failure(anthropicYaml, keys);
+    assert.match(message, /FLUIDCAST_ANTHROPIC_API_KEY/);
+    assert.match(message, /providers\.anthropic\.apiKeyEnv/);
+  });
+
+  it('rejects a temperature, pointing to reasoningEffort', async () => {
+    const message = await failure(
+      anthropicYaml.replace(
+        'reasoningEffort: low } }',
+        'reasoningEffort: low }, temperature: 0.7 }',
+      ),
+      anthropicKeys,
+    );
+    assert.match(message, /llm\.temperature is not supported with the anthropic provider type/);
+    assert.match(message, /reasoningEffort/);
+  });
+
+  it('rejects structured output', async () => {
+    assert.match(
+      await failure(
+        anthropicYaml.replace(
+          'reasoningEffort: low',
+          'reasoningEffort: low, structuredOutput: true',
+        ),
+        anthropicKeys,
+      ),
+      /structuredOutput is supported only by the openai-compatible provider type, not anthropic/,
+    );
+  });
+
+  it('rejects an effort Anthropic does not have, and an unknown speed', async () => {
+    for (const option of ['reasoningEffort: none', 'reasoningEffort: minimal', 'speed: turbo']) {
+      assert.match(
+        await failure(anthropicYaml.replace('reasoningEffort: low', option), anthropicKeys),
+        /is invalid/,
+        option,
+      );
+    }
+  });
+
+  it("loads fluidcast.example.yaml's anthropic llm block once uncommented", async () => {
+    const example = readFileSync(
+      new URL('../../../fluidcast.example.yaml', import.meta.url),
+      'utf8',
+    );
+    const block = /^ {2}# model: claude.*\n {2}# provider:\n(?: {2}# {3}.*\n)*/m.exec(example)?.[0];
+    assert.ok(block !== undefined);
+    const llm = block
+      .split('\n')
+      .map((line) => line.replace(/^( {2})# ?/, '$1'))
+      .join('\n');
+    const config = await loaded(
+      `llm:\n${llm}tts: { model: t, provider: { type: openai } }\npreset: { voice: { name: alloy } }\n`,
+      anthropicKeys,
+    );
+    assert.deepEqual(
+      { ...anthropic(config), connection: undefined },
+      {
+        type: 'anthropic',
+        model: 'claude-sonnet-5-5',
+        reasoningEffort: 'low',
+        connection: undefined,
+      },
+    );
+  });
+
+  it("strips the configured Anthropic key variable from the worker's environment", async () => {
+    const config = await loaded(
+      `providers:\n  anthropic: { apiKeyEnv: ANTHROPIC_API_KEY }\n${anthropicYaml}`,
+      { ...keys, ANTHROPIC_API_KEY: 'custom-key', PATH: '/usr/bin' },
+    );
+    assert.deepEqual(config.conversation.worker.environment, {
+      // Not configured here: the LLM uses ANTHROPIC_API_KEY.
       FLUIDCAST_OPENAI_COMPATIBLE_API_KEY: 'compatible-key',
       PATH: '/usr/bin',
     });

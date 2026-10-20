@@ -34,7 +34,7 @@ const speak = (line: string) => JSON.stringify({ type: 'speak', speaker: 'host',
  * Runs Core's `generate` over a model that streams `parts` (then hangs, when `hang`), through the
  * generation log, and returns the record it appended. `interrupt` cancels the run once it hangs.
  */
-const record = async (
+const logged = async (
   parts: Stream.Stream<Response.StreamPartEncoded, AiError.AiError>,
   options: { readonly interrupt?: boolean } = {},
 ) => {
@@ -62,7 +62,12 @@ const record = async (
         })
       : run,
   );
-  const { ended, error } = JSON.parse(readFileSync(path, 'utf8'));
+  return JSON.parse(readFileSync(path, 'utf8'));
+};
+
+/** The record's verdict. */
+const record = async (...args: Parameters<typeof logged>) => {
+  const { ended, error } = await logged(...args);
   return { ended, error };
 };
 
@@ -99,6 +104,32 @@ describe('withGenerationLog', () => {
     assert.deepEqual(await record(parts), {
       ended: 'failed',
       error: { tag: 'MalformedOutput', reason: 'unterminated' },
+    });
+  });
+
+  it('records the prompt-cache reads and writes in the finish usage', async () => {
+    const parts = Stream.make(text(`[${speak('a')}`), {
+      ...finish,
+      usage: {
+        ...finish.usage,
+        inputTokens: { uncached: 10, total: 4020, cacheRead: 4000, cacheWrite: 10 },
+      },
+    } satisfies Response.StreamPartEncoded);
+    assert.deepEqual((await logged(parts)).finish, {
+      reason: 'stop',
+      inputTokens: 4020,
+      outputTokens: 1,
+      cacheReadInputTokens: 4000,
+      cacheWriteInputTokens: 10,
+    });
+  });
+
+  it('records no cache fields when the usage has none', async () => {
+    const parts = Stream.make(text(`[${speak('a')}`), finish);
+    assert.deepEqual((await logged(parts)).finish, {
+      reason: 'stop',
+      inputTokens: 1,
+      outputTokens: 1,
     });
   });
 
