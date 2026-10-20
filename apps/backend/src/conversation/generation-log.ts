@@ -1,5 +1,15 @@
-import { Effect, Exit, FileSystem, Layer, Option, Stream } from 'effect';
-import { AiError, LanguageModel } from 'effect/ai';
+import {
+  type Cause,
+  Deferred,
+  Duration,
+  Effect,
+  FileSystem,
+  Fiber,
+  Layer,
+  Queue,
+  Stream,
+} from 'effect';
+import { type AiError, LanguageModel, type Response } from 'effect/ai';
 
 import { parseActions } from '@yourtechbudstudio/fluidcast-core/generation';
 
@@ -49,10 +59,26 @@ interface GenerationLogError {
 }
 
 /**
+ * How long the log keeps reading after Core accepted a reply, to record the finish part's usage.
+ * After `]` the provider normally finishes within milliseconds; the limit caps the extra output paid
+ * for and how long the HTTP stream stays open.
+ */
+const drainLimit = Duration.seconds(2);
+
+/** The hand-off between the provider and Core: the provider is read at Core's pace. */
+export const handOffCapacity = 1;
+
+/**
  * Wraps the `LanguageModel` so every streamed generation is appended to `path` as one JSON line:
  * the prompt, the raw reply, the finish reason and token usage, including prompt-cache reads and
- * writes. A development aid for seeing why
- * the model's output failed to parse; writing the log never affects generation.
+ * writes. A development aid for seeing why the model's output failed to parse; writing the log
+ * never affects generation.
+ *
+ * Core stops reading at the reply's closing `]`, before the provider's finish part, which carries
+ * the usage. So a reader fiber in the layer's scope reads the provider stream and hands each part
+ * to Core through a bounded queue. When Core's side ends on a reply Core accepted, the reader stops
+ * handing parts over and keeps reading to the finish part, for at most `drainLimit`; otherwise it
+ * is interrupted at once. The reader writes the record when it ends.
  */
 export const withGenerationLog = (
   path: string,
@@ -68,6 +94,7 @@ export const withGenerationLog = (
     Effect.gen(function* () {
       const inner = yield* LanguageModel.LanguageModel;
       const fs = yield* FileSystem.FileSystem;
+      const scope = yield* Effect.scope;
       yield* Effect.logWarning(
         'generation log is on: prompts and replies, including conversation text, are written to it',
       ).pipe(Effect.annotateLogs({ path }));
@@ -84,53 +111,69 @@ export const withGenerationLog = (
           );
 
       const streamText = (options: { readonly prompt: unknown }) =>
-        Stream.suspend(() => {
-          const started = Date.now();
-          let output = '';
-          let reasoning = '';
-          let finish: GenerationRecord['finish'];
-          return inner.streamText(options as Parameters<typeof inner.streamText>[0]).pipe(
-            Stream.tap((part) =>
-              Effect.sync(() => {
-                if (part.type === 'text-delta') output += part.delta;
-                else if (part.type === 'reasoning-delta') reasoning += part.delta;
-                else if (part.type === 'finish') {
-                  finish = {
-                    reason: part.reason,
-                    ...(part.usage.inputTokens.total === undefined
-                      ? {}
-                      : { inputTokens: part.usage.inputTokens.total }),
-                    ...(part.usage.outputTokens.total === undefined
-                      ? {}
-                      : { outputTokens: part.usage.outputTokens.total }),
-                    ...(part.usage.inputTokens.cacheRead === undefined
-                      ? {}
-                      : { cacheReadInputTokens: part.usage.inputTokens.cacheRead }),
-                    ...(part.usage.inputTokens.cacheWrite === undefined
-                      ? {}
-                      : { cacheWriteInputTokens: part.usage.inputTokens.cacheWrite }),
-                  };
-                }
-              }),
-            ),
-            Stream.onExit((exit) =>
-              ending(exit, output, finish !== undefined, speakerIds).pipe(
-                Effect.flatMap((ended) =>
-                  append({
-                    startedAt: new Date(started).toISOString(),
-                    durationMs: Date.now() - started,
-                    model,
-                    prompt: options.prompt,
-                    output,
-                    ...(reasoning === '' ? {} : { reasoning }),
-                    ...(finish === undefined ? {} : { finish }),
-                    ...ended,
-                  }),
+        Stream.unwrap(
+          Effect.gen(function* () {
+            const started = Date.now();
+            let output = '';
+            let reasoning = '';
+            let finish: GenerationRecord['finish'];
+            let failure: AiError.AiError | undefined;
+            const handOff = yield* Queue.bounded<Response.AnyPart, AiError.AiError | Cause.Done>(
+              handOffCapacity,
+            );
+            const draining = yield* Deferred.make<void>();
+
+            const read = inner.streamText(options as Parameters<typeof inner.streamText>[0]).pipe(
+              Stream.tap((part) =>
+                Effect.sync(() => {
+                  if (part.type === 'text-delta') output += part.delta;
+                  else if (part.type === 'reasoning-delta') reasoning += part.delta;
+                  else if (part.type === 'finish') finish = finishOf(part);
+                }),
+              ),
+              Stream.tapError((error) => Effect.sync(() => (failure = error))),
+              Stream.runIntoQueue(handOff),
+            );
+            const reader = yield* Effect.raceFirst(
+              read,
+              // The limit starts only once Core has accepted the reply.
+              Deferred.await(draining).pipe(Effect.andThen(Effect.sleep(drainLimit))),
+            ).pipe(
+              Effect.onExit(() =>
+                ending(failure, output, finish !== undefined, speakerIds).pipe(
+                  Effect.flatMap((ended) =>
+                    append({
+                      startedAt: new Date(started).toISOString(),
+                      durationMs: Date.now() - started,
+                      model,
+                      prompt: options.prompt,
+                      output,
+                      ...(reasoning === '' ? {} : { reasoning }),
+                      ...(finish === undefined ? {} : { finish }),
+                      ...ended,
+                    }),
+                  ),
                 ),
               ),
-            ),
-          );
-        });
+              Effect.forkIn(scope),
+            );
+
+            return Stream.fromQueue(handOff).pipe(
+              Stream.onExit(() =>
+                Effect.gen(function* () {
+                  if ((yield* verdict(output, speakerIds))._tag === 'Success') {
+                    // Core has the whole reply: stop handing parts over, so the reader never
+                    // waits on Core, and let it read on to the finish part.
+                    yield* Queue.shutdown(handOff);
+                    yield* Deferred.succeed(draining, undefined);
+                  } else {
+                    yield* Fiber.interrupt(reader);
+                  }
+                }),
+              ),
+            );
+          }),
+        );
 
       // `streamText` is overloaded for toolkits, which Core never passes; this wrapper forwards
       // every call unchanged and only observes the parts.
@@ -138,38 +181,54 @@ export const withGenerationLog = (
     }),
   );
 
+/** The finish part's reason and token counts, including prompt-cache reads and writes. */
+const finishOf = (part: Response.FinishPart): NonNullable<GenerationRecord['finish']> => ({
+  reason: part.reason,
+  ...(part.usage.inputTokens.total === undefined
+    ? {}
+    : { inputTokens: part.usage.inputTokens.total }),
+  ...(part.usage.outputTokens.total === undefined
+    ? {}
+    : { outputTokens: part.usage.outputTokens.total }),
+  ...(part.usage.inputTokens.cacheRead === undefined
+    ? {}
+    : { cacheReadInputTokens: part.usage.inputTokens.cacheRead }),
+  ...(part.usage.inputTokens.cacheWrite === undefined
+    ? {}
+    : { cacheWriteInputTokens: part.usage.inputTokens.cacheWrite }),
+});
+
+/** Core's verdict on the observed reply, from Core's own parser. */
+const verdict = (output: string, speakerIds: ReadonlySet<string>) =>
+  parseActions(Stream.succeed(output), { speakerIds }).pipe(Stream.runDrain, Effect.result);
+
 /**
- * How a generation ended. This stream cannot see Core's outcome: when Core stops reading, at the
- * closing `]` or on an invalid element, it is interrupted either way. So the observed reply is run
- * back through Core's own parser, which gives the same verdict Core reached.
+ * How a generation ended. The reader cannot see Core's outcome, so the observed reply is run back
+ * through Core's own parser, which gives the same verdict Core reached.
  */
 const ending = (
-  exit: Exit.Exit<unknown, unknown>,
+  failure: AiError.AiError | undefined,
   output: string,
   finished: boolean,
   speakerIds: ReadonlySet<string>,
 ): Effect.Effect<Pick<GenerationRecord, 'ended' | 'error'>> =>
   Effect.gen(function* () {
-    const error = Exit.findErrorOption(exit);
-    if (Option.isSome(error) && AiError.isAiError(error.value)) {
-      return { ended: 'failed', error: { tag: error.value.reason._tag } } as const;
+    if (failure !== undefined) {
+      return { ended: 'failed', error: { tag: failure.reason._tag } } as const;
     }
-    const parsed = yield* parseActions(Stream.succeed(output), { speakerIds }).pipe(
-      Stream.runDrain,
-      Effect.result,
-    );
+    const parsed = yield* verdict(output, speakerIds);
     if (parsed._tag === 'Success') return { ended: 'completed' } as const;
-    const failure = parsed.failure;
-    switch (failure._tag) {
+    const error = parsed.failure;
+    switch (error._tag) {
       case 'InvalidAction':
         return {
           ended: 'failed',
-          error: { tag: failure._tag, index: failure.index, reason: failure.reason },
+          error: { tag: error._tag, index: error.index, reason: error.reason },
         } as const;
       case 'MalformedOutput':
         // A reply that stops short is only malformed if the provider finished it that way.
         return finished
-          ? ({ ended: 'failed', error: { tag: failure._tag, reason: failure.reason } } as const)
+          ? ({ ended: 'failed', error: { tag: error._tag, reason: error.reason } } as const)
           : ({ ended: 'cancelled' } as const);
     }
   });
