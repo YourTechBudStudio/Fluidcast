@@ -1,9 +1,16 @@
 {
   "name": "@yourtechbudstudio/fluidcast-react",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
+  "license": "Apache-2.0",
+  "author": "YourTechBud",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YourTechBudStudio/Fluidcast.git",
+    "directory": "packages/react"
+  },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
   "type": "module",
   "sideEffects": [
@@ -15,6 +22,9 @@
       "default": "./dist/index.js"
     },
     "./styles.css": "./dist/styles.css"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc --project tsconfig.build.json && node scripts/build-css.mjs",

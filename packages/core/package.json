@@ -1,9 +1,16 @@
 {
   "name": "@yourtechbudstudio/fluidcast-core",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
+  "license": "Apache-2.0",
+  "author": "YourTechBud",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YourTechBudStudio/Fluidcast.git",
+    "directory": "packages/core"
+  },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
   "type": "module",
   "sideEffects": false,
@@ -24,6 +31,9 @@
       "types": "./dist/speech/openai.d.ts",
       "default": "./dist/speech/openai.js"
     }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc --project tsconfig.build.json",

@@ -1,9 +1,16 @@
 {
   "name": "@yourtechbudstudio/fluidcast-tool-agent",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
+  "license": "Apache-2.0",
+  "author": "YourTechBud",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YourTechBudStudio/Fluidcast.git",
+    "directory": "packages/tool-agent"
+  },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
   "type": "module",
   "sideEffects": false,
@@ -24,6 +31,9 @@
       "types": "./dist/codex/index.d.ts",
       "default": "./dist/codex/index.js"
     }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc --project tsconfig.build.json",

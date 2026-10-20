@@ -1,8 +1,9 @@
 {
   "name": "fluidcast",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Voice-and-visual SDKs for conversational coordination with existing agents.",
+  "license": "Apache-2.0",
   "author": "YourTechBud",
   "type": "module",
   "scripts": {
@@ -17,8 +18,10 @@
     "format:check": "oxfmt --check .",
     "lint": "oxlint . --threads=8 --deny-warnings --no-error-on-unmatched-pattern",
     "lint:fix": "oxlint . --threads=8 --fix --no-error-on-unmatched-pattern",
+    "release": "pnpm check && pnpm build:libs && pnpm -r publish",
     "test": "pnpm build:libs && pnpm -r --workspace-concurrency=1 --if-present test",
     "typecheck": "pnpm build:libs && pnpm -r --workspace-concurrency=1 --if-present typecheck",
+    "versions:sync": "node scripts/sync-versions.mjs",
     "web:dev": "pnpm --filter '@fluidcast/web^...' build && pnpm --filter '@fluidcast/web...' --parallel --if-present dev"
   },
   "devDependencies": {

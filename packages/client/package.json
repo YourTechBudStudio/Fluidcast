@@ -1,9 +1,16 @@
 {
   "name": "@yourtechbudstudio/fluidcast-client",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
+  "license": "Apache-2.0",
+  "author": "YourTechBud",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YourTechBudStudio/Fluidcast.git",
+    "directory": "packages/client"
+  },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
   "type": "module",
   "sideEffects": false,
@@ -12,6 +19,9 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc --project tsconfig.build.json",

@@ -1,9 +1,16 @@
 {
   "name": "@yourtechbudstudio/fluidcast-harness",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
+  "license": "Apache-2.0",
+  "author": "YourTechBud",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YourTechBudStudio/Fluidcast.git",
+    "directory": "packages/harness"
+  },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
   "type": "module",
   "sideEffects": false,
@@ -16,6 +23,9 @@
       "types": "./dist/session/protocol.d.ts",
       "default": "./dist/session/protocol.js"
     }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
