@@ -3,8 +3,12 @@
  * worker on the brainstorming skill; Continue resumes a stored session of the chosen agent (Claude
  * Code or Codex) and walks the listener through its last answer.
  */
-import type { Reminders } from '@yourtechbudstudio/fluidcast-core/generation';
+import type { SessionConfig } from '@yourtechbudstudio/fluidcast-harness';
 import type { Handoff, HandoffPrompt } from '@yourtechbudstudio/fluidcast-tool-agent';
+import {
+  forwardToolName,
+  type ForwardResult,
+} from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 
 /** The skill a new brainstorm's worker starts with. Hard-coded: the reference app has no profiles. */
 export const brainstormSkill = 'brainstorming';
@@ -26,23 +30,21 @@ export const brainstormHook = (handoff: Handoff): HandoffPrompt =>
 
 /** Continue's preloaded first message, sent when the listener taps Tap to start. */
 export const continueMessage = 'Walk me through your last answer.';
-/** The label of Continue's context: the stored session's last answer. */
-export const continueContextLabel = 'Your last answer in this session';
-/**
- * Continue's reminder for the preloaded message: one framing sentence, then the Guided
- * Walkthrough's evaluated `reply` reminder verbatim (`reminderTexts.reply` in
- * `packages/presets/src/guided-walkthrough/reminders.ts`, copied because the preset does not export
- * it). Untested in this position: the hand trials are its evidence.
- */
-export const continueReminder =
-  'The <context> above is your own last answer in this session; treat it as a `forward_agent` result. Present only the first segment of this result now, then stop with an `ask`.';
+/** The label of Continue's answered call: the stored session's last answer. */
+export const continueCallLabel = 'Your last answer in this session';
 
 /**
- * Continue's reminders: the reminder above for a message read with context (only the preloaded
- * start has any), and the preset's own for everything else. An application override (ADR 0005),
- * so the preset stays as evaluated.
+ * Continue's preloaded start: the message, then the stored session's last answer as an answered
+ * `forward_agent` call, so the voice reads it as its own work exactly as it reads any forward
+ * result, and the preset's own reminders apply. Read as a labelled context instead, the voice put
+ * the answer's questions on a screen and moved on (measured in October 2026).
  */
-export const continueReminders =
-  (preset: Reminders): Reminders =>
-  (event) =>
-    event._tag === 'UserMessage' && event.context.length > 0 ? continueReminder : preset(event);
+export const continueStart = (answer: string): NonNullable<SessionConfig['start']> => ({
+  message: continueMessage,
+  call: {
+    label: continueCallLabel,
+    tool: forwardToolName,
+    input: {},
+    result: { messages: [answer] } satisfies ForwardResult,
+  },
+});

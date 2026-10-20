@@ -10,6 +10,8 @@ import {
   type Action,
   type LabeledContext,
   type Speak,
+  type ToolCall,
+  type ToolResult,
   type UserMessage,
 } from '@yourtechbudstudio/fluidcast-core/actions';
 import type { ReminderEvent } from '@yourtechbudstudio/fluidcast-core/generation';
@@ -1919,6 +1921,7 @@ const emptyState: SessionState = {
   pendingProgress: [],
   replay: null,
   start: null,
+  started: null,
   paused: false,
   speakers: [],
   speech: { mimeType: 'audio/ogg' },
@@ -2043,6 +2046,83 @@ describe('Session preloaded start', () => {
       }),
     ));
 
+  it('Start submits an answered call that never executes, and numbers new calls after it', () =>
+    run(
+      Effect.gen(function* () {
+        const { seen, reminders } = recording();
+        const answeredStart = {
+          message: 'M',
+          call: {
+            label: 'C',
+            tool: 'fetch',
+            input: { label: 'a' },
+            result: { label: 'a', reply: 'done' },
+          },
+        };
+        const { session, state, command, turn } = yield* setupWith(
+          [fetch],
+          undefined,
+          reminders,
+          answeredStart,
+        );
+        const subscription = yield* subscribe(session);
+        const pending = (yield* state).start;
+        assert.equal(pending?.call?.label, 'C');
+        assert.equal(pending?.call?.call.handle, 'call_1');
+        const model = yield* turn;
+
+        yield* command({ _tag: 'Start' });
+        const prompt = yield* model.prompt;
+        assert.deepEqual(
+          prompt.map((message) => message.role),
+          ['system', 'user', 'assistant', 'user'],
+        );
+        assert.equal(prompt[2]?.text, '[{"type":"fetch","call":"call_1","label":"a"}]');
+        assert.equal(
+          prompt[3]?.text,
+          '<tool_result call="call_1" tool="fetch">a: done</tool_result>',
+        );
+        assert.deepEqual(seen, [
+          { _tag: 'ToolResult', tool: 'fetch', result: { label: 'a', reply: 'done' } },
+        ]);
+        const current = yield* state;
+        assert.equal(current.cursor, 3);
+        assert.deepEqual(current.started, {
+          messageId: pending?.message.id,
+          label: 'C',
+          handle: 'call_1',
+        });
+        assert.deepEqual(current.executions, []);
+        assert.deepEqual(current.actions, [
+          pending?.message,
+          pending?.call?.call,
+          pending?.call?.result,
+        ]);
+
+        yield* model.say(`[${JSON.stringify({ type: 'fetch', label: 'b' })}]`);
+        yield* model.end;
+        const started = yield* subscription.waitFor(
+          (message): message is Extract<SubscriptionMessage, { _tag: 'ToolStarted' }> =>
+            message._tag === 'ToolStarted',
+        );
+        assert.deepEqual(started.handles, ['call_2']);
+        yield* assertAgreement(subscription, state);
+      }),
+    ));
+
+  it('fails to build when a preloaded call does not decode', async () => {
+    for (const invalid of [
+      { label: 'C', tool: 'missing', input: {}, result: {} },
+      { label: 'C', tool: 'fetch', input: {}, result: { label: 'a', reply: 'done' } },
+      { label: 'C', tool: 'fetch', input: { label: 'a' }, result: { reply: 1 } },
+      { label: ' ', tool: 'fetch', input: { label: 'a' }, result: { label: 'a', reply: 'done' } },
+    ]) {
+      await assert.rejects(
+        run(setupWith([fetch], undefined, undefined, { message: 'M', call: invalid })),
+      );
+    }
+  });
+
   it('rejects a second Start', () =>
     run(
       Effect.gen(function* () {
@@ -2078,7 +2158,7 @@ describe('Session preloaded start', () => {
           assert.ok(Exit.isFailure(exit) && Cause.hasDies(exit.cause));
           assert.match(
             String(Cause.squash(exit.cause)),
-            /A preloaded start needs a message and a context label/,
+            /A preloaded start needs a message, and a label for its context and call/,
           );
         }
       }),
@@ -2187,6 +2267,7 @@ describe('derivePhase', () => {
     const pending = {
       message: { type: 'user_message', id: id(), text: 'M' },
       context: null,
+      call: null,
     } as const;
     assert.equal(derivePhase({ ...emptyState, start: pending }), 'ready');
     const faulted: Action = {
@@ -2208,18 +2289,50 @@ describe('reduce StartSubmitted', () => {
   const context: LabeledContext = { type: 'context', id: makeActionId(), label: 'L', text: 'T' };
 
   it('appends the context, then the message, and clears the start', () => {
-    const next = reduce({ ...emptyState, start: { message, context } }, { _tag: 'StartSubmitted' });
+    const next = reduce(
+      { ...emptyState, start: { message, context, call: null } },
+      { _tag: 'StartSubmitted' },
+    );
     assert.deepEqual(next.actions, [context, message]);
     assert.equal(next.start, null);
+    assert.deepEqual(next.started, { messageId: message.id, label: 'L', handle: null });
+  });
+
+  it('appends the answered call and its result after the message', () => {
+    const answered: ToolCall = {
+      type: 'tool_call',
+      id: makeActionId(),
+      handle: 'call_1',
+      tool: 'fetch',
+      input: { label: 'a' },
+    };
+    const result: ToolResult = {
+      type: 'tool_result',
+      id: makeActionId(),
+      handles: ['call_1'],
+      tool: 'fetch',
+      result: { label: 'a', reply: 'done' },
+    };
+    const next = reduce(
+      {
+        ...emptyState,
+        start: { message, context: null, call: { label: 'C', call: answered, result } },
+      },
+      { _tag: 'StartSubmitted' },
+    );
+    assert.deepEqual(next.actions, [message, answered, result]);
+    assert.equal(next.start, null);
+    assert.deepEqual(next.started, { messageId: message.id, label: 'C', handle: 'call_1' });
   });
 
   it('appends only the message when there is no context', () => {
     const next = reduce(
-      { ...emptyState, start: { message, context: null } },
+      { ...emptyState, start: { message, context: null, call: null } },
       { _tag: 'StartSubmitted' },
     );
     assert.deepEqual(next.actions, [message]);
     assert.equal(next.start, null);
+    assert.deepEqual(next.started, { messageId: message.id, label: null, handle: null });
   });
 
   it('leaves a state without a start unchanged', () => {

@@ -20,7 +20,7 @@ import { showTool } from '@yourtechbudstudio/fluidcast-tool-show';
 import { showToolName } from '@yourtechbudstudio/fluidcast-tool-show/schema';
 
 import { conversationConfig, fakeSources, storedMessage, unusedModel } from './fixtures.test.ts';
-import { continueContextLabel, continueMessage, continueReminders } from './modes.ts';
+import { continueCallLabel, continueMessage, continueStart } from './modes.ts';
 import {
   buildSession,
   claudeWorkerOptions,
@@ -222,16 +222,16 @@ describe('buildSession', () => {
     ]);
   });
 
-  it('snapshots a continued session ready, with the last answer as the preloaded context', async () => {
+  it('snapshots a continued session ready, with the last answer as the preloaded answered call', async () => {
     const { sources, workers } = fakeSources({ messages: stored });
     const state = await snapshot(continueRequest, sources);
     assert.equal(derivePhase(state), 'ready');
     assert.deepEqual(state.actions, []);
     assert.equal(state.start?.message.text, continueMessage);
-    assert.deepEqual(
-      state.start?.context && { label: state.start.context.label, text: state.start.context.text },
-      { label: continueContextLabel, text: 'The answer.' },
-    );
+    assert.equal(state.start?.context, null);
+    assert.equal(state.start?.call?.label, continueCallLabel);
+    assert.equal(state.start?.call?.call.tool, 'forward_agent');
+    assert.deepEqual(state.start?.call?.result.result, { messages: ['The answer.'] });
     // No effort is recorded under the fake config directory, and none is configured.
     assert.deepEqual(workers, [claudeWorkerOptions(worker, { effort: undefined })]);
     assert.equal('model' in workers[0]!, false);
@@ -264,7 +264,7 @@ describe('buildSession', () => {
     });
     const state = await snapshot(codexContinue, sources, conversation);
     assert.equal(derivePhase(state), 'ready');
-    assert.equal(state.start?.context?.text, 'The Codex answer.');
+    assert.deepEqual(state.start?.call?.result.result, { messages: ['The Codex answer.'] });
     assert.deepEqual(threadReads, [{ threadId: storedId, environment: { PATH: '/bin' } }]);
     assert.deepEqual(workers, []);
     // No model, even though the thread reports one: the resumed thread keeps its own.
@@ -412,27 +412,15 @@ describe('referenceSessionConfig', () => {
     }
   });
 
-  it("adds Continue's reminders and the preloaded start for a continued session", () => {
+  it("adds Continue's preloaded start for a continued session, and keeps the preset's reminders", () => {
     const session = referenceSessionConfig({ voice }, 'opus', tools, { answer: 'The answer.' });
     const preset = guidedWalkthrough({ voice });
-    assert.deepEqual(session.start, {
-      message: continueMessage,
-      context: { label: continueContextLabel, text: 'The answer.' },
-    });
-    assert.notEqual(session.reminders, preset.reminders);
-    const withContext = {
-      _tag: 'UserMessage',
-      text: continueMessage,
-      interrupted: false,
-      context: [continueContextLabel],
-    } as const;
-    assert.equal(
-      session.reminders?.(withContext),
-      continueReminders(preset.reminders)(withContext),
-    );
+    assert.deepEqual(session.start, continueStart('The answer.'));
+    assert.equal(session.start?.message, continueMessage);
+    assert.equal(session.reminders, preset.reminders);
     // Everything else is the preset's.
     assert.deepEqual(
-      { ...session, reminders: preset.reminders, start: undefined },
+      { ...session, start: undefined },
       { ...preset, speechFormat: 'opus', tools, start: undefined },
     );
   });

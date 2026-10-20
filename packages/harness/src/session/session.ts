@@ -59,6 +59,7 @@ import {
   SpeechNotFound,
   ToolCommandRejected,
   type Command,
+  type PendingCall,
   type SessionEvent,
   type SessionState,
   type SubscriptionMessage,
@@ -152,10 +153,14 @@ export const make = (config: SessionConfig) =>
     const preloaded = config.start;
     if (
       preloaded !== undefined &&
-      (preloaded.message.trim() === '' || preloaded.context?.label.trim() === '')
+      (preloaded.message.trim() === '' ||
+        preloaded.context?.label.trim() === '' ||
+        preloaded.call?.label.trim() === '')
     ) {
-      throw new Error('A preloaded start needs a message and a context label');
+      throw new Error('A preloaded start needs a message, and a label for its context and call');
     }
+    const preloadedCall =
+      preloaded?.call === undefined ? null : answeredCall(config.tools, preloaded.call);
     const languageModel = yield* LanguageModel.LanguageModel;
     const synthesizer = yield* SpeechSynthesizer;
 
@@ -182,7 +187,9 @@ export const make = (config: SessionConfig) =>
                 preloaded.context === undefined
                   ? null
                   : { type: 'context', id: makeActionId(), ...preloaded.context },
+              call: preloadedCall,
             },
+      started: null,
       paused: false,
       speakers: config.speakers.map(({ id, name }) => ({ id, name })),
       speech: { mimeType: audioMimeType[config.speechFormat] },
@@ -200,8 +207,8 @@ export const make = (config: SessionConfig) =>
       }),
     );
     const continuation = yield* FiberHandle.make<void, never>();
-    // Monotonic: trimmed handles are never reused.
-    const nextHandle = yield* Ref.make(0);
+    // Monotonic: trimmed handles are never reused. A preloaded call holds `call_1`.
+    const nextHandle = yield* Ref.make(preloadedCall === null ? 0 : 1);
     const running = new Map<ExecutionId, Running>();
     const profiles = config.speakers.map(({ id, name, personality }) => ({
       id,
@@ -272,7 +279,8 @@ export const make = (config: SessionConfig) =>
      * Moves the cursor from `from` past instant actions, reaching each tool call on the way with
      * its own `CursorMoved` before it starts (ADR 0002), then requests playback of the speak it
      * rests on (unless paused). A tool call resting at the cursor has not been reached yet: one
-     * appended there during a replay or a pause is reached when `from` is the cursor.
+     * appended there during a replay or a pause is reached when `from` is the cursor. A call whose
+     * outcome is already in the log (a preloaded start's) is passed without executing.
      */
     const settleFrom = (from: number) =>
       Effect.gen(function* () {
@@ -289,7 +297,7 @@ export const make = (config: SessionConfig) =>
           if (position !== current.cursor) yield* emit({ _tag: 'CursorMoved', cursor: position });
           const action = current.actions[position];
           if (action?.type !== 'tool_call') break;
-          yield* reach(action, 'first');
+          if (!answered(current.actions, action.handle)) yield* reach(action, 'first');
           position++;
         }
         yield* keepPlaying;
@@ -939,6 +947,44 @@ export const make = (config: SessionConfig) =>
 
     return { service, state: Ref.get(state) };
   });
+
+/**
+ * A preloaded start's call and its result, as the log will hold them, under handle `call_1`. A
+ * call or result its tool cannot read is a configuration defect, so this throws.
+ */
+const answeredCall = (
+  tools: SessionConfig['tools'],
+  { label, tool: name, input, result }: NonNullable<NonNullable<SessionConfig['start']>['call']>,
+): PendingCall => {
+  const decoded = decodeToolCall(tools, { tool: name, input });
+  if (Result.isFailure(decoded)) {
+    throw new Error(`A preloaded start's call is invalid: ${decoded.failure}`);
+  }
+  const encoded = readResult(decoded.success.tool, result);
+  if (Result.isFailure(encoded)) {
+    throw new Error(`A preloaded start's \`${name}\` result does not encode`);
+  }
+  const handle = 'call_1';
+  return {
+    label,
+    call: { type: 'tool_call', id: makeActionId(), handle, tool: name, input },
+    result: {
+      type: 'tool_result',
+      id: makeActionId(),
+      handles: [handle],
+      tool: name,
+      result: encoded.success,
+    },
+  };
+};
+
+/** Whether an outcome for `handle` is already in the log. */
+const answered = (actions: ReadonlyArray<Action>, handle: string): boolean =>
+  actions.some(
+    (action) =>
+      (action.type === 'tool_result' || action.type === 'tool_errored') &&
+      action.handles.includes(handle),
+  );
 
 /**
  * Encodes a result with its tool's schema, then reads it back exactly as history will (decode,

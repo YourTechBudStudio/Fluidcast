@@ -90,10 +90,19 @@ export type PausedStatus = 'paused' | 'workerFinished' | 'resultsReady';
 export type ComposerMode = 'compose' | 'busy' | 'retry' | 'retryClip' | 'offline';
 
 export type TimelineRow =
-  | { readonly kind: 'user'; readonly id: string; readonly text: string }
   /**
-   * A preloaded start waiting for Tap to start: its message, and the label of the context sent with it. The context's
-   * text is for the model only. After the tap, the message is an ordinary `user` row with the same ID.
+   * A message the listener sent. A submitted preloaded start's message keeps the label of the context or answered
+   * call sent with it; that call and its result make no rows of their own, since nothing was forwarded.
+   */
+  | {
+      readonly kind: 'user';
+      readonly id: string;
+      readonly text: string;
+      readonly contextLabel: string | null;
+    }
+  /**
+   * A preloaded start waiting for Tap to start: its message, and the label of the context or answered call sent with
+   * it. Their text is for the model only. After the tap, the message is an ordinary `user` row with the same ID.
    */
   | {
       readonly kind: 'preloaded';
@@ -506,7 +515,12 @@ function timelineOf(
   view.actions.forEach((action, i) => {
     switch (action.type) {
       case 'user_message':
-        rows.push({ kind: 'user', id: action.id, text: action.text });
+        rows.push({
+          kind: 'user',
+          id: action.id,
+          text: action.text,
+          contextLabel: action.id === view.started?.messageId ? view.started.label : null,
+        });
         break;
       case 'speak': {
         const previous = view.actions[i - 1];
@@ -553,6 +567,7 @@ function timelineOf(
           break;
         }
         if (isForward(action)) {
+          if (action.handle === view.started?.handle) break;
           rows.push({
             kind: 'forward',
             id: action.id,
@@ -588,6 +603,7 @@ function timelineOf(
       // A forward outcome has its own row where the model read it; other outcomes belong to their call's row.
       case 'tool_result':
       case 'tool_errored': {
+        if (view.started?.handle != null && action.handles.includes(view.started.handle)) break;
         const row = forwardResultRowOf(action);
         if (row) rows.push(row);
         break;
@@ -625,7 +641,7 @@ function timelineOf(
       kind: 'preloaded',
       id: view.start.message.id,
       text: view.start.message.text,
-      contextLabel: view.start.context?.label ?? null,
+      contextLabel: view.start.context?.label ?? view.start.call?.label ?? null,
     });
   if (moment === 'thinking') rows.push({ kind: 'pending', label: 'Thinking…' });
   if (moment === 'waiting') rows.push({ kind: 'pending', label: 'More on the way…' });

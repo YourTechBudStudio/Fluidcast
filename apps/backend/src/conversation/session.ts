@@ -38,12 +38,7 @@ import { lastAnswer, recordedEffort } from './claude-session.ts';
 import type { ClaudeEffort, PresetSection } from './config.ts';
 import { withGenerationLog } from './generation-log.ts';
 import type { LlmConfig } from './language-model.ts';
-import {
-  brainstormHook,
-  continueContextLabel,
-  continueMessage,
-  continueReminders,
-} from './modes.ts';
+import { brainstormHook, continueStart } from './modes.ts';
 import { withStructuredOutput } from './structured-output.ts';
 
 /** The conversation slice's resolved config. */
@@ -157,8 +152,8 @@ export const referenceTools = (forward: Tool): ReadonlyArray<Tool> => [
 /**
  * The Harness session config: the Guided Walkthrough preset in the configured profile and voice,
  * plus the speech format and tools. The preset is the only source of instructions, examples and
- * speakers. A continued session adds Continue's reminders over the preset's, and the preloaded
- * start with its stored last `answer` as context.
+ * speakers. A continued session adds Continue's preloaded start, with its stored last `answer` as
+ * an answered `forward_agent` call.
  */
 export const referenceSessionConfig = (
   preset: PresetSection,
@@ -171,13 +166,7 @@ export const referenceSessionConfig = (
     ...walkthrough,
     speechFormat,
     tools,
-    ...(continued && {
-      reminders: continueReminders(walkthrough.reminders),
-      start: {
-        message: continueMessage,
-        context: { label: continueContextLabel, text: continued.answer },
-      },
-    }),
+    ...(continued && { start: continueStart(continued.answer) }),
   };
 };
 

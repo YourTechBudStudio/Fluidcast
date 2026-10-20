@@ -42,11 +42,24 @@ export interface SessionConfig {
   readonly reminders?: Reminders;
   /**
    * A preloaded start, fixed by the application: the session waits in `ready` until a `Start`
-   * command submits `context` (if any) and then `message`, and only then generates. The listener
-   * cannot edit it. Building the session throws on a blank `message` or `label`.
+   * command submits `context` (if any), then `message`, then `call` (if any), and only then
+   * generates. The listener cannot edit it. Building the session throws on a blank `message` or
+   * `label`, or on a `call` its tool cannot decode.
    */
   readonly start?: {
     readonly message: string;
     readonly context?: { readonly label: string; readonly text: string };
+    /**
+     * A call the voice reads as its own, already answered: the start appends it, with `input` as
+     * written and handle `call_1`, then its `result`, so the first generation reads the result
+     * where its own call's would be. It never executes. `label` names it for clients, like a
+     * context's; `result` is the tool's decoded result type.
+     */
+    readonly call?: {
+      readonly label: string;
+      readonly tool: string;
+      readonly input: Record<string, Schema.Json>;
+      readonly result: unknown;
+    };
   };
 }

@@ -52,6 +52,7 @@ const state = (actions: ReadonlyArray<Action>, cursor: number): SessionState => 
   pendingProgress: [],
   replay: null,
   start: null,
+  started: null,
   paused: false,
   speakers: [{ id: 'host', name: 'Host' }],
   speech: { mimeType: 'audio/ogg' },
@@ -422,11 +423,11 @@ describe('Client', () => {
         const context = { type: 'context', id: ActionId.make('c'), label: 'L', text: 'T' } as const;
         yield* connection.send({
           _tag: 'Snapshot',
-          state: { ...state([], 0), generation: 'idle', start: { message, context } },
+          state: { ...state([], 0), generation: 'idle', start: { message, context, call: null } },
         });
         const ready = Option.getOrThrow(yield* eventually(client.view.get, Option.isSome));
         assert.equal(ready.phase, 'ready');
-        assert.deepEqual(ready.start, { message, context });
+        assert.deepEqual(ready.start, { message, context, call: null });
         assert.deepEqual(ready.actions, []);
 
         yield* client.start();

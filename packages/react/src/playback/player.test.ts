@@ -41,6 +41,7 @@ const viewOf = (paused: boolean): ConversationView => ({
   executions: [],
   pendingResults: [],
   start: null,
+  started: null,
   presented: undefined,
 });
 

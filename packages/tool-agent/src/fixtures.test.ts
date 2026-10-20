@@ -53,6 +53,7 @@ export const stateOf = (
   pendingProgress: [],
   replay: null,
   start: null,
+  started: null,
   paused: false,
   speakers: extra.speakers ?? [{ id: 'host', name: 'Host' }],
   speech: { mimeType: 'audio/ogg' },

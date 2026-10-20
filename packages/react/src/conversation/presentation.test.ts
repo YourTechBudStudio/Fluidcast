@@ -105,6 +105,7 @@ const view = (partial: Partial<ConversationView>): ConversationView => ({
   executions: [],
   pendingResults: [],
   start: null,
+  started: null,
   presented: undefined,
   ...partial,
 });
@@ -378,7 +379,11 @@ describe('transport', () => {
       view({
         phase: 'ready',
         frontierPhase: 'ready',
-        start: { message: { type: 'user_message', id: aid('m1'), text: 'Go.' }, context: null },
+        start: {
+          message: { type: 'user_message', id: aid('m1'), text: 'Go.' },
+          context: null,
+          call: null,
+        },
         controls: controls({ play: true }),
       }),
     );
@@ -1008,7 +1013,7 @@ describe('a preloaded start', () => {
   } as const;
 
   it('waits for Tap to start, previewing its message, with the composer off', () => {
-    const p = presentOf(view({ phase: 'ready', start: { message, context } }));
+    const p = presentOf(view({ phase: 'ready', start: { message, context, call: null } }));
     expect(p.moment).toBe('ready');
     expect(p.status).toBe('ready');
     expect(p.composer).toBe('offline');
@@ -1028,17 +1033,79 @@ describe('a preloaded start', () => {
     expect(JSON.stringify(p.timeline)).not.toContain('SECRET-CONTEXT');
   });
 
+  it('labels a start that opens with an answered call by the call', () => {
+    const lastAnswer = {
+      label: 'My last answer',
+      call: {
+        type: 'tool_call',
+        id: aid('c1'),
+        handle: 'call_1',
+        tool: 'forward_agent',
+        input: {},
+      },
+      result: {
+        type: 'tool_result',
+        id: aid('r1'),
+        handles: ['call_1'],
+        tool: 'forward_agent',
+        result: { messages: ['SECRET-REPLY'] },
+      },
+    } as const;
+    const p = presentOf(
+      view({ phase: 'ready', start: { message, context: null, call: lastAnswer } }),
+    );
+    expect(rowOf(p.timeline, 'preloaded')).toEqual([
+      { kind: 'preloaded', id: 'm1', text: 'Walk me through it.', contextLabel: 'My last answer' },
+    ]);
+    expect(JSON.stringify(p.timeline)).not.toContain('SECRET-REPLY');
+  });
+
+  it("shows a sent answered call as the message's context, with no forward rows", () => {
+    const forward = {
+      type: 'tool_call',
+      id: aid('c1'),
+      handle: 'call_1',
+      tool: 'forward_agent',
+      input: {},
+    } as const;
+    const result = {
+      type: 'tool_result',
+      id: aid('r1'),
+      handles: ['call_1'],
+      tool: 'forward_agent',
+      result: { messages: ['SECRET-REPLY'] },
+    } as const;
+    const p = presentOf(
+      view({
+        actions: [message, forward, result],
+        phase: 'working',
+        started: { messageId: aid('m1'), label: 'My last answer', handle: 'call_1' },
+      }),
+    );
+    expect(p.timeline).toEqual([
+      { kind: 'user', id: 'm1', text: 'Walk me through it.', contextLabel: 'My last answer' },
+      { kind: 'pending', label: 'Thinking…' },
+    ]);
+    expect(JSON.stringify(p.timeline)).not.toContain('SECRET-REPLY');
+  });
+
   it('marks no context label when the start has none', () => {
-    const p = presentOf(view({ phase: 'ready', start: { message, context: null } }));
+    const p = presentOf(view({ phase: 'ready', start: { message, context: null, call: null } }));
     expect(rowOf(p.timeline, 'preloaded')).toEqual([
       { kind: 'preloaded', id: 'm1', text: 'Walk me through it.', contextLabel: null },
     ]);
   });
 
-  it('becomes an ordinary message once sent, and its context makes no row', () => {
-    const p = presentOf(view({ actions: [context, message], phase: 'working' }));
+  it('becomes an ordinary message once sent, keeping its context label, and its context makes no row', () => {
+    const p = presentOf(
+      view({
+        actions: [context, message],
+        phase: 'working',
+        started: { messageId: aid('m1'), label: 'My last answer', handle: null },
+      }),
+    );
     expect(p.timeline).toEqual([
-      { kind: 'user', id: 'm1', text: 'Walk me through it.' },
+      { kind: 'user', id: 'm1', text: 'Walk me through it.', contextLabel: 'My last answer' },
       { kind: 'pending', label: 'Thinking…' },
     ]);
     expect(p.subtitle).toMatchObject({ key: 'm1', tone: 'you' });

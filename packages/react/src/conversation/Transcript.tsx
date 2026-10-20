@@ -121,6 +121,7 @@ function TimelineItem({
           <p className="mt-0.5 rounded-[6px_16px_16px_16px] border border-line/35 bg-elevated/70 px-3.5 py-2.5 text-fg">
             {row.text}
           </p>
+          {row.contextLabel !== null && <SentWith label={row.contextLabel} />}
         </Row>
       );
     // Nothing has been sent yet: a dashed, fainter bubble until Tap to start.
@@ -134,12 +135,7 @@ function TimelineItem({
           <p className="mt-0.5 rounded-[6px_16px_16px_16px] border border-dashed border-violet/40 bg-elevated/35 px-3.5 py-2.5 text-fg-muted">
             {row.text}
           </p>
-          {row.contextLabel !== null && (
-            <p className="mt-2 flex items-center gap-1.5 text-[13px] text-fg-subtle">
-              <FileText size={13} strokeWidth={1.8} aria-hidden />
-              Sent with context: {row.contextLabel.toLowerCase()}
-            </p>
-          )}
+          {row.contextLabel !== null && <SentWith label={row.contextLabel} />}
           <p className="mt-2 text-[13px] text-fg-subtle">Sent when you tap to start.</p>
         </Row>
       );
@@ -366,6 +362,16 @@ function ForwardRow({
       </Head>
       {note && <p className="mt-0.5 text-[13.5px] text-fg-subtle">{note}</p>}
     </Row>
+  );
+}
+
+/** What was sent with a preloaded start's message: its context, or the reply it continues. */
+function SentWith({ label }: { readonly label: string }) {
+  return (
+    <p className="mt-2 flex items-center gap-1.5 text-[13px] text-fg-subtle">
+      <FileText size={13} strokeWidth={1.8} aria-hidden />
+      Sent with context: {label.toLowerCase()}
+    </p>
   );
 }
 

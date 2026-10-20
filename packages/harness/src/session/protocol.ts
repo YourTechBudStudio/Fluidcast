@@ -9,6 +9,7 @@ import {
   Action,
   ActionId,
   LabeledContext,
+  ToolCall,
   ToolErrored,
   ToolProgress,
   ToolResult,
@@ -62,12 +63,35 @@ export type PendingResult = typeof PendingResult.Type;
 export const PendingProgress = Schema.Struct({ executionId: ExecutionId, text: Schema.String });
 export type PendingProgress = typeof PendingProgress.Type;
 
-/** A preloaded start waiting for `Start`: its message, and the context read before it. */
+/** A preloaded start's answered call: the call, its result, and the label clients show for it. */
+export const PendingCall = Schema.Struct({
+  label: Schema.String,
+  call: ToolCall,
+  result: ToolResult,
+});
+export type PendingCall = typeof PendingCall.Type;
+
+/**
+ * A preloaded start waiting for `Start`: its message, the context read before it, and the answered
+ * call read after it.
+ */
 export const PendingStart = Schema.Struct({
   message: UserMessage,
   context: Schema.NullOr(LabeledContext),
+  call: Schema.NullOr(PendingCall),
 });
 export type PendingStart = typeof PendingStart.Type;
+
+/**
+ * A submitted preloaded start, kept for clients after its actions joined the log: its message, the
+ * label of its context or answered call, and the answered call's handle.
+ */
+export const SubmittedStart = Schema.Struct({
+  messageId: ActionId,
+  label: Schema.NullOr(Schema.String),
+  handle: Schema.NullOr(Schema.String),
+});
+export type SubmittedStart = typeof SubmittedStart.Type;
 
 /**
  * The session state that snapshots carry and events fold into.
@@ -81,7 +105,7 @@ export type PendingStart = typeof PendingStart.Type;
  * - `pendingProgress` holds at most one progress update per open execution, the latest, kept while
  *   it could not be used (paused, or replacing one kept earlier). Submitted with the results.
  * - `start` is a preloaded start waiting for `Start`. Like `pendingResults`, it is beside the log
- *   until submitted.
+ *   until submitted. `started` then records it, so clients can still tell its actions apart.
  * - `paused` holds presentation and new iterations (`Pause`, `Play`). Running generation and tools
  *   continue. Orthogonal to the phase.
  * - `speakers` and `speech` are fixed by the session's config and never change.
@@ -96,6 +120,7 @@ export const SessionState = Schema.Struct({
   pendingProgress: Schema.Array(PendingProgress),
   replay: Schema.NullOr(Schema.Int),
   start: Schema.NullOr(PendingStart),
+  started: Schema.NullOr(SubmittedStart),
   paused: Schema.Boolean,
   speakers: Schema.Array(SpeakerLabel),
   speech: Schema.Struct({ mimeType: Schema.String }),
@@ -158,7 +183,10 @@ export const ResultsSubmitted = Schema.TaggedStruct('ResultsSubmitted', {
 export const ProgressQueued = Schema.TaggedStruct('ProgressQueued', PendingProgress.fields);
 /** Every kept progress update was dropped: a halt means none can be submitted. */
 export const ProgressDiscarded = Schema.TaggedStruct('ProgressDiscarded', {});
-/** The preloaded start was submitted: its context, then its message, are appended to the log. */
+/**
+ * The preloaded start was submitted: its context, its message, then its call and the call's result
+ * are appended to the log.
+ */
 export const StartSubmitted = Schema.TaggedStruct('StartSubmitted', {});
 /** The replay position moved, or ended (`null`). Any outstanding playback is cleared. */
 export const ReplayMoved = Schema.TaggedStruct('ReplayMoved', {
@@ -341,11 +369,21 @@ export const reduce = (state: SessionState, event: SessionEvent): SessionState =
       return { ...state, pendingProgress: [] };
     case 'StartSubmitted': {
       if (state.start === null) return state;
-      const { message, context } = state.start;
+      const { message, context, call } = state.start;
       return {
         ...state,
-        actions: [...state.actions, ...(context === null ? [] : [context]), message],
+        actions: [
+          ...state.actions,
+          ...(context === null ? [] : [context]),
+          message,
+          ...(call === null ? [] : [call.call, call.result]),
+        ],
         start: null,
+        started: {
+          messageId: message.id,
+          label: context?.label ?? call?.label ?? null,
+          handle: call?.call.handle ?? null,
+        },
       };
     }
     case 'ReplayMoved':

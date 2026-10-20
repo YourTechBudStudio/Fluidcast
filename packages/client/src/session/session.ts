@@ -49,6 +49,8 @@ export interface ConversationView {
   readonly pendingResults: SessionState['pendingResults'];
   /** A preloaded start waiting for `start()`, or `null`: show its message as preloaded. */
   readonly start: SessionState['start'];
+  /** The preloaded start once submitted, or `null`: its message, label and answered call. */
+  readonly started: SessionState['started'];
   /** The speak being presented: at the replay position while replaying, else at the cursor. */
   readonly presented: Speak | undefined;
 }
@@ -111,6 +113,7 @@ export const makeSession = (transport: Transport['Service'], audio: Audio) =>
             executions: state.executions,
             pendingResults: state.pendingResults,
             start: state.start,
+            started: state.started,
             presented: presentedSpeak(state),
           }),
         );

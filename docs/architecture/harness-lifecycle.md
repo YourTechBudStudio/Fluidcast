@@ -23,7 +23,7 @@ Tool outcomes wait as session state until the harness submits them; only then do
 
 ## Preloaded start
 
-An application can create a session with a **preloaded start**: a first user message, optionally with labeled context the voice reads alongside it, such as the last reply of a resumed worker. It is part of session state, so clients can show the session as ready to start. Nothing is generated until a Start command sends it; the message then begins the first agentic turn like any other user input.
+An application can create a session with a **preloaded start**: a first user message, optionally with labeled context the voice reads alongside it, or an already-answered tool call after it. It is part of session state, so clients can show the session as ready to start. Nothing is generated until a Start command sends it; the message then begins the first agentic turn like any other user input. An answered call is never executed: the voice reads its result as it reads any result of its own. To continue a worker session, present its last reply as an answered `forward_agent` call rather than as context; as context, the voice put the reply's questions on screen instead of asking them.
 
 ## Playback and history
 

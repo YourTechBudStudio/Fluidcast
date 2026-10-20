@@ -27,6 +27,7 @@ const EMPTY: ConversationView = {
   executions: [],
   pendingResults: [],
   start: null,
+  started: null,
   presented: undefined,
 };
 

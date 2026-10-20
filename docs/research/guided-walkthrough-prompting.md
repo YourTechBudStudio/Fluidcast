@@ -78,6 +78,21 @@ A mini eval (7 cases × 1 run, scripted Continue listener, no judges) against th
 
 The lesson matches the loop's: the examples set the shape (Qwen copied the walk-through line almost exactly), and a stated goal ("so they can skim the screen") generalized where a length limit had not.
 
+## Questions shown instead of asked
+
+In October 2026, a live session continuing a brainstorming worker showed the reply's four numbered questions on one screen, then a Continue checkpoint, so the listener could never answer them. A replay with the live setup (Qwen, `detailed`, the reply as a preloaded `<context>`) reproduced it in 3 of 9 runs. A role-based hill-climb over 13 real question-heavy replies (8 dev, 5 held-out) followed; blind judges scored each run against the reply's gold questions.
+
+| Change                                                        | Questions with their own slot (dev / held-out)                      |
+| ------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Continuation as `<context>` (before)                          | 0.70 / 0.97, with 2 and 4 runs ending on a Continue after questions |
+| The reply as an answered `forward_agent` call                 | 0.87 dev; hidden questions 11 → 1                                   |
+| Plus one sentence on the reply, continue and answer reminders | 0.97 / 1.00, no catch-all asks, less invented content               |
+
+- The sentence is "Never put the result's questions on a screen: ask each one in its own `text` ask, with the setup it needs, where it comes up." Leaving it off the answer reminder brought a catch-all ask back. Saying `text` follows the listener's preference for free-text answers and removes invented filler options such as "Both".
+- A hard "ask right away" rule traded away setup and invented options; a worked example with multi-select asks taught the voice to merge questions.
+- On Claude (no structured output, 2 runs per case), the same change made Sonnet 5.5 at low effort the most faithful voice tested: every held-out question asked, nothing invented, 98% of asks in free text, about $0.06 per walkthrough. Haiku 5.5 was 15–20× cheaper but dropped about one important point per walkthrough. 4 of about 1,600 Claude replies were malformed JSON.
+- Still open: about 1 run in 16 turns an inline "tell me if this is wrong" into a Continue, and long replies still get 6–7 Continues in a row.
+
 ## Lessons about the measurement
 
 - Freeze the scripted listener and rubric before tuning, or re-measure the incumbent whenever either changes; both changed several times here, which is why dev gains cannot be summed.
