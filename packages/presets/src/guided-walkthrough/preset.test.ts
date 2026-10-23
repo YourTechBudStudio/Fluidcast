@@ -46,7 +46,7 @@ const evaluatedContinueAskClause =
   'otherwise one `ask` with `kind: "choice"`, a short question such as "Ready for the next part?" and the single option "Continue".';
 
 const askGuideline =
-  '- Use `ask` for one question that needs the listener\'s answer. `ask` blocks: the conversation waits for the answer, which arrives as a `<tool_result>`. `kind: "continue"` is a checkpoint the listener only acknowledges with a Continue button; every other kind can also be answered in the listener\'s own words.';
+  '- Use `ask` for one question that needs the listener\'s answer. `ask` blocks: the conversation waits for the answer, which arrives as a `<tool_result>`. `kind: "continue"` is a checkpoint the listener acknowledges with a Continue button, optionally with a note; every other kind can also be answered in the listener\'s own words.';
 const evaluatedAskGuideline =
   "- Use `ask` for one question that needs the listener's answer. `ask` blocks: the conversation waits for the answer, which arrives as a `<tool_result>`. The listener can always answer in their own words.";
 
@@ -87,7 +87,7 @@ const walkThroughSpeech =
  *    each example screen, one per point, that walk the listener through it.
  * 7. The `continue` Ask kind: the segment-ending ask bullet asks with `kind: "continue"` instead of a
  *    choice with the single option "Continue"; the `Ask` type gains a `continue` branch; the `ask`
- *    guideline names it; and the examples' two Continue asks use it. Their results still read
+ *    guideline names it, optionally with a note; and the examples' two Continue asks use it. Their results still read
  *    `Answer: Continue`.
  */
 describe('the detailed Guided Walkthrough', () => {
@@ -213,6 +213,15 @@ describe('guidedWalkthrough reminders', () => {
 
   it('reminds to present the next segment after a continue answer', () => {
     assert.equal(reminders(ask({ kind: 'continue' })), reminderTexts.continue);
+  });
+
+  it('treats a continue with a note as an answer, and a blank note as no note', () => {
+    assert.equal(
+      reminders(ask({ kind: 'continue', text: 'Check the retry path later' })),
+      reminderTexts.answer,
+    );
+    assert.equal(reminders(ask({ kind: 'continue', text: '' })), reminderTexts.continue);
+    assert.equal(reminders(ask({ kind: 'continue', text: ' \n ' })), reminderTexts.continue);
   });
 
   it('treats any other answer as an answer, however it reads', () => {

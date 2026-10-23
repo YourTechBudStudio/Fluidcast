@@ -1,6 +1,6 @@
 import type { ReminderEvent } from '@yourtechbudstudio/fluidcast-core/generation';
 import { forwardToolName } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
-import { type AskResult, askToolName } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
+import { askNote, type AskResult, askToolName } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 
 /**
  * Without it, the voice put a result's questions on a screen and moved on with a checkpoint, so
@@ -36,5 +36,9 @@ export const reminders = (event: ReminderEvent): string | undefined => {
   if (event.tool !== askToolName) return undefined;
   // Core decoded it with the Ask tool's `result` schema.
   const { answer } = event.result as AskResult;
-  return answer.kind === 'continue' ? reminderTexts.continue : reminderTexts.answer;
+  // A Continue with a note gets `answer`: on `continue`, the voice responded to notes and forwarded
+  // early (measured on Sonnet in October 2026).
+  return answer.kind === 'continue' && askNote(answer) === undefined
+    ? reminderTexts.continue
+    : reminderTexts.answer;
 };

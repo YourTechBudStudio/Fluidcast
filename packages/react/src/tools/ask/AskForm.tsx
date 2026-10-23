@@ -15,6 +15,7 @@ import { AskAnswer } from './AskCard';
 import {
   ASK_KIND_LABEL,
   type AskDraft,
+  answerForContinue,
   answerForOption,
   answerForSend,
   optionsOf,
@@ -42,8 +43,8 @@ export interface AskFormProps {
 /**
  * One question in place of the composer, without chrome: the dock around it owns the surface. A header names the
  * kind and holds Interrupt; the question stays put while the body below it swaps between the open form and the
- * answer as sent. Options are a quiet list of rows, and free text is the last row, for every kind except `continue`,
- * a checkpoint answered only with its full-width Continue button. Interrupt declines the question without answering
+ * answer as sent. Options are a quiet list of rows, and free text is the last row. A `continue` checkpoint has only
+ * the free-text row, for an optional note, above its full-width Continue button, which sends the note. Interrupt declines the question without answering
  * it, stops the narration, and hands back the composer for what the listener wants to say instead.
  */
 export function AskForm({
@@ -77,7 +78,7 @@ export function AskForm({
   };
   const choose = (index: number) => {
     if (blocked) return;
-    if (checkpoint) submit({ kind: 'continue' });
+    if (checkpoint) submit(answerForContinue(draft));
     else if (multi) setDraft((current) => toggled(current, index));
     else submit(answerForOption(input, draft, index));
   };
@@ -187,21 +188,33 @@ export function AskForm({
               </div>
             )}
             {checkpoint ? (
-              <Button
-                tone="primary"
-                unavailable={blocked}
-                aria-keyshortcuts="Enter 1"
-                onClick={() => choose(0)}
-                className="mt-3.5 min-h-12 w-full rounded-sm"
-              >
-                Continue
-                <kbd
-                  aria-hidden
-                  className="grid place-items-center rounded-[4px] bg-on-accent/12 px-1 py-0.5 text-on-accent/65 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-on-accent)_18%,transparent)]"
+              <>
+                <FreeText
+                  box={box}
+                  text={draft.text}
+                  divided={false}
+                  placeholder="Add a note…"
+                  label="Your note"
+                  disabled={disabled}
+                  onText={(text) => setDraft((current) => ({ ...current, text }))}
+                  onSend={() => choose(0)}
+                />
+                <Button
+                  tone="primary"
+                  unavailable={blocked}
+                  aria-keyshortcuts="Enter 1"
+                  onClick={() => choose(0)}
+                  className="mt-3.5 min-h-12 w-full rounded-sm"
                 >
-                  <CornerDownLeft size={12} strokeWidth={2.2} />
-                </kbd>
-              </Button>
+                  Continue
+                  <kbd
+                    aria-hidden
+                    className="grid place-items-center rounded-[4px] bg-on-accent/12 px-1 py-0.5 text-on-accent/65 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-on-accent)_18%,transparent)]"
+                  >
+                    <CornerDownLeft size={12} strokeWidth={2.2} />
+                  </kbd>
+                </Button>
+              </>
             ) : (
               <FreeText
                 box={box}
@@ -214,9 +227,12 @@ export function AskForm({
                       ? 'Add a note…'
                       : 'Something else…'
                 }
+                label="Your answer"
                 disabled={disabled}
-                canSend={!blocked && sendable !== undefined}
-                sendLabel={multi && picks > 0 ? `Send ${picks}` : undefined}
+                send={{
+                  enabled: !blocked && sendable !== undefined,
+                  label: multi && picks > 0 ? `Send ${picks}` : undefined,
+                }}
                 onText={(text) => setDraft((current) => ({ ...current, text }))}
                 onSend={() => submit(sendable)}
               />
@@ -252,17 +268,19 @@ function AskingLabel({
 }
 
 /**
- * The free-text row: the Ask's always-present escape hatch, and the whole answer for an open question. Below options
- * a divider sets it apart; alone, it needs none. It has no box at rest; a cyan edge shows only while it has focus.
+ * The free-text row: the Ask's always-present escape hatch, the whole answer for an open question, and a checkpoint's
+ * note. Below options a divider sets it apart; alone, it needs none. It has no box at rest; a cyan edge shows only
+ * while it has focus. Enter sends; without `send`, the row has no send button of its own, as at a checkpoint, where
+ * Continue is the send.
  */
 function FreeText({
   box,
   text,
   divided,
   placeholder,
+  label,
   disabled,
-  canSend,
-  sendLabel,
+  send,
   onText,
   onSend,
 }: {
@@ -270,9 +288,11 @@ function FreeText({
   readonly text: string;
   readonly divided: boolean;
   readonly placeholder: string;
+  /** The textarea's accessible name. */
+  readonly label: string;
   readonly disabled: boolean;
-  readonly canSend: boolean;
-  readonly sendLabel: string | undefined;
+  /** The row's send button: whether it can send, and its label when it names more than the icon. */
+  readonly send?: { readonly enabled: boolean; readonly label: string | undefined };
   readonly onText: (text: string) => void;
   readonly onSend: () => void;
 }) {
@@ -305,18 +325,20 @@ function FreeText({
           onChange={(event) => onText(event.target.value)}
           onKeyDown={onKeyDown}
           placeholder={placeholder}
-          aria-label="Your answer"
+          aria-label={label}
           className="max-h-30 min-h-11 min-w-0 flex-1 resize-none bg-transparent py-[11px] text-[15.5px] leading-[22px] text-fg outline-none placeholder:text-fg-subtle disabled:cursor-not-allowed disabled:text-fg-subtle"
         />
-        <Button
-          tone={canSend ? 'primary' : 'quiet'}
-          unavailable={!canSend}
-          aria-label={sendLabel ?? 'Send answer'}
-          icon={<ArrowUp size={16} strokeWidth={1.9} aria-hidden />}
-          onClick={onSend}
-        >
-          {sendLabel}
-        </Button>
+        {send && (
+          <Button
+            tone={send.enabled ? 'primary' : 'quiet'}
+            unavailable={!send.enabled}
+            aria-label={send.label ?? 'Send answer'}
+            icon={<ArrowUp size={16} strokeWidth={1.9} aria-hidden />}
+            onClick={onSend}
+          >
+            {send.label}
+          </Button>
+        )}
       </div>
     </div>
   );

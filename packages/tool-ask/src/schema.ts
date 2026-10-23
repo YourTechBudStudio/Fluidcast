@@ -17,7 +17,7 @@ const Question = Schema.String.annotate({ description: 'Exactly one question.' }
 
 /**
  * What the model writes: one question, answered in free text or by choosing among options, or a
- * `continue` checkpoint the listener only acknowledges.
+ * `continue` checkpoint the listener acknowledges, optionally with a note.
  */
 export const AskInput = Schema.Union([
   Schema.Struct({ kind: Schema.Literal('text'), question: Question }),
@@ -28,8 +28,8 @@ export const AskInput = Schema.Union([
 export type AskInput = typeof AskInput.Type;
 
 /**
- * Every answer shape a client can send. A `choice` or `multi` answer may carry free text the
- * listener typed alongside; a `continue` answer carries nothing. Which answers a given question
+ * Every answer shape a client can send. A `choice`, `multi` or `continue` answer may carry free text
+ * the listener typed alongside: for `continue`, a note on the segment. Which answers a given question
  * accepts is `askAnswerSchema`.
  */
 export const AskCommand = Schema.Union([
@@ -44,9 +44,19 @@ export const AskCommand = Schema.Union([
     choices: Schema.Array(Schema.NonEmptyString).check(Schema.isMinLength(1)),
     text: Schema.optionalKey(Schema.String),
   }),
-  Schema.Struct({ kind: Schema.Literal('continue') }),
+  Schema.Struct({ kind: Schema.Literal('continue'), text: Schema.optionalKey(Schema.String) }),
 ]);
 export type AskCommand = typeof AskCommand.Type;
+
+/**
+ * The free text a `choice`, `multi` or `continue` answer carries alongside, trimmed; `undefined` when
+ * it is blank or absent. A `text` answer's text is the answer itself, not a note, so it has none.
+ */
+export const askNote = (answer: AskCommand): string | undefined => {
+  if (answer.kind === 'text') return undefined;
+  const note = answer.text?.trim();
+  return note ? note : undefined;
+};
 
 /** The question as asked and the listener's answer. */
 export const AskResult = Schema.Struct({ question: Schema.String, answer: AskCommand });

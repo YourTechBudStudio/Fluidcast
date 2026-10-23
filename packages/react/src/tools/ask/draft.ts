@@ -1,4 +1,8 @@
-import type { AskCommand, AskInput } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
+import {
+  type AskCommand,
+  type AskInput,
+  askNote,
+} from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 
 /** What each kind asks of the listener, as the dock's label and the transcript heading name it. */
 export const ASK_KIND_LABEL: Record<AskInput['kind'], string> = {
@@ -47,7 +51,8 @@ export function toggled(draft: AskDraft, index: number): AskDraft {
 
 /**
  * The answer the Send button gives: the `multi` picks with any typed text, or else the typed text alone as a `text`
- * answer. `undefined` when there is nothing to send, and always for `continue`, which has no Send.
+ * answer. `undefined` when there is nothing to send, and always for `continue`, whose send is Continue
+ * (`answerForContinue`).
  */
 export function answerForSend(input: AskInput, draft: AskDraft): AskCommand | undefined {
   if (input.kind === 'continue') return undefined;
@@ -63,6 +68,12 @@ export function answerForSend(input: AskInput, draft: AskDraft): AskCommand | un
   return text ? { kind: 'text', text } : undefined;
 }
 
+/** The answer a checkpoint's Continue gives: Continue, with the typed note when there is one. */
+export const answerForContinue = (draft: AskDraft): AskCommand => ({
+  kind: 'continue',
+  ...withText(draft.text),
+});
+
 /** The labels an answer chose, if any: a `continue` answer chose Continue. */
 export const chosenOf = (answer: AskCommand | null | undefined): readonly string[] => {
   switch (answer?.kind) {
@@ -77,6 +88,9 @@ export const chosenOf = (answer: AskCommand | null | undefined): readonly string
   }
 };
 
-/** Any free text the listener typed with an answer. A `continue` answer has none. */
+/**
+ * Any free text the listener typed with an answer: a `text` answer's own words, or the note given alongside a pick or a
+ * Continue (`askNote`), which is `undefined` when blank.
+ */
 export const typedOf = (answer: AskCommand | null | undefined): string | undefined =>
-  answer && answer.kind !== 'continue' ? answer.text : undefined;
+  !answer ? undefined : answer.kind === 'text' ? answer.text : askNote(answer);

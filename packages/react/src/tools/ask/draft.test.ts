@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import type { AskInput } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 
-import { answerForOption, answerForSend, chosenOf, optionsOf, toggled, typedOf } from './draft';
+import {
+  answerForContinue,
+  answerForOption,
+  answerForSend,
+  chosenOf,
+  optionsOf,
+  toggled,
+  typedOf,
+} from './draft';
 
 const options = [{ label: 'Client' }, { label: 'Server' }, { label: 'Both' }];
 const choice: AskInput = { kind: 'choice', question: 'Who?', options };
@@ -54,11 +62,23 @@ describe('the Ask draft', () => {
     expect(chosenOf(null)).toEqual([]);
   });
 
-  it('reads the text typed with an answer, which a continue answer never has', () => {
+  it('reads the text typed with an answer, including a continue note, and nothing when blank', () => {
     expect(typedOf({ kind: 'choice', choice: 'Client', text: 'mostly' })).toBe('mostly');
+    expect(typedOf({ kind: 'choice', choice: 'Client', text: '  ' })).toBeUndefined();
     expect(typedOf({ kind: 'text', text: 'x' })).toBe('x');
+    expect(typedOf({ kind: 'continue', text: ' later ' })).toBe('later');
+    expect(typedOf({ kind: 'continue', text: ' ' })).toBeUndefined();
     expect(typedOf({ kind: 'continue' })).toBeUndefined();
     expect(typedOf(null)).toBeUndefined();
+  });
+
+  it('continues with the typed note, trimmed, or plainly when the note is blank', () => {
+    expect(answerForContinue({ text: '  check retries  ', picked: [] })).toEqual({
+      kind: 'continue',
+      text: 'check retries',
+    });
+    expect(answerForContinue({ text: ' \n ', picked: [] })).toEqual({ kind: 'continue' });
+    expect(answerForContinue({ text: '', picked: [] })).toEqual({ kind: 'continue' });
   });
 
   it('gives a continue checkpoint no options and nothing to send', () => {

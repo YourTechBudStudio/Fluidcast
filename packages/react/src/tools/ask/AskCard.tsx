@@ -59,7 +59,7 @@ export function AskCard({
 
 /**
  * An answer as one arrowed line: the options chosen, or the typed text when nothing was chosen. Text typed alongside
- * a choice follows as a quote, and a `continue` answer reads "Continued".
+ * a choice follows as a quote, and a `continue` answer reads "Continued", with its note, if any, quoted the same way.
  */
 export function AskAnswer({ answer }: { readonly answer: AskCommand }) {
   const chosen = chosenOf(answer);

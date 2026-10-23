@@ -2,7 +2,14 @@ import { Effect } from 'effect';
 
 import type { Tool } from '@yourtechbudstudio/fluidcast-harness';
 
-import { askAnswerSchema, AskCommand, AskInput, AskResult, askToolName } from './schema.ts';
+import {
+  askAnswerSchema,
+  AskCommand,
+  AskInput,
+  askNote,
+  AskResult,
+  askToolName,
+} from './schema.ts';
 
 export * from './schema.ts';
 
@@ -15,7 +22,7 @@ export const askTool = (): Tool<AskInput, AskResult, AskCommand> => ({
   name: askToolName,
   input: AskInput,
   guidelines: [
-    'Use `ask` for one question that needs the listener\'s answer. `ask` blocks: the conversation waits for the answer, which arrives as a `<tool_result>`. `kind: "continue"` is a checkpoint the listener only acknowledges with a Continue button; every other kind can also be answered in the listener\'s own words.',
+    'Use `ask` for one question that needs the listener\'s answer. `ask` blocks: the conversation waits for the answer, which arrives as a `<tool_result>`. `kind: "continue"` is a checkpoint the listener acknowledges with a Continue button, optionally with a note; every other kind can also be answered in the listener\'s own words.',
   ],
   result: AskResult,
   renderResult: renderAnswer,
@@ -25,7 +32,7 @@ export const askTool = (): Tool<AskInput, AskResult, AskCommand> => ({
     Effect.map(context.awaitCommand, (answer) => ({ question: input.question, answer })),
 });
 
-/** What the model reads: the question, the answer, and any free text given alongside options. */
+/** What the model reads: the question, the answer, and any free text given alongside options or Continue. */
 const renderAnswer = ({ question, answer }: AskResult): string => {
   const lines = [`Question: ${question}`];
   switch (answer.kind) {
@@ -42,12 +49,7 @@ const renderAnswer = ({ question, answer }: AskResult): string => {
       lines.push('Answer: Continue');
       break;
   }
-  if (
-    (answer.kind === 'choice' || answer.kind === 'multi') &&
-    answer.text !== undefined &&
-    answer.text.trim() !== ''
-  ) {
-    lines.push(`They added: ${answer.text.trim()}`);
-  }
+  const note = askNote(answer);
+  if (note !== undefined) lines.push(`They added: ${note}`);
   return lines.join('\n');
 };

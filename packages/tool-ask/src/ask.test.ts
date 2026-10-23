@@ -6,7 +6,7 @@ import { LanguageModel } from 'effect/ai';
 
 import { checkTools, generate } from '@yourtechbudstudio/fluidcast-core/generation';
 
-import { askAnswerSchema, askTool, type AskCommand, type AskInput } from './index.ts';
+import { askAnswerSchema, askNote, askTool, type AskCommand, type AskInput } from './index.ts';
 
 const options = [{ label: 'Client' }, { label: 'Server' }];
 const text: AskInput = { kind: 'text', question: 'Which client do you use?' };
@@ -68,12 +68,28 @@ describe('askAnswerSchema', () => {
 
   it('accepts only a continue answer for a continue question, and it for no other kind', () => {
     assert.ok(accepts(checkpoint, { kind: 'continue' }));
+    assert.ok(accepts(checkpoint, { kind: 'continue', text: 'Check the retry path later' }));
     assert.ok(!accepts(checkpoint, { kind: 'text', text: 'next' }));
     assert.ok(!accepts(checkpoint, { kind: 'choice', choice: 'Continue' }));
     assert.ok(!accepts(checkpoint, { kind: 'multi', choices: ['Continue'] }));
     for (const input of [text, choice, multi]) {
       assert.ok(!accepts(input, { kind: 'continue' }));
     }
+  });
+});
+
+describe('askNote', () => {
+  it('reads the trimmed text alongside a choice, multi or continue answer, and nothing when blank', () => {
+    assert.equal(askNote({ kind: 'choice', choice: 'Client', text: '  mostly ' }), 'mostly');
+    assert.equal(askNote({ kind: 'multi', choices: ['Client'], text: 'both?' }), 'both?');
+    assert.equal(askNote({ kind: 'continue', text: ' later ' }), 'later');
+    assert.equal(askNote({ kind: 'continue', text: ' \n ' }), undefined);
+    assert.equal(askNote({ kind: 'continue' }), undefined);
+    assert.equal(askNote({ kind: 'choice', choice: 'Client' }), undefined);
+  });
+
+  it('gives a text answer no note: its text is the answer', () => {
+    assert.equal(askNote({ kind: 'text', text: 'Firefox' }), undefined);
   });
 });
 
@@ -115,6 +131,14 @@ describe('askTool', () => {
     );
     assert.equal(
       await render(checkpoint, { kind: 'continue' }),
+      'Question: Ready for the next part?\nAnswer: Continue',
+    );
+    assert.equal(
+      await render(checkpoint, { kind: 'continue', text: ' Check the retry path later ' }),
+      'Question: Ready for the next part?\nAnswer: Continue\nThey added: Check the retry path later',
+    );
+    assert.equal(
+      await render(checkpoint, { kind: 'continue', text: '   ' }),
       'Question: Ready for the next part?\nAnswer: Continue',
     );
   });

@@ -359,6 +359,23 @@ describe('conversationSince', () => {
     );
   });
 
+  it('renders a continue checkpoint with a note as Continue and what they added', () => {
+    const state = stateOf(
+      actions(
+        toolCall('call_1', 'ask', { kind: 'continue', question: 'Ready for the next part?' }),
+        result(['call_1'], 'ask', {
+          question: 'Ready for the next part?',
+          answer: { kind: 'continue', text: '  Check the retry path later ' },
+        }),
+        forwardCall('call_2'),
+      ),
+    );
+    assert.equal(
+      renderConversation(handoffFor(state, undefined).conversation),
+      '**Question:** Ready for the next part?\n**Answer:** Continue — they added: Check the retry path later',
+    );
+  });
+
   it('labels speakers only with several, splits paragraphs by speaker, and ignores omitted actions', () => {
     const log = actions(
       speak('Hello.', 'host'),

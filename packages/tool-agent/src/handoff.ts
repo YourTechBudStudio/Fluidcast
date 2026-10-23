@@ -12,6 +12,7 @@ import {
 } from '@yourtechbudstudio/fluidcast-harness/protocol';
 import {
   AskInput,
+  askNote,
   AskResult,
   askToolName,
   type AskCommand,
@@ -236,13 +237,17 @@ const renderAnswer = (answer: AskCommand | undefined): string => {
     case 'text':
       return answer.text;
     case 'choice':
-    case 'multi': {
-      const chosen = answer.kind === 'choice' ? answer.choice : answer.choices.join('; ');
-      const added = answer.text?.trim() ?? '';
-      return added === '' ? chosen : `${chosen} — they added: ${added}`;
+    case 'multi':
+    case 'continue': {
+      const chosen =
+        answer.kind === 'choice'
+          ? answer.choice
+          : answer.kind === 'multi'
+            ? answer.choices.join('; ')
+            : 'Continue';
+      const note = askNote(answer);
+      return note === undefined ? chosen : `${chosen} — they added: ${note}`;
     }
-    case 'continue':
-      return 'Continue';
   }
 };
 
