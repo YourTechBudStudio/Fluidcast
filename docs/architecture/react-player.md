@@ -4,7 +4,7 @@
 
 The React player is one complete, embeddable browser player built on the Client SDK. It is published, provisionally, as `@yourtechbudstudio/fluidcast-react`. It contains the whole listening experience: visuals, subtitles, transport controls, browser audio and autoplay handling, the composer, questions, Shows, the transcript, the worker view, React state, and presentation error and recovery. Hosts embed that experience instead of rebuilding it, and the reference web app consumes the same player, so fixes do not drift between hosts.
 
-Its public surface is deliberately narrow: one complete player component and one stylesheet. Its controls, panels, state and visuals are internal modules, not a component library. It adds no theme or layout API.
+Its public surface is deliberately narrow: one complete player component and one stylesheet. Its controls, panels, state and visuals are internal modules, not a component library. It adds no layout API and no theme props: the host only picks one of the player's two built-in themes.
 
 The player is a client in the sense of [ADR 0001](../adrs/0001-state-ownership.md): it keeps only communication, caching, playback and presentational state, and imports only pure protocol and tool-schema exports. The Client SDK stays environment-neutral and does not depend on it.
 
@@ -14,6 +14,7 @@ The player is a client in the sense of [ADR 0001](../adrs/0001-state-ownership.m
 - **Visibility.** Whether the host is showing the player now.
 - **Keyboard focus.** The host decides when the player receives keys by focusing its root. The player never focuses itself.
 - **A sized container.** The player fills the element it is placed in.
+- **A theme, optionally.** `data-theme="light"` on the player's root or any ancestor selects the light theme (Catppuccin Latte); without it the player is dark (Catppuccin Macchiato). The player owns both palettes, so the host never sets colours. Styles and the visuals follow a theme change at once; each Show renders in the theme of the moment it renders and keeps those colours.
 
 ## What stays with the host
 

@@ -1,4 +1,4 @@
-import { createMarkdown } from '../../ui';
+import { createMarkdown, type Palette } from '../../ui';
 import { type RenderedDiagram, renderIdOf, renderMermaid } from './mermaid';
 
 /** One renderer for every Markdown Show. Raw HTML and remote images are allowed (A2, an accepted risk). */
@@ -14,13 +14,14 @@ export interface RenderedMarkup {
 }
 
 /**
- * Renders the Markdown Show `handle` for the player instance's render `scope`, with each `mermaid` fence drawn as a diagram in its place. A diagram Mermaid cannot render
+ * Renders the Markdown Show `handle` for the player instance's render `scope`, with each `mermaid` fence drawn as a diagram in its place, in `palette`'s colours. A diagram Mermaid cannot render
  * stays as its source, marked invalid, so the rest of the page still shows; the model is not told.
  */
 export async function renderMarkdown(
   source: string,
   handle: string,
   scope: string,
+  palette: Palette,
 ): Promise<RenderedMarkup> {
   const sources: Array<string> = [];
   const html = render(source, (language, content) => {
@@ -32,7 +33,9 @@ export async function renderMarkdown(
   const diagrams: Array<RenderedDiagram | undefined> = [];
   for (const [position, diagram] of sources.entries()) {
     diagrams.push(
-      await renderMermaid(diagram, renderIdOf(scope, handle, position)).catch(() => undefined),
+      await renderMermaid(diagram, renderIdOf(scope, handle, position), palette).catch(
+        () => undefined,
+      ),
     );
   }
   let next = 0;

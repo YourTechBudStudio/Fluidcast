@@ -6,7 +6,7 @@ One complete, embeddable browser player on top of the Client SDK: the voice-and-
 
 - React 19. Primitives: Base UI. Animation: `motion`. Icons: `lucide-react`.
 - State: Effect Atom only, in a private registry per mounted player. No zustand or react-query.
-- Styling: Tailwind v4, compiled by `scripts/build-css.mjs` into `dist/styles.css` and scoped to `.fluidcast-player` with `@scope`. Tokens live in `src/styles/player.css` (`ui/tokens.ts` mirrors them for WebGL and SVG only).
+- Styling: Tailwind v4, compiled by `scripts/build-css.mjs` into `dist/styles.css` and scoped to `.fluidcast-player` with `@scope`. Tokens live in `src/styles/player.css`, in both themes; `ui/tokens.ts` reads their resolved values for WebGL, Mermaid and HTML Show frames.
 - Visuals: raw WebGL. Per-frame audio analysis never goes through atoms or React state.
 
 ## Structure
@@ -42,3 +42,4 @@ tests/            # Architecture, built-stylesheet, integration and DOM (happy-d
 - Motion uses one curve (`--ease-expo`) and the 110, 190, 320 and 600 ms durations. No springs or overshoot. Honour reduced motion.
 - Interactive controls have an accessible name, work from the keyboard and keep a hit area of at least 44 px.
 - Status copy lives in `conversation/copy.ts`. Error lines always say what failed.
+- Every colour comes from the tokens and works in both themes (Macchiato dark, Latte light, chosen by `data-theme` on the root or an ancestor): no hex or `rgb()` literals in classes or CSS, and never branch on the theme in components. Hover washes use `tint`, text and glyphs on a solid accent fill use `on-accent`, drop shadows mix `shade`, and code that needs colour values reads them with `readPalette` instead of copying them. The palette matches Isagi's token for token, which Isagi's tests check.

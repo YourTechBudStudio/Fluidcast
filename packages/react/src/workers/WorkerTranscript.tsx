@@ -126,7 +126,7 @@ function itemOf(node: TranscriptNode, speaker: Speaker, afterText: boolean, gap:
         gap,
         marker: (
           <Marker tone="prompt">
-            <i className="size-2 rounded-full bg-linear-135 from-cyan to-violet shadow-[0_0_10px_rgb(145_215_227/0.5)]" />
+            <i className="size-2 rounded-full bg-linear-135 from-cyan to-violet shadow-[0_0_10px_color-mix(in_srgb,var(--color-cyan)_50%,transparent)]" />
           </Marker>
         ),
         body: <PromptRow source={node.source} text={node.text} />,
@@ -218,14 +218,17 @@ function Head({ type, children }: { readonly type?: string; readonly children: R
 type Tone = 'prompt' | 'worker' | 'dot' | 'live' | 'ok' | 'error' | 'running' | 'neutral';
 
 const TONES: Record<Exclude<Tone, 'dot'>, string> = {
-  prompt: 'bg-canvas shadow-[0_0_0_1px_rgb(145_215_227/0.4)]',
-  worker: 'bg-violet/18 text-violet shadow-[0_0_0_1px_rgb(198_160_246/0.45)]',
-  live: 'bg-violet/12 text-violet shadow-[0_0_0_1px_rgb(198_160_246/0.4)] motion-safe:animate-breathe',
-  ok: 'bg-canvas text-green/80 shadow-[0_0_0_1px_rgb(166_218_149/0.35)]',
-  error: 'bg-red/14 text-red shadow-[0_0_0_1px_rgb(237_135_150/0.45)]',
+  prompt: 'bg-canvas shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-cyan)_40%,transparent)]',
+  worker:
+    'bg-violet/18 text-violet shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-violet)_45%,transparent)]',
+  live: 'bg-violet/12 text-violet shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-violet)_40%,transparent)] motion-safe:animate-breathe',
+  ok: 'bg-canvas text-green/80 shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-green)_35%,transparent)]',
+  error:
+    'bg-red/14 text-red shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-red)_45%,transparent)]',
   running:
-    'bg-violet/12 text-violet shadow-[0_0_0_1px_var(--color-violet),0_0_14px_rgb(198_160_246/0.45)]',
-  neutral: 'bg-elevated text-fg-subtle shadow-[0_0_0_1px_rgb(91_96_120/0.6)]',
+    'bg-violet/12 text-violet shadow-[0_0_0_1px_var(--color-violet),0_0_14px_color-mix(in_srgb,var(--color-violet)_45%,transparent)]',
+  neutral:
+    'bg-elevated text-fg-subtle shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-line)_60%,transparent)]',
 };
 
 function Marker({ tone, children }: { readonly tone: Tone; readonly children?: ReactNode }) {

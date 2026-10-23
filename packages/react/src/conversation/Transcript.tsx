@@ -519,7 +519,7 @@ function Fade() {
   return (
     <span
       aria-hidden
-      className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-linear-to-t from-[#30344a] to-transparent"
+      className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-linear-to-t from-[color-mix(in_srgb,var(--color-elevated)_70%,var(--color-canvas))] to-transparent"
     />
   );
 }
@@ -648,7 +648,7 @@ function Node({
       return (
         <span
           aria-hidden
-          className={`${base} bg-elevated text-fg-muted shadow-[0_0_0_1px_rgb(91_96_120/0.6)]`}
+          className={`${base} bg-elevated text-fg-muted shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-line)_60%,transparent)]`}
         >
           <User size={14} strokeWidth={1.8} />
         </span>
@@ -657,7 +657,7 @@ function Node({
       return (
         <span
           aria-hidden
-          className={`${base} bg-elevated text-fg-muted shadow-[0_0_0_1px_rgb(198_160_246/0.45)] [outline:1px_dashed_rgb(198_160_246/0.35)] outline-offset-2`}
+          className={`${base} bg-elevated text-fg-muted shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-violet)_45%,transparent)] [outline:1px_dashed_color-mix(in_srgb,var(--color-violet)_35%,transparent)] outline-offset-2`}
         >
           <User size={14} strokeWidth={1.8} />
         </span>
@@ -683,7 +683,7 @@ function Node({
       return (
         <span
           aria-hidden
-          className={`${base} bg-amber/14 text-amber shadow-[0_0_0_1px_rgb(245_169_127/0.45)]`}
+          className={`${base} bg-amber/14 text-amber shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-amber)_45%,transparent)]`}
         >
           <Square size={11} fill="currentColor" strokeWidth={0} />
         </span>
@@ -692,7 +692,7 @@ function Node({
       return (
         <span
           aria-hidden
-          className={`${base} bg-red/14 text-red shadow-[0_0_0_1px_rgb(237_135_150/0.45)]`}
+          className={`${base} bg-red/14 text-red shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-red)_45%,transparent)]`}
         >
           <CircleAlert size={14} strokeWidth={1.8} />
         </span>
@@ -701,7 +701,7 @@ function Node({
       return (
         <span
           aria-hidden
-          className={`${base} bg-violet/12 text-violet shadow-[0_0_0_1px_rgb(198_160_246/0.4)] motion-safe:animate-breathe`}
+          className={`${base} bg-violet/12 text-violet shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-violet)_40%,transparent)] motion-safe:animate-breathe`}
         >
           <Ellipsis size={14} strokeWidth={1.8} />
         </span>
@@ -710,7 +710,7 @@ function Node({
       return (
         <span
           aria-hidden
-          className={`${base} ${failed ? 'bg-red/10 text-red/80 shadow-[0_0_0_1px_rgb(237_135_150/0.35)]' : FORMAT_NODE[format]}`}
+          className={`${base} ${failed ? 'bg-red/10 text-red/80 shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-red)_35%,transparent)]' : FORMAT_NODE[format]}`}
         >
           <FormatIcon format={format} size={13} />
         </span>
@@ -719,7 +719,7 @@ function Node({
       return (
         <span
           aria-hidden
-          className={`${base} bg-cyan/12 text-cyan ${current ? 'shadow-[0_0_0_1px_var(--color-cyan),0_0_14px_rgb(145_215_227/0.5)]' : 'shadow-[0_0_0_1px_rgb(145_215_227/0.4)]'}`}
+          className={`${base} bg-cyan/12 text-cyan ${current ? 'shadow-[0_0_0_1px_var(--color-cyan),0_0_14px_color-mix(in_srgb,var(--color-cyan)_50%,transparent)]' : 'shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-cyan)_40%,transparent)]'}`}
         >
           <CircleHelp size={14} strokeWidth={1.8} />
         </span>
@@ -728,7 +728,7 @@ function Node({
       return (
         <span
           aria-hidden
-          className={`${base} bg-amber/10 text-amber shadow-[0_0_0_1px_rgb(245_169_127/0.35)]`}
+          className={`${base} bg-amber/10 text-amber shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-amber)_35%,transparent)]`}
         >
           <TriangleAlert size={13} strokeWidth={1.8} />
         </span>
@@ -737,7 +737,7 @@ function Node({
       return (
         <span
           aria-hidden
-          className={`${base} bg-red/16 text-red shadow-[0_0_0_1px_rgb(237_135_150/0.55)]`}
+          className={`${base} bg-red/16 text-red shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-red)_55%,transparent)]`}
         >
           <OctagonX size={14} strokeWidth={1.8} />
         </span>
@@ -746,7 +746,7 @@ function Node({
       return (
         <span
           aria-hidden
-          className={`${base} bg-violet/10 text-violet/80 shadow-[0_0_0_1px_rgb(198_160_246/0.35)]`}
+          className={`${base} bg-violet/10 text-violet/80 shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-violet)_35%,transparent)]`}
         >
           <SquareTerminal size={14} strokeWidth={1.8} />
         </span>
@@ -755,7 +755,7 @@ function Node({
       return (
         <span
           aria-hidden
-          className={`${base} bg-violet/14 text-violet shadow-[0_0_0_1px_var(--color-violet),0_0_14px_rgb(198_160_246/0.5)]`}
+          className={`${base} bg-violet/14 text-violet shadow-[0_0_0_1px_var(--color-violet),0_0_14px_color-mix(in_srgb,var(--color-violet)_50%,transparent)]`}
         >
           <SquareTerminal size={14} strokeWidth={1.8} />
         </span>
@@ -764,7 +764,7 @@ function Node({
       return (
         <span
           aria-hidden
-          className={`${base} bg-red/14 text-red shadow-[0_0_0_1px_rgb(237_135_150/0.45)]`}
+          className={`${base} bg-red/14 text-red shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-red)_45%,transparent)]`}
         >
           <SquareTerminal size={14} strokeWidth={1.8} />
         </span>
@@ -773,7 +773,7 @@ function Node({
       return (
         <span
           aria-hidden
-          className={`${base} bg-canvas text-violet shadow-[0_0_0_1px_rgb(198_160_246/0.45)]`}
+          className={`${base} bg-canvas text-violet shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-violet)_45%,transparent)]`}
         >
           <CornerDownRight size={14} strokeWidth={1.8} />
         </span>
@@ -782,7 +782,7 @@ function Node({
       return (
         <span
           aria-hidden
-          className={`${base} bg-red/14 text-red shadow-[0_0_0_1px_rgb(237_135_150/0.45)]`}
+          className={`${base} bg-red/14 text-red shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-red)_45%,transparent)]`}
         >
           <CornerDownRight size={14} strokeWidth={1.8} />
         </span>

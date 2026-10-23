@@ -1,8 +1,10 @@
 // The frame loop shared by the two orb mocks: energy followers, integrated flow and spin, breathing and twist.
 // Each orb supplies its tuning table and the uniforms it draws with.
+import type { Palette } from '../ui';
 import { follow } from './analysis';
 import {
   createProgram,
+  createThemePalette,
   createTransition,
   resizeCanvas,
   TAU,
@@ -38,7 +40,8 @@ export interface OrbSpec<T extends OrbTuning> {
   readonly tag: string;
   readonly vertexShader: string;
   readonly fragmentShader: string;
-  readonly targetFor: (inputs: RendererInputs) => T;
+  /** The tuning for `inputs`, in the theme's current `palette`. */
+  readonly targetFor: (inputs: RendererInputs, palette: Palette) => T;
   /** Resolves uniform locations once, and returns the per-frame upload. */
   readonly bind: (
     gl: GL,
@@ -56,9 +59,10 @@ export const createOrbRenderer =
     const uRes = uniform('uRes');
     const uTime = uniform('uTime');
     const uRadius = uniform('uRadius');
+    const theme = createThemePalette(canvas);
 
     let inputs = initial;
-    const tuning = createTransition(spec.targetFor(initial));
+    const tuning = createTransition(spec.targetFor(initial, theme.current));
     let last = -1;
     let energy = 0;
     let energySlow = 0;
@@ -69,11 +73,13 @@ export const createOrbRenderer =
     return {
       retarget(next, now) {
         inputs = next;
-        tuning.retarget(spec.targetFor(next), now);
+        tuning.retarget(spec.targetFor(next, theme.current), now);
       },
       draw(now, analysis) {
         const dt = last < 0 ? 0 : Math.min(0.05, Math.max(0, (now - last) / 1000));
         last = now;
+        // A theme change glides to the new colours like any other retarget.
+        if (theme.changed()) tuning.retarget(spec.targetFor(inputs, theme.current), now);
         const cur = tuning.at(now);
         const reduced = inputs.reducedMotion;
         const raw = analysis.raw * cur.gain;

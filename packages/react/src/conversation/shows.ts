@@ -7,6 +7,7 @@ import { ShowCommand, showToolName } from '@yourtechbudstudio/fluidcast-tool-sho
 
 import { clientRuntime } from '../connection';
 import { renderShow, type ShowBody, type ShownShow } from '../tools';
+import { type Palette, UNRESOLVED_PALETTE } from '../ui';
 import { type ReportOutcome, reportActionOf, retryDelay, unseenShows } from './showDriver';
 import { connectionAtom, conversationAtom, sendFailureAtom, unresolvedShowsAtom } from './state';
 import { findCall, latestShowHandle, showCorrectionOf, showOf } from './tools';
@@ -35,6 +36,19 @@ let renderScopes = 0;
  */
 const renderScopeAtom = Atom.make(() => `s${++renderScopes}`).pipe(Atom.keepAlive);
 
+/** Reads the palette Shows render in, as the player root resolves it at the moment of reading. */
+export interface PaletteSource {
+  readonly read: () => Palette;
+}
+
+/**
+ * Where Shows read their palette: the player root, which sets this when it attaches, before anything inside it
+ * renders. Each Show reads it when it renders, so a Show takes the theme of that moment and keeps those colours.
+ */
+export const showPaletteAtom = Atom.make<PaletteSource>({ read: () => UNRESOLVED_PALETTE }).pipe(
+  Atom.keepAlive,
+);
+
 /**
  * Each Show call rendered once per instance, shared by the reporter, the panel and the transcript miniatures. A
  * call never changes once in the view, so it is read once.
@@ -43,10 +57,11 @@ export const showRenderAtom = Atom.family((handle: string) =>
   Atom.make((get): Effect.Effect<Settled> => {
     const input = showOf(findCall(get.once(conversationAtom), handle));
     const scope = get.once(renderScopeAtom);
+    const palette = get.once(showPaletteAtom).read();
     if (!input) {
       return Effect.succeed({ state: 'failed', reason: 'This show is not in the conversation.' });
     }
-    return renderShow(input, handle, scope).pipe(
+    return renderShow(input, handle, scope, palette).pipe(
       Effect.match({
         onSuccess: (rendered): Settled => ({ state: 'rendered', rendered }),
         onFailure: ({ reason }): Settled => ({ state: 'failed', reason }),

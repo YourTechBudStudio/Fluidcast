@@ -1,4 +1,4 @@
-import { RegistryProvider } from '@effect/atom-react';
+import { RegistryProvider, useAtomSet } from '@effect/atom-react';
 import {
   type ReactElement,
   type Ref,
@@ -9,9 +9,9 @@ import {
 } from 'react';
 
 import { connectionLayerAtom, type PlayerConnection } from '../connection';
-import { useConversationCommands } from '../conversation';
+import { showPaletteAtom, useConversationCommands } from '../conversation';
 import { usePlaybackGate, usePlaybackUnlock } from '../playback';
-import { PlayerInstanceContext, ROOT_CLASS, useElementWidth } from '../ui';
+import { PlayerInstanceContext, readPalette, ROOT_CLASS, useElementWidth } from '../ui';
 import { Player } from './Player';
 
 export interface FluidcastPlayerProps {
@@ -88,7 +88,8 @@ function usePresence(visible: boolean) {
 /**
  * The instance root: the element the stylesheet scopes to, portals render into and shortcuts listen on. Its own width
  * drives the layout, so `Player` renders only once it is measured: the first painted frame is already laid out right.
- * A gesture anywhere inside it unlocks this instance's audio, and only this instance's.
+ * A gesture anywhere inside it unlocks this instance's audio, and only this instance's. On attach it becomes where
+ * Shows read the theme's palette (the host sets the theme with `data-theme` on it or an ancestor).
  */
 function PlayerRoot({
   visible,
@@ -101,12 +102,14 @@ function PlayerRoot({
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const width = useElementWidth(root);
   const unlock = usePlaybackUnlock();
+  const setPaletteSource = useAtomSet(showPaletteAtom);
   const attach = useCallback(
     (element: HTMLDivElement) => {
+      setPaletteSource({ read: () => readPalette(element) });
       setRoot(element);
       return assignRef(hostRef, element);
     },
-    [hostRef],
+    [hostRef, setPaletteSource],
   );
   const instance = useMemo(
     () => (root === null || width === null ? null : { root, width }),

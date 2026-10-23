@@ -173,7 +173,7 @@ function WorkerState({ status }: { readonly status: WorkerStatus }) {
 function Empty() {
   return (
     <div className="flex flex-col items-center gap-3 pt-[12cqh] text-center">
-      <span className="grid size-12 place-items-center rounded-full bg-elevated/60 text-fg-subtle shadow-[0_0_0_1px_rgb(91_96_120/0.45)]">
+      <span className="grid size-12 place-items-center rounded-full bg-elevated/60 text-fg-subtle shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-line)_45%,transparent)]">
         <SquareTerminal size={20} strokeWidth={1.6} aria-hidden />
       </span>
       <p className="font-display text-[17px] text-fg">Nothing here yet.</p>

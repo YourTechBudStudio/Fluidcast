@@ -8,6 +8,8 @@
   --orb: 60cqh;
   --band-over: 1.4; /* keep in sync with BAND_OVER */
   --orb-r: 0.56; /* keep in sync with ORB_RADIUS */
+  /* The fallback orbs' body: just below the canvas, so the sphere reads as glass in front of it. */
+  --orb-body: color-mix(in srgb, var(--color-scrim) 60%, var(--color-canvas));
 }
 
 .visual-canvas {
@@ -150,7 +152,7 @@
       color-mix(in srgb, var(--fc) 40%, transparent),
       transparent 48%
     ),
-    color-mix(in srgb, var(--fa) 42%, #1b1e2e);
+    color-mix(in srgb, var(--fa) 42%, var(--orb-body));
   box-shadow:
     inset 0 0 0 1px rgb(255 255 255 / 0.07),
     0 0 40px 2px color-mix(in srgb, var(--fa) 26%, transparent),
@@ -192,7 +194,11 @@
       color-mix(in srgb, var(--fa) 50%, transparent),
       transparent 62%
     ),
-    radial-gradient(circle at 50% 50%, #1b1e2e 60%, color-mix(in srgb, var(--fa) 40%, #1b1e2e) 100%);
+    radial-gradient(
+      circle at 50% 50%,
+      var(--orb-body) 60%,
+      color-mix(in srgb, var(--fa) 40%, var(--orb-body)) 100%
+    );
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--fa) 45%, transparent),
     0 0 60px 6px color-mix(in srgb, var(--fa) 30%, transparent),

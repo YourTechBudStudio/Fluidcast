@@ -37,7 +37,7 @@
 .markdown-prose a {
   color: var(--color-blue);
   text-decoration: underline;
-  text-decoration-color: rgb(138 173 244 / 40%);
+  text-decoration-color: color-mix(in srgb, var(--color-blue) 40%, transparent);
   text-underline-offset: 3px;
 }
 .markdown-prose ol,
@@ -64,18 +64,18 @@
   font-family: var(--font-mono);
   font-size: 0.84em;
   color: var(--color-cyan);
-  background: rgb(145 215 227 / 9%);
+  background: color-mix(in srgb, var(--color-cyan) 9%, transparent);
 }
 .markdown-prose pre {
   overflow-x: auto;
   padding: 14px 18px;
-  border: 1px solid rgb(91 96 120 / 35%);
+  border: 1px solid color-mix(in srgb, var(--color-line) 35%, transparent);
   border-radius: var(--radius-md);
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.6;
   color: var(--color-fg);
-  background: rgb(20 22 34 / 55%);
+  background: color-mix(in srgb, var(--color-scrim) 55%, transparent);
 }
 .markdown-prose table {
   width: 100%;
@@ -94,7 +94,7 @@
 }
 .markdown-prose td {
   padding: 9px 12px 9px 0;
-  border-top: 1px solid rgb(91 96 120 / 28%);
+  border-top: 1px solid color-mix(in srgb, var(--color-line) 28%, transparent);
 }
 .markdown-prose blockquote {
   padding: 4px 0 4px 18px;

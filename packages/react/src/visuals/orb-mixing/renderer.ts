@@ -1,13 +1,9 @@
 // Tuning ported from the orb-mixing mock: liquid mixing motion (flow, warp, ink, twist) under a glassy finish.
-import { rgb, type PaletteName, type Rgb } from '../../ui';
+import { type Rgb, type Tone, toneCss, toneRgb } from '../../ui';
 import { mix3 } from '../engine';
 import { createOrbRenderer, type OrbTuning } from '../orb';
 import type { VisualState } from '../types';
 import { fragmentShader, vertexShader } from './shaders';
-
-const c = rgb;
-type Tone = PaletteName | Rgb;
-const col = (v: Tone): Rgb => (typeof v === 'string' ? c(v) : v);
 
 interface Row {
   A: Tone;
@@ -33,7 +29,7 @@ const STATES: Record<VisualState, Row> = {
   idle: {
     A: 'cyan',
     B: 'blue',
-    C: mix3(c('cyan'), c('green'), 0.75),
+    C: ['cyan', 'green', 0.75],
     D: 'violet',
     flow: 0.32,
     warp: 0.9,
@@ -50,9 +46,9 @@ const STATES: Record<VisualState, Row> = {
   },
   thinking: {
     A: 'violet',
-    B: mix3(c('violet'), c('blue'), 0.45),
-    C: mix3(c('violet'), c('scrim'), 0.4),
-    D: mix3(c('violet'), c('red'), 0.35),
+    B: ['violet', 'blue', 0.45],
+    C: ['violet', 'scrim', 0.4],
+    D: ['violet', 'red', 0.35],
     flow: 0.8,
     warp: 1.45,
     ink: 0.5,
@@ -85,10 +81,10 @@ const STATES: Record<VisualState, Row> = {
     gain: 1.0,
   },
   error: {
-    A: mix3(c('red'), c('fg-muted'), 0.2),
-    B: mix3(c('red'), c('violet'), 0.5),
-    C: mix3(c('violet'), c('fg-muted'), 0.4),
-    D: mix3(c('red'), c('amber'), 0.45),
+    A: ['red', 'fg-muted', 0.2],
+    B: ['red', 'violet', 0.5],
+    C: ['violet', 'fg-muted', 0.4],
+    D: ['red', 'amber', 0.45],
     flow: 0.14,
     warp: 0.75,
     ink: 0.4,
@@ -141,15 +137,15 @@ export const createOrbMixingRenderer = createOrbRenderer<Tuning>({
   tag: 'orb-mixing',
   vertexShader,
   fragmentShader,
-  targetFor({ state, reducedMotion, held }) {
+  targetFor({ state, reducedMotion, held }, palette) {
     const s = STATES[state];
-    const A = col(s.A);
+    const A = toneRgb(palette, s.A);
     const t: Tuning = {
       A,
-      B: col(s.B),
-      C: col(s.C),
-      D: col(s.D),
-      base: mix3(c('scrim'), A, 0.16),
+      B: toneRgb(palette, s.B),
+      C: toneRgb(palette, s.C),
+      D: toneRgb(palette, s.D),
+      base: mix3(toneRgb(palette, 'scrim'), A, 0.16),
       flow: s.flow,
       warp: s.warp,
       ink: s.ink,
@@ -223,8 +219,8 @@ export const createOrbMixingRenderer = createOrbRenderer<Tuning>({
   },
 });
 
-/** Fallback gradient colours per state (the first three tones). */
-export const orbMixingFallback = (state: VisualState): readonly [Rgb, Rgb, Rgb] => {
+/** The CSS fallback's gradient colours per state (the first three tones), on the theme's variables. */
+export const orbMixingFallback = (state: VisualState): readonly [string, string, string] => {
   const s = STATES[state];
-  return [col(s.A), col(s.B), col(s.C)];
+  return [toneCss(s.A), toneCss(s.B), toneCss(s.C)];
 };

@@ -27,20 +27,36 @@
   }
 }
 
-/* Design tokens, copied from Isagi (Catppuccin Macchiato). Dark only. */
+/*
+ * Design tokens, shared with Isagi: Catppuccin Macchiato (dark) and Latte (light). The values below are the dark theme;
+ * the light block further down re-points every colour token at Latte by the same Catppuccin roles, so utilities never
+ * name a theme. The host picks the theme with `data-theme="light"` on the player root or any ancestor; without it the
+ * player is dark.
+ */
 @theme {
   /* Type families */
   --font-display: 'Sora Variable', ui-sans-serif, system-ui, sans-serif;
   --font-sans: 'Source Sans 3 Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Fira Code Variable', ui-monospace, SFMono-Regular, monospace;
 
-  /* Surfaces — the deep canvas and its elevations */
-  --color-canvas: #24273a;
-  --color-subtle: #2e3244;
-  --color-elevated: #363a4f;
-  --color-overlay: #3a3f57;
-  --color-line: #5b6078;
-  --color-scrim: #141622;
+  /* Surfaces — the deep canvas and its elevations. Each is a Catppuccin role or a fixed blend of two (noted alongside),
+     so the light theme can apply the same derivation to Latte. */
+  --color-canvas: #24273a; /* base */
+  --color-subtle: #2e3244; /* base → surface0, 55% */
+  --color-elevated: #363a4f; /* surface0 */
+  --color-overlay: #3a3f57; /* surface0 → surface1, 25% */
+  --color-line: #5b6078; /* surface2 */
+  --color-scrim: #141622; /* beyond crust: recessed wells, backdrops */
+  /* The film hover and selection washes are mixed from (`bg-tint/6`): the end of the ramp farthest from the canvas, so
+     a wash always reads as lift. */
+  --color-tint: #ffffff;
+  /* Text and glyphs on a solid accent fill (`bg-blue text-on-accent`): the ink farthest from the accents, never a
+     surface token. */
+  --color-on-accent: #141622;
+  /* The ink of drop shadows, mixed by strength (`color-mix(in srgb, var(--color-shade) 35%, transparent)`). Light's is
+     already translucent, so the same strength casts a softer shadow on a light canvas. Not part of the palette that
+     `ui/tokens.ts` reads. */
+  --color-shade: #000000;
 
   /* Foreground / text steps */
   --color-fg: #cad3f5;
@@ -74,9 +90,10 @@
   --radius-lg: 20px;
   --radius-xl: 28px;
 
-  /* Depth — soft, layered, never a crisp drop shadow */
-  --shadow-soft: 0 16px 48px rgb(0 0 0 / 0.4);
-  --shadow-lift: 0 24px 64px rgb(0 0 0 / 0.45);
+  /* Depth — soft, layered, never a crisp drop shadow. Tailwind inlines a shadow's literal colour into the utility, so
+     the colour is a variable that each theme sets (see the root rules below). */
+  --shadow-soft: 0 16px 48px var(--shadow-soft-color);
+  --shadow-lift: 0 24px 64px var(--shadow-lift-color);
 
   /* Ambient attention motion — calm, never frantic. */
   --animate-breathe: fc-breathe 2.6s var(--ease-expo) infinite;
@@ -133,6 +150,42 @@
   color: var(--color-fg);
   -webkit-font-smoothing: antialiased;
   outline: none;
+  /* From `shade`, so each theme's shadows follow its ink without restating them. */
+  --shadow-soft-color: color-mix(in srgb, var(--color-shade) 40%, transparent);
+  --shadow-lift-color: color-mix(in srgb, var(--color-shade) 45%, transparent);
+}
+
+/*
+ * The light theme: Catppuccin Latte by the same roles as Macchiato above, and the same mapping as Isagi's, so the
+ * player matches a light host side by side. Elevation climbs toward the light end of the ramp, mirroring Macchiato's
+ * climb from base toward surface0: Latte's surfaces sit darker than its base, so mapping them literally would sink every
+ * raised surface into a grey slab. The canvas steps down to mantle so base is free to be the lift. Palette values stay
+ * hex: `ui/tokens.ts` reads them for WebGL, Mermaid and HTML Show frames.
+ */
+:scope[data-theme='light'],
+[data-theme='light'] :scope {
+  color-scheme: light;
+
+  --color-canvas: #e6e9ef; /* mantle */
+  --color-subtle: #ebedf2; /* mantle → base, 50% */
+  --color-elevated: #eff1f5; /* base */
+  --color-overlay: #eff1f5; /* base: nothing in Latte sits above it */
+  --color-line: #acb0be; /* surface2 */
+  --color-scrim: #dce0e8; /* crust */
+  --color-tint: #4c4f69; /* text */
+  --color-on-accent: #ffffff; /* past base: Latte's base is 4.3:1 on blue, white 4.9:1 */
+  --color-shade: rgb(76 79 105 / 0.4); /* text, translucent */
+
+  --color-fg: #4c4f69; /* text */
+  --color-fg-muted: #6c6f85; /* subtext0 */
+  --color-fg-subtle: #7c7f93; /* overlay2: overlay0 is too faint on Latte's base */
+
+  --color-blue: #1e66f5;
+  --color-violet: #8839ef; /* mauve */
+  --color-amber: #fe640b; /* peach */
+  --color-green: #40a02b;
+  --color-red: #d20f39;
+  --color-cyan: #04a5e5; /* sky */
 }
 
 /* Scrollbars — slim, inset, and quiet. */

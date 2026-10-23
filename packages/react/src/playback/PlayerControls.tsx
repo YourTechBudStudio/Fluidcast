@@ -39,7 +39,7 @@ export function PlayerControls({ back, forward, play, className = '' }: PlayerCo
         tone="ghost"
         aria-label={play.paused ? 'Play' : 'Pause'}
         unavailable={!play.available}
-        className="rounded-full bg-elevated/55 px-0 text-fg shadow-[inset_0_0_0_1px_rgb(91_96_120/0.5)]"
+        className="rounded-full bg-elevated/55 px-0 text-fg shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-line)_50%,transparent)]"
         icon={play.paused ? <Play {...filled} className="translate-x-px" /> : <Pause {...filled} />}
         onClick={play.onPress}
       />

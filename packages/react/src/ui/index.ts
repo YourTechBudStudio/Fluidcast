@@ -25,7 +25,17 @@ export {
   type SegmentedOption,
 } from './SegmentedControl';
 export { Swap } from './Swap';
-export { palette, rgb, type PaletteName, type Rgb } from './tokens';
+export {
+  readPalette,
+  toneCss,
+  toneHex,
+  toneRgb,
+  UNRESOLVED_PALETTE,
+  type Palette,
+  type PaletteName,
+  type Rgb,
+  type Tone,
+} from './tokens';
 export { typingTarget } from './typingTarget';
 export { useMeasuredHeight } from './useMeasuredHeight';
 export { useDomId } from './useDomId';

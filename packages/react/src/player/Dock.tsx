@@ -7,24 +7,23 @@ import { DURATION, EASE_EXPO, Swap, useMeasuredHeight, useReducedMotion } from '
 export type DockShape = 'composer' | 'ask';
 
 const SHAPE = {
-  composer: {
-    maxWidth: 680,
-    borderRadius: 20,
-    borderColor: 'rgb(91 96 120 / 0.42)',
-    backgroundColor: 'rgb(54 58 79 / 0.42)',
-  },
-  ask: {
-    maxWidth: 880,
-    borderRadius: 28,
-    borderColor: 'rgb(145 215 227 / 0.24)',
-    backgroundColor: 'rgb(54 58 79 / 0.5)',
-  },
+  composer: { maxWidth: 680, borderRadius: 20 },
+  ask: { maxWidth: 880, borderRadius: 28 },
 } as const;
 
 /**
- * One surface that is the composer, the open question and the sent answer in turn. Width, height, radius, edge colour
- * and background glide between shapes as real layout, not a transform, so the Show panel and the orb above follow it
- * frame by frame and text never stretches; the contents crossfade. A cyan light line fades in along the top edge
+ * Each shape's edge and fill. They are classes, not animated values, so they stay theme tokens: the browser glides
+ * between them on the same curve and duration as the geometry.
+ */
+const SURFACE = {
+  composer: 'border-line/42 bg-elevated/42',
+  ask: 'border-cyan/24 bg-elevated/50',
+} as const;
+
+/**
+ * One surface that is the composer, the open question and the sent answer in turn. Width, height and radius glide
+ * between shapes as real layout, not a transform, so the Show panel and the orb above follow it frame by frame and text
+ * never stretches; the edge colour and background follow by CSS transition, and the contents crossfade. A cyan light line fades in along the top edge
  * while a question is up. Reduced motion changes shape at once and only fades the contents.
  */
 export function Dock({
@@ -45,7 +44,7 @@ export function Dock({
       initial={false}
       animate={{ height, ...SHAPE[shape] }}
       transition={glide}
-      className={`relative mx-auto w-full overflow-hidden border shadow-soft backdrop-blur-xl backdrop-saturate-130 ${asking ? '' : 'has-[textarea:focus]:border-blue/45!'}`}
+      className={`relative mx-auto w-full overflow-hidden border shadow-soft backdrop-blur-xl backdrop-saturate-130 transition-[border-color,background-color] duration-(--duration-room) ease-expo motion-reduce:transition-none ${SURFACE[shape]} ${asking ? '' : 'has-[textarea:focus]:border-blue/45!'}`}
     >
       <motion.span
         aria-hidden

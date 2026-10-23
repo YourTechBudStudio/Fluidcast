@@ -36,13 +36,13 @@ export function SegmentedControl<V extends string>({
       value={value}
       onValueChange={(next) => onChange(next as V)}
       readOnly={readOnly}
-      className={`inline-flex shrink-0 items-center gap-0.5 rounded-full bg-scrim/40 shadow-[inset_0_0_0_1px_rgb(91_96_120/0.45)] p-1 data-readonly:opacity-60 ${className}`}
+      className={`inline-flex shrink-0 items-center gap-0.5 rounded-full bg-scrim/40 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-line)_45%,transparent)] p-1 data-readonly:opacity-60 ${className}`}
     >
       {options.map((option) => (
         <Radio.Root
           key={option.value}
           value={option.value}
-          className="relative inline-flex cursor-pointer items-center justify-center rounded-full font-medium whitespace-nowrap text-fg-subtle transition-[background-color,color,box-shadow] duration-(--duration-ui) ease-expo outline-none select-none hover:text-fg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue data-checked:bg-elevated data-checked:text-fg data-checked:shadow-[inset_0_0_0_1px_rgb(91_96_120/0.6),0_2px_8px_rgb(0_0_0/0.25)] min-h-10 px-3.5 before:absolute before:inset-x-0 before:-inset-y-0.5 before:content-[''] text-[13.5px] compact:px-2.5 data-readonly:cursor-default"
+          className="relative inline-flex cursor-pointer items-center justify-center rounded-full font-medium whitespace-nowrap text-fg-subtle transition-[background-color,color,box-shadow] duration-(--duration-ui) ease-expo outline-none select-none hover:text-fg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue data-checked:bg-elevated data-checked:text-fg data-checked:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-line)_60%,transparent),0_2px_8px_color-mix(in_srgb,var(--color-shade)_25%,transparent)] min-h-10 px-3.5 before:absolute before:inset-x-0 before:-inset-y-0.5 before:content-[''] text-[13.5px] compact:px-2.5 data-readonly:cursor-default"
         >
           {option.label}
         </Radio.Root>

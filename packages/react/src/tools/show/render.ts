@@ -2,6 +2,7 @@ import { Effect } from 'effect';
 
 import type { ShowInput } from '@yourtechbudstudio/fluidcast-tool-show/schema';
 
+import type { Palette } from '../../ui';
 import { srcdocOf } from './frame';
 import { renderMarkdown } from './markdown';
 import { type RenderedDiagram, renderIdOf, renderMermaid } from './mermaid';
@@ -33,26 +34,28 @@ const failure = (error: unknown): RenderFailure => {
 };
 
 /**
- * Renders the Show called by `handle`, with diagram ids in the player instance's render `scope`. Markdown and Mermaid output is injected into the app's DOM; HTML runs in its own frame. An HTML
+ * Renders the Show called by `handle`, with diagram ids in the player instance's render `scope` and colours from its
+ * `palette`. Markdown and Mermaid output is injected into the app's DOM; HTML runs in its own frame. An HTML
  * frame's own errors happen inside it and are not reported.
  */
 export const renderShow = (
   input: ShowInput,
   handle: string,
   scope: string,
+  palette: Palette,
 ): Effect.Effect<RenderedShow, RenderFailure> => {
   switch (input.format) {
     case 'markdown':
       return Effect.tryPromise({
-        try: () => renderMarkdown(input.content, handle, scope),
+        try: () => renderMarkdown(input.content, handle, scope, palette),
         catch: failure,
       }).pipe(Effect.map((markup) => ({ kind: 'markup', ...markup }) as const));
     case 'mermaid':
       return Effect.tryPromise({
-        try: () => renderMermaid(input.content, renderIdOf(scope, handle, 0)),
+        try: () => renderMermaid(input.content, renderIdOf(scope, handle, 0), palette),
         catch: failure,
       }).pipe(Effect.map((diagram) => ({ kind: 'diagram', diagram }) as const));
     case 'html':
-      return Effect.succeed({ kind: 'frame', srcdoc: srcdocOf(input.content) });
+      return Effect.succeed({ kind: 'frame', srcdoc: srcdocOf(input.content, palette) });
   }
 };

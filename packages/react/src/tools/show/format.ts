@@ -23,9 +23,11 @@ export const FORMAT_TILE: Record<ShowFormat, string> = {
 
 /** The format's transcript node. */
 export const FORMAT_NODE: Record<ShowFormat, string> = {
-  markdown: 'bg-blue/14 text-blue shadow-[0_0_0_1px_rgb(138_173_244/0.45)]',
-  mermaid: 'bg-violet/14 text-violet shadow-[0_0_0_1px_rgb(198_160_246/0.45)]',
-  html: 'bg-amber/14 text-amber shadow-[0_0_0_1px_rgb(245_169_127/0.45)]',
+  markdown:
+    'bg-blue/14 text-blue shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-blue)_45%,transparent)]',
+  mermaid:
+    'bg-violet/14 text-violet shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-violet)_45%,transparent)]',
+  html: 'bg-amber/14 text-amber shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-amber)_45%,transparent)]',
 };
 
 /** A Show's heading: its title, or a plain name for its format when the model gave none. */

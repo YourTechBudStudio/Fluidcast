@@ -33,7 +33,7 @@ export function ShowSheet({
             animate={reduced ? { opacity: 1 } : { y: 0 }}
             exit={hidden}
             transition={surfaceTransition}
-            className="pointer-events-auto absolute inset-x-0 top-2 bottom-0 flex flex-col overflow-hidden rounded-t-[26px] border border-b-0 border-line/40 bg-[rgb(42_46_65/0.96)] shadow-[0_-12px_40px_rgb(0_0_0/0.35)] backdrop-blur-2xl"
+            className="pointer-events-auto absolute inset-x-0 top-2 bottom-0 flex flex-col overflow-hidden rounded-t-[26px] border border-b-0 border-line/40 bg-subtle/96 shadow-[0_-12px_40px_color-mix(in_srgb,var(--color-shade)_35%,transparent)] backdrop-blur-2xl"
           >
             <ShowHeader
               input={show.input}

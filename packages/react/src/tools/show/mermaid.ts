@@ -1,4 +1,4 @@
-import { palette } from '../../ui';
+import { type Palette, toneHex } from '../../ui';
 import { intrinsicSizeOf, type Size } from './diagram/view';
 
 /**
@@ -16,50 +16,51 @@ const RENDER_ID_PREFIX = 'fcshowmmd-';
 export const renderIdOf = (scope: string, handle: string, position: number): string =>
   `${RENDER_ID_PREFIX}${scope}-${handle.replace(/[^a-zA-Z0-9_-]/g, '')}-${String(position).padStart(3, '0')}`;
 
+/** Mermaid's theme for one palette: the player's surfaces and accents, so a diagram matches the player it sits in. */
+const themeOf = (palette: Palette) => {
+  const hex = palette.hex;
+  return {
+    darkMode: palette.scheme === 'dark',
+    background: 'transparent',
+    fontSize: '15px',
+    primaryColor: hex.elevated,
+    primaryTextColor: hex.fg,
+    primaryBorderColor: hex.blue,
+    secondaryColor: hex.subtle,
+    tertiaryColor: hex.canvas,
+    lineColor: hex['fg-muted'],
+    textColor: hex.fg,
+    actorBkg: hex.elevated,
+    actorBorder: hex.blue,
+    actorTextColor: hex.fg,
+    actorLineColor: hex.line,
+    signalColor: hex['fg-muted'],
+    signalTextColor: hex.fg,
+    labelBoxBkgColor: hex.subtle,
+    labelBoxBorderColor: hex.line,
+    labelTextColor: hex.fg,
+    // Edge labels ("yes", "no") sit on the canvas, not on Mermaid's computed near-black.
+    edgeLabelBackground: hex.canvas,
+    loopTextColor: hex['fg-muted'],
+    noteBkgColor: toneHex(palette, ['canvas', 'violet', 0.14]),
+    noteTextColor: hex.fg,
+    noteBorderColor: hex.violet,
+    activationBkgColor: hex.overlay,
+    activationBorderColor: hex.violet,
+    sequenceNumberColor: hex.scrim,
+  };
+};
+
 /** Mermaid is large, so it loads on the first diagram and never before. */
-const load = () =>
-  import('mermaid').then(({ default: mermaid }) => {
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: 'strict',
-      sequence: { mirrorActors: false },
-      theme: 'base',
-      fontFamily: "'Source Sans 3 Variable', ui-sans-serif, system-ui, sans-serif",
-      themeVariables: {
-        darkMode: true,
-        background: 'transparent',
-        fontSize: '15px',
-        primaryColor: palette.elevated,
-        primaryTextColor: palette.fg,
-        primaryBorderColor: palette.blue,
-        secondaryColor: palette.subtle,
-        tertiaryColor: palette.canvas,
-        lineColor: palette['fg-muted'],
-        textColor: palette.fg,
-        actorBkg: palette.elevated,
-        actorBorder: palette.blue,
-        actorTextColor: palette.fg,
-        actorLineColor: palette.line,
-        signalColor: palette['fg-muted'],
-        signalTextColor: palette.fg,
-        labelBoxBkgColor: palette.subtle,
-        labelBoxBorderColor: palette.line,
-        labelTextColor: palette.fg,
-        // Edge labels ("yes", "no") sit on the canvas, not on Mermaid's computed near-black.
-        edgeLabelBackground: palette.canvas,
-        loopTextColor: palette['fg-muted'],
-        noteBkgColor: '#3b3551',
-        noteTextColor: palette.fg,
-        noteBorderColor: palette.violet,
-        activationBkgColor: palette.overlay,
-        activationBorderColor: palette.violet,
-        sequenceNumberColor: palette.scrim,
-      },
-    });
-    return mermaid;
-  });
+const load = () => import('mermaid').then(({ default: mermaid }) => mermaid);
 
 let mermaid: ReturnType<typeof load> | undefined;
+
+/**
+ * Mermaid's theme is global, so every render sets it and then renders in turn, and two players in different themes
+ * on one page never draw in each other's colours.
+ */
+let queue: Promise<unknown> = Promise.resolve();
 
 /** A rendered diagram: SVG markup whose element ids all derive from `renderId`, and its own size. */
 export interface RenderedDiagram {
@@ -68,18 +69,38 @@ export interface RenderedDiagram {
   readonly size: Size;
 }
 
-/** Renders Mermaid source to SVG under `renderId`. Rejects with Mermaid's own error when the source is invalid. */
-export async function renderMermaid(source: string, renderId: string): Promise<RenderedDiagram> {
+/**
+ * Renders Mermaid source to SVG under `renderId`, in `palette`'s colours. Rejects with Mermaid's own error when the
+ * source is invalid.
+ */
+export function renderMermaid(
+  source: string,
+  renderId: string,
+  palette: Palette,
+): Promise<RenderedDiagram> {
   mermaid ??= load();
-  const api = await mermaid;
-  try {
-    const { svg } = await api.render(renderId, source);
-    return { svg, renderId, size: intrinsicSizeOf(svg) };
-  } finally {
-    // A failed render can leave its scratch elements in the page.
-    document.getElementById(renderId)?.remove();
-    document.getElementById(`d${renderId}`)?.remove();
-  }
+  const loaded = mermaid;
+  const rendered = queue.then(async () => {
+    const api = await loaded;
+    api.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      sequence: { mirrorActors: false },
+      theme: 'base',
+      fontFamily: "'Source Sans 3 Variable', ui-sans-serif, system-ui, sans-serif",
+      themeVariables: themeOf(palette),
+    });
+    try {
+      const { svg } = await api.render(renderId, source);
+      return { svg, renderId, size: intrinsicSizeOf(svg) };
+    } finally {
+      // A failed render can leave its scratch elements in the page.
+      document.getElementById(renderId)?.remove();
+      document.getElementById(`d${renderId}`)?.remove();
+    }
+  });
+  queue = rendered.catch(() => undefined);
+  return rendered;
 }
 
 /**

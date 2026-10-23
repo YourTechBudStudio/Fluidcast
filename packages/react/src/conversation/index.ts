@@ -16,7 +16,13 @@ export type {
   StatusMoment,
   TimelineRow,
 } from './presentation';
-export { showDriverAtom, showPanelAtom, shownShowAtom, type ShowPanelState } from './shows';
+export {
+  showDriverAtom,
+  showPaletteAtom,
+  showPanelAtom,
+  shownShowAtom,
+  type ShowPanelState,
+} from './shows';
 export {
   connectionAtom,
   conversationAtom,

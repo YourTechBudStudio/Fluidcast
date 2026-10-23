@@ -7,7 +7,7 @@ export function Brand({ compact = false }: { readonly compact?: boolean }) {
     <div className="inline-flex items-center gap-2.5 font-display text-[15px] font-medium tracking-[-0.01em] text-fg-muted">
       <i
         aria-hidden
-        className="size-2 rounded-full bg-linear-135 from-cyan to-violet shadow-[0_0_12px_rgb(145_215_227/0.5)]"
+        className="size-2 rounded-full bg-linear-135 from-cyan to-violet shadow-[0_0_12px_color-mix(in_srgb,var(--color-cyan)_50%,transparent)]"
       />
       <span className={compact ? 'compact:sr-only' : ''}>Fluidcast</span>
     </div>

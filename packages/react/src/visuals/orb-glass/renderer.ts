@@ -1,13 +1,9 @@
 // Tuning ported from the orb-glass mock: a dark glass sphere with luminous inner currents.
-import { rgb, type PaletteName, type Rgb } from '../../ui';
+import { type Rgb, type Tone, toneCss, toneRgb } from '../../ui';
 import { mix3 } from '../engine';
 import { createOrbRenderer, type OrbTuning } from '../orb';
 import type { VisualState } from '../types';
 import { fragmentShader, vertexShader } from './shaders';
-
-const c = rgb;
-type Tone = PaletteName | Rgb;
-const col = (v: Tone): Rgb => (typeof v === 'string' ? c(v) : v);
 
 interface Row {
   A: Tone;
@@ -69,8 +65,8 @@ const STATES: Record<VisualState, Row> = {
   },
   error: {
     A: 'red',
-    B: mix3(c('red'), c('violet'), 0.5),
-    C: mix3(c('violet'), c('fg-muted'), 0.4),
+    B: ['red', 'violet', 0.5],
+    C: ['violet', 'fg-muted', 0.4],
     flow: 0.16,
     warp: 0.7,
     current: 0.55,
@@ -112,14 +108,19 @@ export const createOrbGlassRenderer = createOrbRenderer<Tuning>({
   tag: 'orb-glass',
   vertexShader,
   fragmentShader,
-  targetFor({ state, reducedMotion, held }) {
+  targetFor({ state, reducedMotion, held }, palette) {
     const s = STATES[state];
-    const A = col(s.A);
+    const A = toneRgb(palette, s.A);
     const t: Tuning = {
       A,
-      B: col(s.B),
-      C: col(s.C),
-      base: mix3(c('scrim'), A, 0.09),
+      B: toneRgb(palette, s.B),
+      C: toneRgb(palette, s.C),
+      // A dark glass body in both themes: the currents can only brighten it, so on a light canvas it takes the deep
+      // text tone rather than the light scrim.
+      base:
+        palette.scheme === 'light'
+          ? mix3(toneRgb(palette, 'fg'), A, 0.2)
+          : mix3(toneRgb(palette, 'scrim'), A, 0.09),
       flow: s.flow,
       warp: s.warp,
       current: s.current,
@@ -179,7 +180,8 @@ export const createOrbGlassRenderer = createOrbRenderer<Tuning>({
   },
 });
 
-export const orbGlassFallback = (state: VisualState): readonly [Rgb, Rgb, Rgb] => {
+/** The CSS fallback's gradient colours per state (the first three tones), on the theme's variables. */
+export const orbGlassFallback = (state: VisualState): readonly [string, string, string] => {
   const s = STATES[state];
-  return [col(s.A), col(s.B), col(s.C)];
+  return [toneCss(s.A), toneCss(s.B), toneCss(s.C)];
 };

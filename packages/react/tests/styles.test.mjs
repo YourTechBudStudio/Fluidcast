@@ -96,4 +96,27 @@ describe('dist/styles.css', () => {
     assert.equal(declarations.get('container'), 'fluidcast-player / size');
     assert.equal(declarations.get('overflow'), 'hidden');
   });
+
+  it('gives the light theme its own value for every palette colour', () => {
+    const tokens = (selector, inLayer) => {
+      const found = new Map();
+      css.walkRules((rule) => {
+        if (rule.selectors.join(',') !== selector) return;
+        if (inLayer !== [...ancestors(rule)].some((parent) => isAt(parent, 'layer'))) return;
+        rule.walkDecls(/^--color-/, (decl) => void found.set(decl.prop, decl.value));
+      });
+      return found;
+    };
+    const dark = tokens(':scope', true);
+    const light = tokens(":scope[data-theme='light'],[data-theme='light'] :scope", false);
+    // Aliases (`working`, `error`, …) follow their palette colour, so only literal colours need a light value.
+    const palette = [...dark]
+      .filter(([, value]) => !value.startsWith('var('))
+      .map(([name]) => name);
+    assert.ok(palette.includes('--color-canvas') && palette.includes('--color-blue'));
+    assert.deepEqual(
+      palette.filter((name) => !light.has(name)),
+      [],
+    );
+  });
 });

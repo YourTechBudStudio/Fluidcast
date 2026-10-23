@@ -132,7 +132,7 @@ function Miniature({
           {children}
         </div>
       )}
-      <div className="absolute inset-x-0 bottom-0 h-14 bg-linear-to-t from-[rgb(46_50_68)] to-transparent" />
+      <div className="absolute inset-x-0 bottom-0 h-14 bg-linear-to-t from-subtle to-transparent" />
     </div>
   );
 }

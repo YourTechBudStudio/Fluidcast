@@ -4,11 +4,11 @@ export type ButtonTone = 'primary' | 'quiet' | 'danger' | 'ghost';
 
 const tones: Record<ButtonTone, string> = {
   primary:
-    'font-semibold bg-blue text-scrim shadow-[0_6px_20px_rgb(138_173_244/0.22)] hover:bg-[#9dbbf6]',
+    'font-semibold bg-blue text-on-accent shadow-[0_6px_20px_color-mix(in_srgb,var(--color-blue)_22%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-blue)_85%,var(--color-tint))]',
   quiet:
-    'font-semibold bg-elevated/90 text-fg shadow-[inset_0_0_0_1px_rgb(91_96_120/0.7)] hover:bg-overlay',
+    'font-semibold bg-elevated/90 text-fg shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-line)_70%,transparent)] hover:bg-overlay',
   danger:
-    'font-semibold bg-red/15 text-red shadow-[inset_0_0_0_1px_rgb(237_135_150/0.4)] hover:bg-red/20',
+    'font-semibold bg-red/15 text-red shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-red)_40%,transparent)] hover:bg-red/20',
   ghost:
     'text-fg-muted hover:bg-elevated/45 hover:text-fg aria-pressed:bg-elevated/70 aria-pressed:text-fg',
 };

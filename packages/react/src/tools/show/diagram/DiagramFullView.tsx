@@ -74,7 +74,7 @@ export function DiagramFullView({
         animate={{ opacity: 1, scale: 1 }}
         exit={hidden}
         transition={surfaceTransition}
-        className="flex h-full flex-col overflow-hidden rounded-xl border border-line/40 bg-[rgb(36_39_58/0.97)] shadow-soft compact:rounded-none compact:border-0"
+        className="flex h-full flex-col overflow-hidden rounded-xl border border-line/40 bg-canvas/97 shadow-soft compact:rounded-none compact:border-0"
       >
         <div className="flex shrink-0 items-center gap-3 border-b border-line/25 py-2 pr-2 pl-3">
           <span

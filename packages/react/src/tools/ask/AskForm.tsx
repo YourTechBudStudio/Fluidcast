@@ -162,7 +162,7 @@ export function AskForm({
                       {multi && (
                         <span
                           aria-hidden
-                          className={`grid size-[17px] shrink-0 place-items-center rounded-[5px] border transition-colors duration-(--duration-ui) ${on ? 'border-cyan bg-cyan text-scrim' : 'border-line/85'}`}
+                          className={`grid size-[17px] shrink-0 place-items-center rounded-[5px] border transition-colors duration-(--duration-ui) ${on ? 'border-blue bg-blue text-on-accent' : 'border-line/85'}`}
                         >
                           {on && <Check size={11} strokeWidth={3} />}
                         </span>
@@ -197,7 +197,7 @@ export function AskForm({
                 Continue
                 <kbd
                   aria-hidden
-                  className="grid place-items-center rounded-[4px] bg-scrim/12 px-1 py-0.5 text-scrim/65 shadow-[inset_0_0_0_1px_rgb(20_22_34/0.18)]"
+                  className="grid place-items-center rounded-[4px] bg-on-accent/12 px-1 py-0.5 text-on-accent/65 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-on-accent)_18%,transparent)]"
                 >
                   <CornerDownLeft size={12} strokeWidth={2.2} />
                 </kbd>

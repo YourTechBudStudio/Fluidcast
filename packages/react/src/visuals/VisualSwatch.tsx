@@ -41,7 +41,7 @@ export function VisualSwatch({ id }: { readonly id: VisualId }) {
   }
   return (
     <span aria-hidden className="grid h-[22px] w-[34px] shrink-0 place-items-center">
-      <span className="size-4 rounded-full bg-[radial-gradient(circle_at_35%_30%,rgb(255_255_255/0.7),rgb(138_173_244/0.35)_40%,rgb(36_39_58/0.2)_70%)] shadow-[inset_0_0_0_1px_rgb(202_211_245/0.35)]" />
+      <span className="size-4 rounded-full bg-[radial-gradient(circle_at_35%_30%,rgb(255_255_255/0.7),color-mix(in_srgb,var(--color-blue)_35%,transparent)_40%,color-mix(in_srgb,var(--color-canvas)_20%,transparent)_70%)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-fg)_35%,transparent)]" />
     </span>
   );
 }

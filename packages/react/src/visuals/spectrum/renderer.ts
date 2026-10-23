@@ -1,11 +1,11 @@
 // Simulation and uniforms ported from the electric-spectrum mock, retuned to follow the voice. Only the mirrored frequency layout is kept.
-import { rgb, type PaletteName, type Rgb } from '../../ui';
+import { type Palette, type Tone, toneRgb } from '../../ui';
 import { follow, spring, type Spring } from '../analysis';
 import {
   clamp,
   createProgram,
+  createThemePalette,
   createTransition,
-  mix3,
   rand,
   resizeCanvas,
   TAU,
@@ -26,10 +26,6 @@ const VOICE_MODE_SURGE = 1.7;
 const VOICE_JIT_SURGE = 1.1; // the in-place shape morph follows the voice more gently
 // While speaking, the voice's brightness sets wave density: ±TONE_DENSITY around the state's kScale, darker vowels fewer crests, sibilants more.
 const TONE_DENSITY = 0.18;
-
-const c = rgb;
-const strandCols = (list: readonly (PaletteName | Rgb)[]) =>
-  list.flatMap((v) => (typeof v === 'string' ? c(v) : v));
 
 type Tuning = {
   cols: number[];
@@ -56,16 +52,19 @@ type Tuning = {
 };
 
 // Each state is a target set of uniforms.
-const STATES: Record<VisualState, Tuning> = {
+/** A state's tuning with its strand colours as tones, resolved in the theme's current palette. */
+type Row = Omit<Tuning, 'cols'> & { readonly cols: readonly Tone[] };
+
+const STATES: Record<VisualState, Row> = {
   idle: {
-    cols: strandCols([
+    cols: [
       'cyan',
-      mix3(c('cyan'), c('blue'), 0.35),
-      mix3(c('cyan'), c('fg'), 0.25),
-      mix3(c('cyan'), c('green'), 0.4),
+      ['cyan', 'blue', 0.35],
+      ['cyan', 'fg', 0.25],
+      ['cyan', 'green', 0.4],
       'cyan',
-      mix3(c('cyan'), c('blue'), 0.2),
-    ]),
+      ['cyan', 'blue', 0.2],
+    ],
     count: 4,
     spread: 0.05,
     bright: 0.66,
@@ -87,14 +86,14 @@ const STATES: Record<VisualState, Tuning> = {
     voiceDrive: 0,
   },
   thinking: {
-    cols: strandCols([
+    cols: [
       'violet',
-      mix3(c('violet'), c('blue'), 0.4),
-      mix3(c('violet'), c('fg'), 0.3),
-      mix3(c('violet'), c('blue'), 0.2),
+      ['violet', 'blue', 0.4],
+      ['violet', 'fg', 0.3],
+      ['violet', 'blue', 0.2],
       'violet',
-      mix3(c('violet'), c('red'), 0.2),
-    ]),
+      ['violet', 'red', 0.2],
+    ],
     count: 5,
     spread: 0.05,
     bright: 0.8,
@@ -116,14 +115,14 @@ const STATES: Record<VisualState, Tuning> = {
     voiceDrive: 0,
   },
   speaking: {
-    cols: strandCols([
-      mix3(c('blue'), c('violet'), 0.55),
+    cols: [
+      ['blue', 'violet', 0.55],
       'blue',
-      mix3(c('blue'), c('fg'), 0.2),
-      mix3(c('blue'), c('cyan'), 0.4),
+      ['blue', 'fg', 0.2],
+      ['blue', 'cyan', 0.4],
       'cyan',
-      mix3(c('cyan'), c('green'), 0.65),
-    ]),
+      ['cyan', 'green', 0.65],
+    ],
     count: 6,
     spread: 0.035,
     bright: 0.9,
@@ -145,7 +144,7 @@ const STATES: Record<VisualState, Tuning> = {
     voiceDrive: 1,
   },
   error: {
-    cols: strandCols(['red', mix3(c('red'), c('violet'), 0.3), 'red', 'red', 'red', 'red']),
+    cols: ['red', ['red', 'violet', 0.3], 'red', 'red', 'red', 'red'],
     count: 2,
     spread: 0.1,
     bright: 0.5,
@@ -167,7 +166,7 @@ const STATES: Record<VisualState, Tuning> = {
     voiceDrive: 0,
   },
   offline: {
-    cols: strandCols(['fg-subtle', 'line', 'fg-subtle', 'fg-subtle', 'fg-subtle', 'fg-subtle']),
+    cols: ['fg-subtle', 'line', 'fg-subtle', 'fg-subtle', 'fg-subtle', 'fg-subtle'],
     count: 3,
     spread: 0.09,
     bright: 0.32,
@@ -190,8 +189,9 @@ const STATES: Record<VisualState, Tuning> = {
   },
 };
 
-function targetFor({ state, reducedMotion, held }: RendererInputs): Tuning {
-  const t = { ...STATES[state], cols: STATES[state].cols.slice() };
+function targetFor({ state, reducedMotion, held }: RendererInputs, palette: Palette): Tuning {
+  const { cols, ...row } = STATES[state];
+  const t: Tuning = { ...row, cols: cols.flatMap((tone) => toneRgb(palette, tone)) };
   if (held) {
     t.bright *= 0.72;
     t.crackle *= 0.5;
@@ -311,7 +311,8 @@ export const createSpectrumRenderer: RendererFactory = (canvas, initial) => {
   gl.uniform1i(u.field, 1);
 
   let inputs = initial;
-  const tuning = createTransition(targetFor(initial));
+  const theme = createThemePalette(canvas);
+  const tuning = createTransition(targetFor(initial, theme.current));
 
   // ---------- Swells: occasional local bulges while thinking ----------
   const swells: { x: number; w: number; a: number; t0: number; dur: number }[] = [];
@@ -400,11 +401,13 @@ export const createSpectrumRenderer: RendererFactory = (canvas, initial) => {
   return {
     retarget(next, now) {
       inputs = next;
-      tuning.retarget(targetFor(next), now);
+      tuning.retarget(targetFor(next, theme.current), now);
     },
     draw(now, analysis) {
       const dt = last < 0 ? 0 : Math.min(0.05, Math.max(0, (now - last) / 1000));
       last = now;
+      // A theme change glides to the new colours like any other retarget.
+      if (theme.changed()) tuning.retarget(targetFor(inputs, theme.current), now);
       cur = tuning.at(now);
       // As in the mock, gain scales the raw level before the followers, so the band fades out smoothly when the audio stops.
       const raw = analysis.raw * cur.gain;

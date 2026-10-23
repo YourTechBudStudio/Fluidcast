@@ -1,4 +1,4 @@
-import { easeOutExpo, type Rgb } from '../ui';
+import { easeOutExpo, type Palette, readPalette, type Rgb } from '../ui';
 import type { Analysis, VisualState } from './types';
 
 export const TRANSITION_MS = 600;
@@ -144,6 +144,28 @@ export function resizeCanvas(canvas: HTMLCanvasElement) {
     canvas.width = w;
     canvas.height = h;
   }
+}
+
+/**
+ * The theme's palette for a canvas, kept current. `color-scheme` flips with the theme, so `changed` compares that one
+ * computed value each frame (no style work while nothing changed) and re-reads the palette only when it flips.
+ */
+export function createThemePalette(canvas: HTMLCanvasElement) {
+  const style = getComputedStyle(canvas);
+  let scheme = style.colorScheme;
+  let palette = readPalette(canvas);
+  return {
+    get current(): Palette {
+      return palette;
+    },
+    /** Whether the theme changed since the last call; `current` is then the new palette. */
+    changed(): boolean {
+      if (style.colorScheme === scheme) return false;
+      scheme = style.colorScheme;
+      palette = readPalette(canvas);
+      return true;
+    },
+  };
 }
 
 /** A running visual. It owns its simulation; the host owns the loop, the canvas and context loss. */

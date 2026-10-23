@@ -239,7 +239,7 @@ export function DiagramViewer({
           <span
             aria-hidden
             data-shown={hint || undefined}
-            className="diagram-hint pointer-events-none absolute top-3 left-1/2 rounded-full bg-elevated/95 px-3 py-1.5 text-[13px] whitespace-nowrap text-fg shadow-[inset_0_0_0_1px_rgb(91_96_120/0.7)]"
+            className="diagram-hint pointer-events-none absolute top-3 left-1/2 rounded-full bg-elevated/95 px-3 py-1.5 text-[13px] whitespace-nowrap text-fg shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-line)_70%,transparent)]"
           >
             {modifier} + scroll to zoom
           </span>

@@ -7,7 +7,6 @@ import {
   useState,
 } from 'react';
 
-import type { Rgb } from '../ui';
 import type { Renderer, RendererFactory } from './engine';
 import type { VisualInputs } from './types';
 
@@ -18,13 +17,11 @@ export interface GlVisualProps {
   readonly inputs: VisualInputs;
   /** When false the render loop stops, for example while the transcript layer is showing. */
   readonly active: boolean;
-  /** The three fallback tones for the current state. */
-  readonly fallbackTones: readonly [Rgb, Rgb, Rgb];
+  /** The three fallback tones for the current state, as CSS colours on the theme's variables. */
+  readonly fallbackTones: readonly [string, string, string];
   readonly fallback: ReactNode;
   readonly className?: string;
 }
-
-const css = (c: Rgb) => `rgb(${c.map((v) => Math.round(v * 255)).join(' ')})`;
 
 /**
  * Hosts one WebGL visual: owns the canvas, the animation loop and context loss, and swaps to the CSS fallback when WebGL
@@ -100,7 +97,7 @@ export function GlVisual({
   }, [active, failed]);
 
   const [fa, fb, fc] = fallbackTones;
-  const style = { '--fa': css(fa), '--fb': css(fb), '--fc': css(fc) } as CSSProperties;
+  const style = { '--fa': fa, '--fb': fb, '--fc': fc } as CSSProperties;
 
   return (
     <div

@@ -1,4 +1,4 @@
-import { rgb, type PaletteName, useDomId } from '../ui';
+import { type PaletteName, toneCss, useDomId } from '../ui';
 import { GlVisual } from './GlVisual';
 import { createSpectrumRenderer } from './spectrum/renderer';
 import type { VisualInputs, VisualState } from './types';
@@ -82,7 +82,7 @@ export function Spectrum({
       shape="band"
       inputs={inputs}
       active={active}
-      fallbackTones={[rgb(tones[0]), rgb(tones[1]), rgb(tones[2])]}
+      fallbackTones={[toneCss(tones[0]), toneCss(tones[1]), toneCss(tones[2])]}
       fallback={<Fallback state={inputs.state} held={inputs.held} />}
       className="size-full"
     />
