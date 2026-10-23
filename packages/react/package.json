@@ -1,6 +1,6 @@
 {
   "name": "@yourtechbudstudio/fluidcast-react",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "license": "Apache-2.0",
   "author": "YourTechBud",
   "repository": {
@@ -67,7 +67,7 @@
     "oxc-parser": "^0.151.0",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
-    "postcss": "^8.5.28",
+    "postcss": "^8.5.31",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "tailwindcss": "^4.3.3",

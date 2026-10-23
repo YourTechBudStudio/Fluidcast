@@ -160,17 +160,17 @@ export function installBrowser(): Browser {
 
   vi.stubGlobal('AudioContext', FakeAudioContext);
   vi.stubGlobal('ResizeObserver', FakeResizeObserver);
-  const play = vi
-    .spyOn(HTMLMediaElement.prototype, 'play')
-    .mockImplementation(function (this: HTMLMediaElement) {
-      record(this).plays++;
-      return Promise.resolve();
-    });
-  const pause = vi
-    .spyOn(HTMLMediaElement.prototype, 'pause')
-    .mockImplementation(function (this: HTMLMediaElement) {
-      record(this).pauses++;
-    });
+  const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (
+    this: HTMLMediaElement,
+  ) {
+    record(this).plays++;
+    return Promise.resolve();
+  });
+  const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(function (
+    this: HTMLMediaElement,
+  ) {
+    record(this).pauses++;
+  });
   let urls = 0;
   const createObjectURL = vi
     .spyOn(URL, 'createObjectURL')
