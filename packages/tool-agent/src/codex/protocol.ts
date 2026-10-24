@@ -265,3 +265,14 @@ export const TurnsPage = Schema.Struct({
   data: Schema.Array(Schema.Struct({ items: Schema.Array(Schema.Unknown) })),
   nextCursor: maybe(Schema.String),
 });
+
+/** `skills/list` response: the skills of each directory asked for. Only the fields used. */
+export const SkillsListResponse = Schema.Struct({
+  data: Schema.Array(
+    Schema.Struct({
+      skills: Schema.Array(
+        Schema.Struct({ name: Schema.String, description: Schema.String, enabled: Schema.Boolean }),
+      ),
+    }),
+  ),
+});

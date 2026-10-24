@@ -16,6 +16,7 @@ export {
 } from './handoff.ts';
 export { defaultProgressPrompt, defaultProgressSchedule } from './progress.ts';
 export {
+  SkillsUnavailable,
   WorkerSetupError,
   type WorkerEvent,
   type WorkerMessage,

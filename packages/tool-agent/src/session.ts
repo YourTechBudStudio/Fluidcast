@@ -30,18 +30,25 @@ import {
 } from '@yourtechbudstudio/fluidcast-harness';
 import type { ExecutionId } from '@yourtechbudstudio/fluidcast-harness/protocol';
 
-import { conversationSince, renderHandoff, type Handoff, type HandoffPrompt } from './handoff.ts';
+import { conversationSince, makeHandoff, type Handoff, type HandoffPrompt } from './handoff.ts';
 import { progressLoop } from './progress.ts';
 import {
   forwardErrorMessage,
   type ForwardInput,
   type ForwardResult,
+  type Skill,
   type TranscriptEntry,
   type TranscriptMessage,
   type WorkerStatus,
   type WorkerSummary,
 } from './schema.ts';
-import type { WorkerEvent, WorkerMessage, WorkerSetupError, WorkerType } from './worker.ts';
+import type {
+  SkillsUnavailable,
+  WorkerEvent,
+  WorkerMessage,
+  WorkerSetupError,
+  WorkerType,
+} from './worker.ts';
 
 type Outcome = Deferred.Deferred<ForwardResult, ToolError | ToolFault>;
 type TurnEndEntry = Extract<TranscriptEntry, { readonly _tag: 'turnEnd' }>;
@@ -157,6 +164,8 @@ export interface WorkerSession {
   readonly fault: Effect.Effect<ToolFault>;
   /** The session ID in the worker's state now; final once the session's scope has closed. */
   readonly sessionId: Effect.Effect<string | null>;
+  /** The skills in the worker's directory, listed on the first read and kept for the session. */
+  readonly skills: Effect.Effect<ReadonlyArray<Skill>, SkillsUnavailable>;
 }
 
 /** Builds the worker session in the current scope, attaching a preloaded session. Nothing connects. */
@@ -171,9 +180,12 @@ export const makeWorkerSession = (
 
     const attached =
       options.sessionId === undefined ? undefined : yield* type.attach(options.sessionId);
+    const cwd = attached?.cwd ?? type.cwd;
+    // An interrupted read is not kept, so the next read lists again; a success or failure is.
+    const skills = yield* Effect.cached(type.listSkills(cwd));
     const state = yield* SubscriptionRef.make<WorkerState>({
       sessionId: options.sessionId,
-      cwd: attached?.cwd ?? type.cwd,
+      cwd,
       connected: false,
       lastHandle: undefined,
       activity: 'settled',
@@ -259,11 +271,7 @@ export const makeWorkerSession = (
 
         const conversation = conversationSince(call.state, known.lastHandle, call.handle);
         const isFirstMessage = known.lastHandle === undefined;
-        const prompt = options.hook({
-          conversation,
-          isFirstMessage,
-          rendered: renderHandoff({ conversation, isFirstMessage }),
-        });
+        const prompt = options.hook(makeHandoff(conversation, isFirstMessage));
         const text = type.composeMessage(prompt.prompt, prompt.modifiers ?? []);
         const outcome = yield* Deferred.make<ForwardResult, ToolError | ToolFault>();
         const id = uuidv7();
@@ -443,6 +451,7 @@ export const makeWorkerSession = (
       transcript,
       fault,
       sessionId,
+      skills,
     };
   });
 

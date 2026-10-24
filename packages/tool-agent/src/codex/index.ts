@@ -5,11 +5,12 @@
  */
 import type { Effect } from 'effect';
 
-import type { Modifier } from '../handoff.ts';
+import { modifierName, type Modifier } from '../handoff.ts';
 import type { WorkerSetupError, WorkerType } from '../worker.ts';
 import { attachWith, readThreadWith, type CodexThread } from './attach.ts';
 import { connectWith, type CodexThreadOptions } from './connect.ts';
 import { defaultAppServerLaunch, openAppServer, type AppServerLaunch } from './process.ts';
+import { listSkillsWith } from './skills.ts';
 
 export type { CodexThread } from './attach.ts';
 export type { CodexThreadOptions } from './connect.ts';
@@ -64,7 +65,6 @@ const appServer = (options: CodexLaunchOptions) => {
 
 /** One skill per message, for now: chaining several is not supported. */
 const maxModifiers = 1;
-const modifierName = /^[a-z0-9][a-z0-9:_-]*$/;
 
 /** Codex invokes a skill named in the text as `$name`; the skill receives the whole prompt. */
 const composeMessage = (prompt: string, modifiers: ReadonlyArray<Modifier>): string => {
@@ -74,7 +74,9 @@ const composeMessage = (prompt: string, modifiers: ReadonlyArray<Modifier>): str
     throw new Error(`Codex takes at most ${maxModifiers} modifier, got ${modifiers.length}`);
   }
   if (!modifierName.test(modifier.name)) throw new Error('Invalid Codex modifier name');
-  return `$${modifier.name} ${prompt}`;
+  // No space before an empty prompt or one that starts on a new line.
+  const separator = /^(\s|$)/.test(prompt) ? '' : ' ';
+  return `$${modifier.name}${separator}${prompt}`;
 };
 
 /**
@@ -93,6 +95,7 @@ export const codexWorker = (options: CodexWorkerOptions): WorkerType => {
       effort: options.effort,
       thread: options.thread,
     }),
+    listSkills: listSkillsWith(open),
   };
 };
 

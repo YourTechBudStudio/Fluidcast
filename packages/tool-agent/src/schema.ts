@@ -82,6 +82,17 @@ export const WorkerSummary = Schema.TaggedStruct('WorkerSummary', {
 });
 export type WorkerSummary = typeof WorkerSummary.Type;
 
+/**
+ * A skill or command the worker can be sent as a modifier, for suggestions while the listener
+ * types. `argumentHint` is absent when the skill declares none.
+ */
+export const Skill = Schema.Struct({
+  name: Schema.String,
+  description: Schema.String,
+  argumentHint: Schema.optionalKey(Schema.String),
+});
+export type Skill = typeof Skill.Type;
+
 /** The tool call an entry is nested under (a subagent's), or `null` at the top level. */
 const Parent = { parentToolUseId: Schema.NullOr(Schema.String) };
 

@@ -14,7 +14,15 @@ import {
 } from '@yourtechbudstudio/fluidcast-harness/protocol';
 
 import { eventually, fakeModel, fakeWorkerType } from './fixtures.test.ts';
-import { ForwardInput, forwardAgentTool, forwardToolName, type WorkerType } from './index.ts';
+import {
+  ForwardInput,
+  forwardAgentTool,
+  forwardToolName,
+  SkillsUnavailable,
+  type ForwardAgentToolOptions,
+  type Modifier,
+  type WorkerType,
+} from './index.ts';
 
 /** A scripted interface model: each call takes the next reply the test queues, and records its prompt. */
 const scriptedModel = Effect.gen(function* () {
@@ -56,13 +64,17 @@ const silence = SpeechSynthesizer.of({ synthesize: () => Stream.empty });
  * A real Harness session with the Forward tool over a fake worker type. The worker session is
  * acquired first, in the same scope, so it outlives the Harness session.
  */
-const setup = (type?: Partial<WorkerType>, options: { readonly play?: boolean } = {}) =>
+const setup = (
+  type?: Partial<WorkerType>,
+  options: { readonly play?: boolean; readonly hook?: ForwardAgentToolOptions['hook'] } = {},
+) =>
   Effect.gen(function* () {
     const fake = yield* fakeWorkerType();
     const progressModel = yield* fakeModel;
-    const forward = yield* forwardAgentTool({ worker: { ...fake.type, ...type } }).pipe(
-      Effect.provideService(LanguageModel.LanguageModel, progressModel),
-    );
+    const forward = yield* forwardAgentTool({
+      worker: { ...fake.type, ...type },
+      ...(options.hook === undefined ? {} : { hook: options.hook }),
+    }).pipe(Effect.provideService(LanguageModel.LanguageModel, progressModel));
     const interfaceModel = yield* scriptedModel;
     const context = yield* Layer.build(
       layer({
@@ -241,6 +253,50 @@ describe('forwardAgentTool in a Harness session', () => {
       }),
     ));
 
+  it('passes a typed /name through the default hook as one modifier, with the skill text', () =>
+    run(
+      Effect.gen(function* () {
+        const composed = yield* Ref.make<ReadonlyArray<ReadonlyArray<Modifier>>>([]);
+        const ctx = yield* setup({
+          composeMessage: (prompt, modifiers) => {
+            Effect.runSync(Ref.update(composed, (all) => [...all, modifiers]));
+            return `[${modifiers.map((modifier) => modifier.name).join()}] ${prompt}`;
+          },
+        });
+        yield* ctx.interface.reply([forward]);
+        yield* ctx.session.command({ _tag: 'SendMessage', text: '/designing-ui three mockups' });
+        const [open] = yield* eventually(ctx.fake.connections, (all) => all.length === 1);
+        const [message] = yield* eventually(open!.received, (all) => all.length === 1);
+        assert.deepEqual(yield* Ref.get(composed), [[{ name: 'designing-ui' }]]);
+        assert.ok(
+          message!.text.startsWith('[designing-ui] three mockups\n\n- You are'),
+          message!.text,
+        );
+      }),
+    ));
+
+  it("sends no modifiers when a custom hook drops them, and the hook's text as is", () =>
+    run(
+      Effect.gen(function* () {
+        const composed = yield* Ref.make<ReadonlyArray<ReadonlyArray<Modifier>>>([]);
+        const ctx = yield* setup(
+          {
+            composeMessage: (prompt, modifiers) => {
+              Effect.runSync(Ref.update(composed, (all) => [...all, modifiers]));
+              return prompt;
+            },
+          },
+          { hook: (handoff) => ({ prompt: `dropped ${handoff.modifiers.length}` }) },
+        );
+        yield* ctx.interface.reply([forward]);
+        yield* ctx.session.command({ _tag: 'SendMessage', text: '/designing-ui three mockups' });
+        const [open] = yield* eventually(ctx.fake.connections, (all) => all.length === 1);
+        const [message] = yield* eventually(open!.received, (all) => all.length === 1);
+        assert.deepEqual(yield* Ref.get(composed), [[]]);
+        assert.equal(message!.text, 'dropped 1');
+      }),
+    ));
+
   it('halts the conversation when composing the message throws (a hook defect)', () =>
     run(
       Effect.gen(function* () {
@@ -279,6 +335,62 @@ describe('forwardAgentTool', () => {
           ),
         );
         assert.ok(tool.guidelines.every((guideline) => guideline.includes('`forward_agent`')));
+      }),
+    ));
+});
+
+describe('WorkerHandle.skills', () => {
+  const listed = [{ name: 'designing-ui', description: 'Mockups.' }];
+
+  it("lists the worker directory's skills once, on the first read, and keeps them", () =>
+    run(
+      Effect.gen(function* () {
+        const calls = yield* Ref.make<ReadonlyArray<string>>([]);
+        const fake = yield* fakeWorkerType({
+          cwd: '/new',
+          sessions: { stored: { cwd: '/recorded', history: [] } },
+          listSkills: (cwd) => Ref.update(calls, (all) => [...all, cwd]).pipe(Effect.as(listed)),
+        });
+        const model = yield* fakeModel;
+        const fresh = yield* forwardAgentTool({ worker: fake.type }).pipe(
+          Effect.provideService(LanguageModel.LanguageModel, model),
+        );
+        assert.deepEqual(yield* Ref.get(calls), []);
+        assert.deepEqual(yield* fresh.worker.skills, listed);
+        assert.deepEqual(yield* fresh.worker.skills, listed);
+        assert.deepEqual(yield* Ref.get(calls), ['/new']);
+
+        const preloaded = yield* forwardAgentTool({
+          worker: fake.type,
+          session: { sessionId: 'stored' },
+        }).pipe(Effect.provideService(LanguageModel.LanguageModel, model));
+        yield* preloaded.worker.skills;
+        assert.deepEqual(yield* Ref.get(calls), ['/new', '/recorded']);
+      }),
+    ));
+
+  it('keeps a failure for the session', () =>
+    run(
+      Effect.gen(function* () {
+        const calls = yield* Ref.make(0);
+        const fake = yield* fakeWorkerType({
+          listSkills: () =>
+            Ref.update(calls, (count) => count + 1).pipe(
+              Effect.andThen(Effect.fail(new SkillsUnavailable({ reason: 'Failed' }))),
+            ),
+        });
+        const { worker } = yield* forwardAgentTool({ worker: fake.type }).pipe(
+          Effect.provideService(LanguageModel.LanguageModel, yield* fakeModel),
+        );
+        assert.deepEqual(
+          yield* Effect.flip(worker.skills),
+          new SkillsUnavailable({ reason: 'Failed' }),
+        );
+        assert.deepEqual(
+          yield* Effect.flip(worker.skills),
+          new SkillsUnavailable({ reason: 'Failed' }),
+        );
+        assert.equal(yield* Ref.get(calls), 1);
       }),
     ));
 });

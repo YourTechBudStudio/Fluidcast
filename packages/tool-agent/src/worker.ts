@@ -1,10 +1,10 @@
 /** The adapter contract between the SDK-neutral Forward tool and one kind of worker (an agent SDK). */
-import { Schema, type Effect, type Stream } from 'effect';
+import { Cause, Effect, Schema, type Stream } from 'effect';
 
 import type { ToolFault } from '@yourtechbudstudio/fluidcast-harness';
 
 import type { Modifier } from './handoff.ts';
-import type { TranscriptEntry } from './schema.ts';
+import type { Skill, TranscriptEntry } from './schema.ts';
 
 /** One message for the worker. `id` is a UUID the worker reports back in `Consumed`. */
 export interface WorkerMessage {
@@ -53,6 +53,11 @@ export interface WorkerType {
     worker: { readonly cwd: string; readonly resume: string | undefined },
     input: Stream.Stream<WorkerMessage>,
   ) => Stream.Stream<WorkerEvent, ToolFault>;
+  /**
+   * The skills a worker in `cwd` can be sent as modifiers, including those its model never invokes
+   * on its own. Starts no turn. Fails with `SkillsUnavailable` when they cannot be listed in time.
+   */
+  readonly listSkills: (cwd: string) => Effect.Effect<ReadonlyArray<Skill>, SkillsUnavailable>;
 }
 
 /** The worker could not be set up: the session to preload cannot be attached. */
@@ -60,3 +65,32 @@ export class WorkerSetupError extends Schema.TaggedError<WorkerSetupError>()('Wo
   sessionId: Schema.String,
   reason: Schema.Literals(['SessionNotFound', 'SessionUnreadable']),
 }) {}
+
+/** The worker type's skills could not be listed: it failed, or did not answer in time. */
+export class SkillsUnavailable extends Schema.TaggedError<SkillsUnavailable>()(
+  'SkillsUnavailable',
+  {
+    reason: Schema.Literals(['Failed', 'TimedOut']),
+  },
+) {}
+
+/** How long a worker type may take to list its skills. */
+const listSkillsTimeout = '10 seconds';
+
+/**
+ * A worker type's skill listing, bounded by its timeout (interrupting it, so its finalizers close
+ * what it opened): any failure is logged by `log`, which must not log payloads, then becomes
+ * `SkillsUnavailable`.
+ */
+export const boundedListing = <A, E>(
+  listing: Effect.Effect<A, E>,
+  log: (error: E | Cause.TimeoutError) => Effect.Effect<void>,
+): Effect.Effect<A, SkillsUnavailable> =>
+  listing.pipe(
+    Effect.timeout(listSkillsTimeout),
+    Effect.tapError(log),
+    Effect.mapError(
+      (error) =>
+        new SkillsUnavailable({ reason: Cause.isTimeoutError(error) ? 'TimedOut' : 'Failed' }),
+    ),
+  );

@@ -56,6 +56,22 @@ export interface Modifier {
   readonly name: string;
 }
 
+/** A valid modifier name, for every worker type and for one the listener types as `/name`. */
+export const modifierName = /^[a-z0-9][a-z0-9:_-]*$/;
+
+/**
+ * Pure: a leading `/name` in a user message's text, and the words after it, trimmed. The first
+ * whitespace-delimited token must be `/` and a valid name, with nothing before it; anything else
+ * (`/`, `/Tmp`, `/tmp/notes.md`) is plain text.
+ */
+export const parseModifier = (
+  text: string,
+): { readonly modifier: Modifier; readonly words: string } | undefined => {
+  const match = /^\/(\S*)([\s\S]*)$/.exec(text);
+  if (match === null || !modifierName.test(match[1]!)) return undefined;
+  return { modifier: { name: match[1]! }, words: match[2]!.trim() };
+};
+
 /** Everything the hook receives about one message to the worker. */
 export interface Handoff {
   /**
@@ -63,10 +79,15 @@ export interface Handoff {
    * voice said and showed, and the listener's own words.
    */
   readonly conversation: ReadonlyArray<ConversationEntry>;
-  /** The default text (`renderHandoff`). */
+  /**
+   * The default text: `renderSkillHandoff` when the listener typed a modifier, else
+   * `renderHandoff`.
+   */
   readonly rendered: string;
   /** No earlier message was sent to the worker in this session (a new or preloaded worker). */
   readonly isFirstMessage: boolean;
+  /** What the listener typed as a leading `/name` in their latest message in the window; else none. */
+  readonly modifiers: ReadonlyArray<Modifier>;
 }
 
 /** What the hook returns: the prompt, and skill tokens the worker type composes with it. */
@@ -301,8 +322,20 @@ export const renderConversation = (entries: ReadonlyArray<ConversationEntry>): s
   return blocks.join('\n\n');
 };
 
+/** The standing instructions that close a hand-off, each one line. */
+const instruction = {
+  unattended:
+    '- You are working unattended. The user hears and sees your response only through the voice, in pieces, so include everything needed in it.',
+  voiceAddsNothing:
+    '- The voice adds nothing of its own. When the user asks to slow down, repeat or re-explain something, do it in your response.',
+  correctMisrepresentation:
+    '- If anything said or shown to the user misrepresents your work, correct it in your response.',
+  noAskUserQuestion: '- Do not use the AskUserQuestion tool.',
+  foreground: '- Run tasks and shell commands in the foreground, not in the background.',
+} as const;
+
 /** The default text the worker receives. Nothing is XML-escaped. */
-export const renderHandoff = (handoff: Omit<Handoff, 'rendered'>): string => {
+export const renderHandoff = (handoff: Omit<Handoff, 'rendered' | 'modifiers'>): string => {
   const [lead, tag] = handoff.isFirstMessage
     ? [
         'The user is talking with you through a voice conversation. A voice speaks to them as you, in the first person: it presents your responses in short spoken pieces, with material shown on their screen, and passes everything they say back to you. Here is that conversation so far.',
@@ -325,10 +358,69 @@ export const renderHandoff = (handoff: Omit<Handoff, 'rendered'>): string => {
     '',
     "Respond to the user's latest words. They are the user's own, and take precedence over anything the voice said or showed.",
     '',
-    '- You are working unattended. The user hears and sees your response only through the voice, in pieces, so include everything needed in it.',
-    '- The voice adds nothing of its own. When the user asks to slow down, repeat or re-explain something, do it in your response.',
-    '- If anything said or shown to the user misrepresents your work, correct it in your response.',
-    '- Do not use the AskUserQuestion tool.',
-    '- Run tasks and shell commands in the foreground, not in the background.',
+    instruction.unattended,
+    instruction.voiceAddsNothing,
+    instruction.correctMisrepresentation,
+    instruction.noAskUserQuestion,
+    instruction.foreground,
   ].join('\n');
+};
+
+/**
+ * The text a skill receives as its arguments: the listener's words, the questions they answered in
+ * `conversation` (never Continue checkpoints or declined questions), and the standing instructions
+ * that do not refer to the voice. Nothing the voice said or showed. Blocks are a blank line apart;
+ * without words, the text starts on a new line, so the skill name sits on its own.
+ */
+export const renderSkillHandoff = (
+  words: string,
+  conversation: ReadonlyArray<ConversationEntry>,
+): string => {
+  const answers = conversation.flatMap((entry) =>
+    entry.kind === 'question' && entry.answer !== undefined && entry.answer.kind !== 'continue'
+      ? [`- ${entry.input.question} → ${renderAnswer(entry.answer)}`]
+      : [],
+  );
+  const blocks: Array<string> = [];
+  if (words !== '') blocks.push(words);
+  if (answers.length > 0) {
+    blocks.push(
+      [
+        ...(words === '' ? [] : ['---']),
+        "The user's answers (the questions are the voice's wording):",
+        ...answers,
+      ].join('\n'),
+    );
+  }
+  blocks.push(
+    [instruction.unattended, instruction.noAskUserQuestion, instruction.foreground].join('\n'),
+  );
+  const text = blocks.join('\n\n');
+  return words === '' ? `\n${text}` : text;
+};
+
+/**
+ * Pure: the hook's input for one message. A leading `/name` in the latest user entry is the
+ * modifier, and `rendered` the skill's text; otherwise there are no modifiers and `rendered` is
+ * `renderHandoff`.
+ */
+export const makeHandoff = (
+  conversation: ReadonlyArray<ConversationEntry>,
+  isFirstMessage: boolean,
+): Handoff => {
+  const latest = conversation.findLast((entry) => entry.kind === 'user');
+  const typed = latest === undefined ? undefined : parseModifier(latest.text);
+  return typed === undefined
+    ? {
+        conversation,
+        isFirstMessage,
+        modifiers: [],
+        rendered: renderHandoff({ conversation, isFirstMessage }),
+      }
+    : {
+        conversation,
+        isFirstMessage,
+        modifiers: [typed.modifier],
+        rendered: renderSkillHandoff(typed.words, conversation),
+      };
 };

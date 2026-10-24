@@ -150,6 +150,7 @@ const fakeWorkerType = (
       ? Effect.succeed({ cwd, history: [] })
       : Effect.fail(new WorkerSetupError({ sessionId, reason: attachFailure })),
   connect: () => Stream.die('the fake worker never connects'),
+  listSkills: () => Effect.succeed([]),
 });
 
 /**

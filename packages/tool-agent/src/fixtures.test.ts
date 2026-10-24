@@ -94,6 +94,8 @@ export const fakeWorkerType = (
     readonly sessions?: Readonly<
       Record<string, { readonly cwd: string; readonly history: ReadonlyArray<TranscriptEntry> }>
     >;
+    /** Default: no skills. */
+    readonly listSkills?: WorkerType['listSkills'];
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -107,6 +109,7 @@ export const fakeWorkerType = (
           ? Effect.fail(new WorkerSetupError({ sessionId, reason: 'SessionNotFound' }))
           : Effect.succeed(session);
       },
+      listSkills: options.listSkills ?? (() => Effect.succeed([])),
       connect: (worker, input) =>
         Stream.unwrap(
           Effect.gen(function* () {

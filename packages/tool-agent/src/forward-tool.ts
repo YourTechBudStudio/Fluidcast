@@ -10,11 +10,12 @@ import {
   ForwardInput,
   ForwardResult,
   forwardToolName,
+  type Skill,
   type TranscriptMessage,
   type WorkerSummary,
 } from './schema.ts';
 import { makeWorkerSession } from './session.ts';
-import type { WorkerSetupError, WorkerType } from './worker.ts';
+import type { SkillsUnavailable, WorkerSetupError, WorkerType } from './worker.ts';
 
 export interface ForwardAgentToolOptions {
   /** The worker that does the thinking and the work, such as `claudeWorker(…)`. */
@@ -34,7 +35,12 @@ export interface ForwardAgentToolOptions {
     readonly schedule?: Schedule.Schedule<unknown>;
     readonly prompt?: string;
   };
-  /** Reshapes each hand-off. Synchronous and pure; a throw halts the conversation. Default: `{ prompt: handoff.rendered }`. */
+  /**
+   * Reshapes each hand-off. It receives the modifier the listener typed as a leading `/name`
+   * (`handoff.modifiers`) and the ready-made text for it (`handoff.rendered`), and has the final
+   * say: it may keep, replace or drop the modifiers. Synchronous and pure; a throw halts the
+   * conversation. Default: `{ prompt: handoff.rendered, modifiers: handoff.modifiers }`.
+   */
   readonly hook?: (handoff: Handoff) => HandoffPrompt;
 }
 
@@ -57,6 +63,12 @@ export interface WorkerHandle {
    * scope has closed, which `status` cannot give.
    */
   readonly sessionId: Effect.Effect<string | null>;
+  /**
+   * The skills in the worker's directory (a preloaded session's recorded one, else the worker
+   * type's `cwd`), for suggestions. Listed on the first read and kept for the session, a failure
+   * included: a skill added later appears in the next session. An interrupted read is not kept.
+   */
+  readonly skills: Effect.Effect<ReadonlyArray<Skill>, SkillsUnavailable>;
 }
 
 export interface ForwardAgentTool {
@@ -99,7 +111,8 @@ export const forwardAgentTool = (
     const session = yield* makeWorkerSession({
       type: options.worker,
       sessionId: options.session?.sessionId,
-      hook: options.hook ?? ((handoff) => ({ prompt: handoff.rendered })),
+      hook:
+        options.hook ?? ((handoff) => ({ prompt: handoff.rendered, modifiers: handoff.modifiers })),
       schedule: options.progress?.schedule ?? defaultProgressSchedule,
       progressPrompt: options.progress?.prompt ?? defaultProgressPrompt,
       model: yield* LanguageModel.LanguageModel,
@@ -119,6 +132,7 @@ export const forwardAgentTool = (
         transcript: session.transcript,
         fault: session.fault,
         sessionId: session.sessionId,
+        skills: session.skills,
       },
     };
   });

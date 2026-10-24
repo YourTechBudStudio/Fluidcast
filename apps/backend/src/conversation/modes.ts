@@ -4,7 +4,11 @@
  * Code or Codex) and walks the listener through its last answer.
  */
 import type { SessionConfig } from '@yourtechbudstudio/fluidcast-harness';
-import type { Handoff, HandoffPrompt } from '@yourtechbudstudio/fluidcast-tool-agent';
+import {
+  renderHandoff,
+  type Handoff,
+  type HandoffPrompt,
+} from '@yourtechbudstudio/fluidcast-tool-agent';
 import {
   forwardToolName,
   type ForwardResult,
@@ -17,16 +21,18 @@ export const brainstormOpening = "Let's brainstorm this in phases.";
 /**
  * New brainstorm's hook: the first hand-off starts the brainstorming skill with the opening line,
  * which each worker type writes in its own syntax: Claude Code receives `/brainstorming Let's
- * brainstorm this in phases.\n\n<hand-off>`, Codex the same with `$brainstorming`. Later hand-offs
- * are unchanged.
+ * brainstorm this in phases.\n\n<hand-off>`, Codex the same with `$brainstorming`. A skill the
+ * listener typed on that first message is ignored, and the hand-off is the normal text
+ * (`renderHandoff`), so what they typed reaches the worker word for word, with the narration. Later
+ * hand-offs pass the listener's typed skill through.
  */
 export const brainstormHook = (handoff: Handoff): HandoffPrompt =>
   handoff.isFirstMessage
     ? {
-        prompt: `${brainstormOpening}\n\n${handoff.rendered}`,
+        prompt: `${brainstormOpening}\n\n${renderHandoff(handoff)}`,
         modifiers: [{ name: brainstormSkill }],
       }
-    : { prompt: handoff.rendered };
+    : { prompt: handoff.rendered, modifiers: handoff.modifiers };
 
 /** Continue's preloaded first message, sent when the listener taps Tap to start. */
 export const continueMessage = 'Walk me through your last answer.';

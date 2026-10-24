@@ -13,10 +13,11 @@ import {
   type PermissionMode,
 } from '@anthropic-ai/claude-agent-sdk';
 
-import type { Modifier } from '../handoff.ts';
+import { modifierName, type Modifier } from '../handoff.ts';
 import type { WorkerType } from '../worker.ts';
 import { attachWith } from './attach.ts';
-import { connectWith } from './connect.ts';
+import { connectWith, type ConnectOptions } from './connect.ts';
+import { listSkillsWith } from './skills.ts';
 
 export interface ClaudeWorkerOptions {
   /** Where a new worker runs. A preloaded worker runs in its session's recorded directory. */
@@ -42,7 +43,6 @@ export interface ClaudeWorkerOptions {
 
 /** One skill or command per message, for now: chaining several is not supported. */
 const maxModifiers = 1;
-const modifierName = /^[a-z0-9][a-z0-9:_-]*$/;
 
 /**
  * Claude Code recognises a command or skill only at the start of a message, as `/name <prompt>`:
@@ -55,23 +55,30 @@ const composeMessage = (prompt: string, modifiers: ReadonlyArray<Modifier>): str
     throw new Error(`Claude Code takes at most ${maxModifiers} modifier, got ${modifiers.length}`);
   }
   if (!modifierName.test(modifier.name)) throw new Error('Invalid Claude Code modifier name');
-  return `/${modifier.name} ${prompt}`;
+  // No space before an empty prompt or one that starts on a new line.
+  const separator = /^(\s|$)/.test(prompt) ? '' : ' ';
+  return `/${modifier.name}${separator}${prompt}`;
 };
 
 /** The Claude Code worker: one long-lived streaming-input query. */
-export const claudeWorker = (options: ClaudeWorkerOptions): WorkerType => ({
-  cwd: options.cwd,
-  composeMessage,
-  attach: attachWith(
-    { getSessionInfo, getSessionMessages, listSubagents, getSubagentMessages },
-    options.cwd,
-  ),
-  connect: connectWith(query, {
+export const claudeWorker = (options: ClaudeWorkerOptions): WorkerType => {
+  const connectOptions: ConnectOptions = {
     executable: options.executable,
     model: options.model,
     effort: options.effort,
     permissionMode: options.permissionMode,
     environment: options.environment ?? process.env,
     settings: options.settings,
-  }),
-});
+  };
+  return {
+    cwd: options.cwd,
+    composeMessage,
+    attach: attachWith(
+      { getSessionInfo, getSessionMessages, listSubagents, getSubagentMessages },
+      options.cwd,
+    ),
+    connect: connectWith(query, connectOptions),
+    // Same executable, environment, settings and setting sources as the worker.
+    listSkills: listSkillsWith(query, connectOptions),
+  };
+};

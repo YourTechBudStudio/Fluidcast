@@ -17,9 +17,12 @@ import {
 } from './fixtures.test.ts';
 import {
   conversationSince,
+  makeHandoff,
+  parseModifier,
   renderConversation,
   renderEntry,
   renderHandoff,
+  renderSkillHandoff,
   type ConversationEntry,
 } from './handoff.ts';
 /** The hand-off for the forward call at the cursor, after the forward call `since`. */
@@ -422,5 +425,165 @@ describe('conversationSince', () => {
       '**Shown to the user** (markdown):\n````markdown\n```ts\nx\n```\n````',
     );
     assert.ok(fenced('`````').startsWith('**Shown to the user** (markdown):\n``````markdown\n'));
+  });
+});
+
+describe('parseModifier', () => {
+  it('reads a leading /name and the trimmed words after it', () => {
+    assert.deepEqual(parseModifier('/designing-ui  make three mockups \n'), {
+      modifier: { name: 'designing-ui' },
+      words: 'make three mockups',
+    });
+    assert.deepEqual(parseModifier('/plugin:review_2\nthe diff'), {
+      modifier: { name: 'plugin:review_2' },
+      words: 'the diff',
+    });
+    assert.deepEqual(parseModifier('/shaping-issues'), {
+      modifier: { name: 'shaping-issues' },
+      words: '',
+    });
+  });
+
+  it('leaves anything else as plain text', () => {
+    for (const text of [
+      '/',
+      '/ name',
+      '/Tmp',
+      '/tmp/notes.md',
+      '/Users/me',
+      ' /name words',
+      'a /name',
+      '',
+    ]) {
+      assert.equal(parseModifier(text), undefined, text);
+    }
+  });
+});
+
+const standing = `- You are working unattended. The user hears and sees your response only through the voice, in pieces, so include everything needed in it.
+- Do not use the AskUserQuestion tool.
+- Run tasks and shell commands in the foreground, not in the background.`;
+
+const question = (
+  input: Extract<ConversationEntry, { kind: 'question' }>['input'],
+  answer: Extract<ConversationEntry, { kind: 'question' }>['answer'],
+): ConversationEntry => ({ kind: 'question', input, answer });
+
+const options = [{ label: 'Tabs' }, { label: 'One page' }];
+
+/** Two answered questions, and everything a skill's text leaves out. */
+const window: ReadonlyArray<ConversationEntry> = [
+  { kind: 'user', text: 'Earlier words.' },
+  { kind: 'voice', speaker: undefined, text: 'Narration the skill never sees.' },
+  {
+    kind: 'show',
+    input: { format: 'markdown', content: 'A shown table.' },
+    status: 'rendered',
+  },
+  question(
+    { kind: 'choice', question: 'Should settings stay on one page?', options },
+    { kind: 'choice', choice: 'Tabs', text: ' grouped by area ' },
+  ),
+  question(
+    { kind: 'continue', question: 'Ready for the next part?' },
+    {
+      kind: 'continue',
+      text: 'that part was unclear',
+    },
+  ),
+  question({ kind: 'text', question: 'Declined question?' }, undefined),
+  { kind: 'interruption', during: 'speech' },
+  question(
+    { kind: 'text', question: 'Auto-save or an explicit Save button?' },
+    {
+      kind: 'text',
+      text: 'Auto-save',
+    },
+  ),
+  question(
+    { kind: 'multi', question: 'Which sections?', options },
+    {
+      kind: 'multi',
+      choices: ['Tabs', 'One page'],
+    },
+  ),
+  { kind: 'toolOutcome', tool: 'search', outcome: 'result', text: '"found"' },
+  { kind: 'user', text: '/designing-ui make three mockups of the settings page' },
+];
+
+const answers = `The user's answers (the questions are the voice's wording):
+- Should settings stay on one page? → Tabs — they added: grouped by area
+- Auto-save or an explicit Save button? → Auto-save
+- Which sections? → Tabs; One page`;
+
+describe('renderSkillHandoff', () => {
+  it('renders words, then answered questions only, then the three standing instructions', () => {
+    assert.equal(
+      renderSkillHandoff('make three mockups of the settings page', window),
+      `make three mockups of the settings page\n\n---\n${answers}\n\n${standing}`,
+    );
+  });
+
+  it('renders words without answers', () => {
+    assert.equal(
+      renderSkillHandoff('just this', [window[0]!, window[4]!, window[5]!]),
+      `just this\n\n${standing}`,
+    );
+  });
+
+  it('starts on a new line without words, and drops the separator', () => {
+    assert.equal(renderSkillHandoff('', window), `\n${answers}\n\n${standing}`);
+    assert.equal(renderSkillHandoff('', []), `\n${standing}`);
+  });
+});
+
+describe('makeHandoff', () => {
+  it("turns the latest user entry's /name into the modifier and the skill's text, first or later", () => {
+    for (const isFirstMessage of [true, false]) {
+      const handoff = makeHandoff(window, isFirstMessage);
+      assert.deepEqual(handoff.modifiers, [{ name: 'designing-ui' }]);
+      assert.equal(handoff.conversation, window);
+      assert.equal(handoff.isFirstMessage, isFirstMessage);
+      assert.equal(
+        handoff.rendered,
+        renderSkillHandoff('make three mockups of the settings page', window),
+      );
+      for (const absent of [
+        'Narration',
+        'A shown table',
+        'Ready for the next part',
+        'that part was unclear',
+        'Declined',
+        'interrupted',
+        'found',
+        'Earlier words',
+        '/designing-ui',
+        'The voice adds nothing',
+        'misrepresents your work',
+        'Respond to the user',
+        'conversation_',
+        'voice conversation',
+      ]) {
+        assert.ok(!handoff.rendered.includes(absent), absent);
+      }
+    }
+  });
+
+  it('is the normal hand-off without a modifier, or when only an earlier entry has one', () => {
+    for (const conversation of [
+      [{ kind: 'user', text: '/tmp/notes.md has it' }],
+      [
+        { kind: 'user', text: '/designing-ui earlier' },
+        { kind: 'user', text: 'Later words.' },
+      ],
+      [],
+    ] satisfies ReadonlyArray<ReadonlyArray<ConversationEntry>>) {
+      assert.deepEqual(makeHandoff(conversation, false), {
+        conversation,
+        isFirstMessage: false,
+        modifiers: [],
+        rendered: renderHandoff({ conversation, isFirstMessage: false }),
+      });
+    }
   });
 });

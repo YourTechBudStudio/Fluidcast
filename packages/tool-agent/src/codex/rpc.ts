@@ -5,7 +5,7 @@
  */
 import { Cause, Data, Deferred, Effect, Queue, Stream, type Scope } from 'effect';
 
-import type { Transport } from './process.ts';
+import type { OpenTransport, Transport } from './process.ts';
 import type { Notification } from './protocol.ts';
 
 /** The server answered a request with an error; `message` is Codex's own text, or empty. */
@@ -181,3 +181,25 @@ export const initialize = (rpc: Rpc) =>
       capabilities: null,
     })
     .pipe(Effect.andThen(rpc.notify('initialized')));
+
+/** One short-lived read: a fresh app-server, `initialize`, then `read`; the process closes after. */
+export const shortLived = <A, E>(open: OpenTransport, read: (rpc: Rpc) => Effect.Effect<A, E>) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const rpc = yield* makeRpc(yield* open);
+      yield* initialize(rpc);
+      return yield* read(rpc);
+    }),
+  );
+
+/**
+ * What a failed short-lived read may log: Codex's message for a refused request (protocol text and
+ * IDs), else only the error's tag. A decode error's message can echo the payload, so it is never
+ * logged.
+ */
+export const failureAnnotations = (error: { readonly _tag: string }) => ({
+  error: error._tag,
+  ...(error instanceof RpcFailure
+    ? { method: error.method, code: error.code, message: error.message }
+    : {}),
+});

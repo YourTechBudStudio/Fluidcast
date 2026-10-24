@@ -17,6 +17,14 @@ describe('codexWorker', () => {
     );
   });
 
+  it('writes the bare modifier for an empty prompt, and no space before a new line', () => {
+    assert.equal(composeMessage('', [{ name: 'shaping-issues' }]), '$shaping-issues');
+    assert.equal(
+      composeMessage('\n- Do it.', [{ name: 'shaping-issues' }]),
+      '$shaping-issues\n- Do it.',
+    );
+  });
+
   it('throws for more than one modifier or an invalid name', () => {
     assert.throws(
       () => composeMessage('Plan it.', [{ name: 'brainstorm' }, { name: 'review' }]),
