@@ -13,7 +13,7 @@ import {
   type PermissionMode,
 } from '@anthropic-ai/claude-agent-sdk';
 
-import { modifierName, type Modifier } from '../handoff.ts';
+import { modifierName, type Modifier } from '../schema.ts';
 import type { WorkerType } from '../worker.ts';
 import { attachWith } from './attach.ts';
 import { connectWith, type ConnectOptions } from './connect.ts';

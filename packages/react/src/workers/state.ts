@@ -3,6 +3,7 @@ import { AsyncResult, Atom } from 'effect/reactivity';
 
 import type { TransportError } from '@yourtechbudstudio/fluidcast-client';
 import type {
+  Skill,
   TranscriptEntry,
   TranscriptMessage,
   WorkerSummary,
@@ -138,3 +139,18 @@ export const workerAtom = feedAtom((feed) => feed.status(), applyWorkerSummary);
 
 /** The worker's transcript entries. */
 export const workerTranscriptAtom = feedAtom((feed) => feed.transcript(), applyTranscript);
+
+const noSkills: ReadonlyArray<Skill> = [];
+
+/** The host's skills read, run once per player instance and kept: a failure is not retried. */
+const skillsResult = clientRuntime
+  .atom(Effect.flatMap(Effect.service(WorkerFeed), (feed) => feed.skills()))
+  .pipe(Atom.keepAlive);
+
+/** The worker's skills for the composer's suggestions: empty while they load, or when they could not be read. */
+export const workerSkillsAtom = Atom.make((get) =>
+  get(skillsResult).pipe(
+    AsyncResult.value,
+    Option.getOrElse(() => noSkills),
+  ),
+);

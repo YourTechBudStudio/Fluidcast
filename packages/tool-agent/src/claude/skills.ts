@@ -6,8 +6,8 @@
 import type { Options, SDKUserMessage, SlashCommand } from '@anthropic-ai/claude-agent-sdk';
 import { Effect } from 'effect';
 
-import type { Skill } from '../schema.ts';
-import { boundedListing, type SkillsUnavailable } from '../worker.ts';
+import type { Skill, SkillsUnavailable } from '../schema.ts';
+import { boundedListing } from '../worker.ts';
 import { queryOptions, type ConnectOptions } from './connect.ts';
 
 /** What listing needs of the SDK's `query`: its commands, and a way to close it. */

@@ -1,23 +1,40 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { Layer, Schema, Stream } from 'effect';
+import { Effect, Layer, Schema, Stream } from 'effect';
 import { HttpRouter } from 'effect/http';
 
-import { noSessionStatus, sessionPaths, workerStatus } from '@fluidcast/app-contract';
 import {
+  noSessionStatus,
+  sessionPaths,
+  SkillsJson,
+  skillsStatus,
+  workerStatus,
+} from '@fluidcast/app-contract';
+import type { WorkerHandle } from '@yourtechbudstudio/fluidcast-tool-agent';
+import {
+  SkillsUnavailable,
+  type Skill,
   TranscriptMessageJson,
   WorkerSummaryJson,
   type TranscriptMessage,
   type WorkerSummary,
 } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 
-import { dataOf, fakeActiveLayer, fakeBuild, startOver, withApp } from './fixtures.test.ts';
+import {
+  dataOf,
+  fakeActiveLayer,
+  fakeBuild,
+  fakeWorkerHandle,
+  startOver,
+  withApp,
+} from './fixtures.test.ts';
 import { sessionRoutes } from './session-routes.ts';
 import { workerRoutes } from './worker-routes.ts';
 
 const decodeSummary = Schema.decodeSync(WorkerSummaryJson);
 const decodeTranscript = Schema.decodeSync(TranscriptMessageJson);
+const decodeSkills = Schema.decodeSync(SkillsJson);
 
 const idle: WorkerSummary = { _tag: 'WorkerSummary', status: 'idle', sessionId: 'session-1' };
 const working: WorkerSummary = { ...idle, status: 'working' };
@@ -32,16 +49,24 @@ const appended: TranscriptMessage = {
   entries: [{ _tag: 'text', parentToolUseId: null, text: 'Looking.' }],
 };
 
+const listed: ReadonlyArray<Skill> = [
+  { name: 'designing-ui', description: 'Explore distinct UI variants.' },
+  { name: 'create-implementation-plan', description: 'Plan it.', argumentHint: '[focus]' },
+];
+
 /** The Worker routes, and the lifecycle routes to start a session, over a fake worker. */
-const app = () =>
+const app = (worker: Partial<WorkerHandle> = {}) =>
   HttpRouter.toWebHandler(
     Layer.mergeAll(workerRoutes, sessionRoutes).pipe(
       Layer.provideMerge(
         fakeActiveLayer(
           fakeBuild({
             worker: {
+              ...fakeWorkerHandle(),
               status: Stream.make(idle, working),
               transcript: Stream.make(snapshot, appended),
+              skills: Effect.succeed(listed),
+              ...worker,
             },
           }).build,
         ),
@@ -89,6 +114,37 @@ describe('GET /api/session/:sessionId/worker/transcript', () => {
   it('answers 404 NoSession for a session that is not the live one', async () => {
     await withApp(app(), async (send) => {
       const response = await send(sessionPaths('none').workerTranscript);
+      assert.equal(response.status, noSessionStatus);
+      assert.deepEqual(await response.json(), { _tag: 'NoSession' });
+    });
+  });
+});
+
+describe('GET /api/session/:sessionId/worker/skills', () => {
+  it("answers the worker's skills as JSON", async () => {
+    await withApp(app(), async (send) => {
+      const response = await send(sessionPaths(await startOver(send)).workerSkills);
+      assert.equal(response.status, skillsStatus.ok);
+      assert.equal(response.headers.get('content-type'), 'application/json');
+      assert.deepEqual(decodeSkills(await response.text()), listed);
+    });
+  });
+
+  it('answers 502 SkillsUnavailable when the worker cannot list them', async () => {
+    const unavailable = app({
+      skills: Effect.fail(new SkillsUnavailable({ reason: 'TimedOut' })),
+    });
+    await withApp(unavailable, async (send) => {
+      const response = await send(sessionPaths(await startOver(send)).workerSkills);
+      assert.equal(response.status, skillsStatus.unavailable);
+      assert.deepEqual(await response.json(), { _tag: 'SkillsUnavailable', reason: 'TimedOut' });
+    });
+  });
+
+  it('answers 404 NoSession for a session that is not the live one', async () => {
+    await withApp(app(), async (send) => {
+      await startOver(send);
+      const response = await send(sessionPaths('other').workerSkills);
       assert.equal(response.status, noSessionStatus);
       assert.deepEqual(await response.json(), { _tag: 'NoSession' });
     });

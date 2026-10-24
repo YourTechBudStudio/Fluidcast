@@ -1,6 +1,6 @@
 import { useAtom, useAtomMount, useAtomValue } from '@effect/atom-react';
 import { RotateCcw, Square } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import {
   type AskPresence,
@@ -25,7 +25,7 @@ import {
 import { AskForm, ShowPanel, ShowSheet } from '../tools';
 import { Button, typingTarget, usePlayerInstance, useReducedMotion, useRootKeydown } from '../ui';
 import { analyserSource, createAnalysis, Visual } from '../visuals';
-import { WorkersLayer } from '../workers';
+import { workerSkillsAtom, WorkersLayer } from '../workers';
 import { Dock } from './Dock';
 import { focusTargetOnSwitch, type Layer, nextLayer } from './layers';
 import { layoutFor, SHOW_PANEL_MIN_PX, SHOW_PANEL_SHARE } from './layout';
@@ -47,6 +47,9 @@ export function Player() {
   const [layer, setLayer] = useAtom(layerAtom);
   const [panel, setPanel] = useAtom(showPanelAtom);
   const shown = useAtomValue(shownShowAtom);
+  const skills = useAtomValue(workerSkillsAtom);
+  // The composer's skill menu renders here, above the dock: the dock clips its own contents.
+  const [menuSlot, setMenuSlot] = useState<HTMLDivElement | null>(null);
   const reducedMotion = useReducedMotion();
   const { compact, show } = layoutFor(usePlayerInstance().width);
   // This instance's analysis handle. Its analyser feeds it; the visual reads it per frame.
@@ -273,64 +276,74 @@ export function Player() {
             thinkingSince={presentation.thinkingSince}
           />
         </div>
-        <Dock
-          shape={ask ? 'ask' : 'composer'}
-          contentKey={ask ? `ask-${askHandle(ask)}` : 'composer'}
-        >
-          {ask ? (
-            // The accepted placement: the transport sits inside the dock, in a strip under the question.
-            <div>
-              <AskForm
-                input={ask.input}
-                mode={ask.mode}
-                answer={ask.mode === 'sent' ? ask.answer : undefined}
-                narrating={narrating}
-                disabled={composer === 'offline'}
-                onSubmit={(answer) =>
-                  ask.mode === 'open'
-                    ? commands.answerAsk(ask.execution, answer)
-                    : Promise.resolve(false)
-                }
-                onInterrupt={() => void commands.interrupt()}
-                extra={
-                  ask.mode === 'open'
-                    ? composer === 'retryClip' && retryClipButton
-                    : interruptible && interruptButton
-                }
-              />
-              <div className="flex justify-center border-t border-line/25 px-2 py-1">
-                <PlayerControls {...controls} />
-              </div>
-            </div>
-          ) : (
-            // One Composer at a fixed place in the tree, so crossing the breakpoint keeps the draft. Wide: the transport
-            // at its leading edge. Compact: a strip below it, as under a question. Focus order follows what is on screen.
-            <div>
-              <div className="flex items-end">
-                {!compact && (
-                  <PlayerControls
-                    {...controls}
-                    className="my-2 ml-1.5 border-r border-line/30 pr-1"
-                  />
-                )}
-                <div className="min-w-0 flex-1">
-                  <Composer
-                    mode={composer}
-                    onSend={commands.sendMessage}
-                    onInterrupt={commands.interrupt}
-                    onRetry={commands.retryGeneration}
-                    onRetryClip={playback.retryClip}
-                  />
-                </div>
-              </div>
-              {compact && (
+        <div className="relative">
+          {/* Sized to nothing and inert to the pointer, so only a rendered menu takes clicks. Its width is the composer
+            dock's (680 px at most) less 14 px on each side; the menu grows upward from it. */}
+          <div
+            ref={setMenuSlot}
+            className="pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2 z-30 h-0 w-[calc(100%-28px)] max-w-163 -translate-x-1/2"
+          />
+          <Dock
+            shape={ask ? 'ask' : 'composer'}
+            contentKey={ask ? `ask-${askHandle(ask)}` : 'composer'}
+          >
+            {ask ? (
+              // The accepted placement: the transport sits inside the dock, in a strip under the question.
+              <div>
+                <AskForm
+                  input={ask.input}
+                  mode={ask.mode}
+                  answer={ask.mode === 'sent' ? ask.answer : undefined}
+                  narrating={narrating}
+                  disabled={composer === 'offline'}
+                  onSubmit={(answer) =>
+                    ask.mode === 'open'
+                      ? commands.answerAsk(ask.execution, answer)
+                      : Promise.resolve(false)
+                  }
+                  onInterrupt={() => void commands.interrupt()}
+                  extra={
+                    ask.mode === 'open'
+                      ? composer === 'retryClip' && retryClipButton
+                      : interruptible && interruptButton
+                  }
+                />
                 <div className="flex justify-center border-t border-line/25 px-2 py-1">
                   <PlayerControls {...controls} />
                 </div>
-              )}
-            </div>
-          )}
-        </Dock>
+              </div>
+            ) : (
+              // One Composer at a fixed place in the tree, so crossing the breakpoint keeps the draft. Wide: the transport
+              // at its leading edge. Compact: a strip below it, as under a question. Focus order follows what is on screen.
+              <div>
+                <div className="flex items-end">
+                  {!compact && (
+                    <PlayerControls
+                      {...controls}
+                      className="my-2 ml-1.5 border-r border-line/30 pr-1"
+                    />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <Composer
+                      mode={composer}
+                      onSend={commands.sendMessage}
+                      onInterrupt={commands.interrupt}
+                      onRetry={commands.retryGeneration}
+                      onRetryClip={playback.retryClip}
+                      skills={skills}
+                      menuSlot={menuSlot}
+                    />
+                  </div>
+                </div>
+                {compact && (
+                  <div className="flex justify-center border-t border-line/25 px-2 py-1">
+                    <PlayerControls {...controls} />
+                  </div>
+                )}
+              </div>
+            )}
+          </Dock>
+        </div>
       </footer>
     </div>
   );

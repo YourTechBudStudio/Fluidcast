@@ -12,11 +12,9 @@ export {
   type ConversationEntry,
   type Handoff,
   type HandoffPrompt,
-  type Modifier,
 } from './handoff.ts';
 export { defaultProgressPrompt, defaultProgressSchedule } from './progress.ts';
 export {
-  SkillsUnavailable,
   WorkerSetupError,
   type WorkerEvent,
   type WorkerMessage,

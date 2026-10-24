@@ -18,13 +18,13 @@ import {
 import {
   conversationSince,
   makeHandoff,
-  parseModifier,
   renderConversation,
   renderEntry,
   renderHandoff,
   renderSkillHandoff,
   type ConversationEntry,
 } from './handoff.ts';
+import { parseModifier } from './schema.ts';
 /** The hand-off for the forward call at the cursor, after the forward call `since`. */
 const handoffFor = (state: Parameters<typeof conversationSince>[0], since: string | undefined) => {
   const call = state.actions[state.cursor];
@@ -460,7 +460,8 @@ describe('parseModifier', () => {
   });
 });
 
-const standing = `- You are working unattended. The user hears and sees your response only through the voice, in pieces, so include everything needed in it.
+const standing = `Rules:
+- You are working unattended. The user hears and sees your response only through the voice, in pieces, so include everything needed in it.
 - Do not use the AskUserQuestion tool.
 - Run tasks and shell commands in the foreground, not in the background.`;
 
@@ -512,9 +513,15 @@ const window: ReadonlyArray<ConversationEntry> = [
 ];
 
 const answers = `The user's answers (the questions are the voice's wording):
-- Should settings stay on one page? → Tabs — they added: grouped by area
-- Auto-save or an explicit Save button? → Auto-save
-- Which sections? → Tabs; One page`;
+
+Question: Should settings stay on one page?
+Answer: Tabs — they added: grouped by area
+
+Question: Auto-save or an explicit Save button?
+Answer: Auto-save
+
+Question: Which sections?
+Answer: Tabs; One page`;
 
 describe('renderSkillHandoff', () => {
   it('renders words, then answered questions only, then the three standing instructions', () => {
@@ -528,6 +535,17 @@ describe('renderSkillHandoff', () => {
     assert.equal(
       renderSkillHandoff('just this', [window[0]!, window[4]!, window[5]!]),
       `just this\n\n${standing}`,
+    );
+  });
+
+  it('keeps a multi-line answer whole under its question', () => {
+    const multiLine = question(
+      { kind: 'text', question: 'What should the page hold?' },
+      { kind: 'text', text: 'Profile\nNotifications\n- and billing' },
+    );
+    assert.equal(
+      renderSkillHandoff('go', [multiLine]),
+      `go\n\n---\nThe user's answers (the questions are the voice's wording):\n\nQuestion: What should the page hold?\nAnswer: Profile\nNotifications\n- and billing\n\n${standing}`,
     );
   });
 

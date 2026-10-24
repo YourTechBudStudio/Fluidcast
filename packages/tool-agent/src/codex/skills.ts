@@ -5,8 +5,8 @@
  */
 import { Effect, Schema } from 'effect';
 
-import type { Skill } from '../schema.ts';
-import { boundedListing, type SkillsUnavailable } from '../worker.ts';
+import type { Skill, SkillsUnavailable } from '../schema.ts';
+import { boundedListing } from '../worker.ts';
 import type { OpenTransport } from './process.ts';
 import { SkillsListResponse } from './protocol.ts';
 import { failureAnnotations, shortLived } from './rpc.ts';

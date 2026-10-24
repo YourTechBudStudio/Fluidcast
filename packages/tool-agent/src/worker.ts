@@ -3,8 +3,7 @@ import { Cause, Effect, Schema, type Stream } from 'effect';
 
 import type { ToolFault } from '@yourtechbudstudio/fluidcast-harness';
 
-import type { Modifier } from './handoff.ts';
-import type { Skill, TranscriptEntry } from './schema.ts';
+import { SkillsUnavailable, type Modifier, type Skill, type TranscriptEntry } from './schema.ts';
 
 /** One message for the worker. `id` is a UUID the worker reports back in `Consumed`. */
 export interface WorkerMessage {
@@ -65,14 +64,6 @@ export class WorkerSetupError extends Schema.TaggedError<WorkerSetupError>()('Wo
   sessionId: Schema.String,
   reason: Schema.Literals(['SessionNotFound', 'SessionUnreadable']),
 }) {}
-
-/** The worker type's skills could not be listed: it failed, or did not answer in time. */
-export class SkillsUnavailable extends Schema.TaggedError<SkillsUnavailable>()(
-  'SkillsUnavailable',
-  {
-    reason: Schema.Literals(['Failed', 'TimedOut']),
-  },
-) {}
 
 /** How long a worker type may take to list its skills. */
 const listSkillsTimeout = '10 seconds';

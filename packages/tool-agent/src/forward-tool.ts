@@ -11,11 +11,12 @@ import {
   ForwardResult,
   forwardToolName,
   type Skill,
+  type SkillsUnavailable,
   type TranscriptMessage,
   type WorkerSummary,
 } from './schema.ts';
 import { makeWorkerSession } from './session.ts';
-import type { SkillsUnavailable, WorkerSetupError, WorkerType } from './worker.ts';
+import type { WorkerSetupError, WorkerType } from './worker.ts';
 
 export interface ForwardAgentToolOptions {
   /** The worker that does the thinking and the work, such as `claudeWorker(…)`. */

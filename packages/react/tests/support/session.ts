@@ -5,6 +5,7 @@ import { Transport, TransportError } from '@yourtechbudstudio/fluidcast-client';
 import { SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';
 import { layer as sessionLayer, Session } from '@yourtechbudstudio/fluidcast-harness';
 import type { Command, SubscriptionMessage } from '@yourtechbudstudio/fluidcast-harness/protocol';
+import type { Skill } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 import { askTool } from '@yourtechbudstudio/fluidcast-tool-ask';
 import { showTool } from '@yourtechbudstudio/fluidcast-tool-show';
 
@@ -55,6 +56,8 @@ export interface ScriptedSession {
   readonly openSubscriptions: () => number;
   /** Open `WorkerFeed` runs (status and transcript connections). */
   readonly openWorkerFeeds: () => number;
+  /** How many times the player read the worker's skills. */
+  readonly skillReads: () => number;
   /** Sends a command straight to the session, without a player: prepares state. */
   readonly drive: (command: Command) => Promise<void>;
   /** Makes `send` fail with `error` for commands tagged `tag`, until cleared with `failSend(tag, null)`. */
@@ -110,7 +113,11 @@ const hold = (onRelease: (deferred: Deferred.Deferred<void>) => void) => {
 
 export async function scriptedSession(
   replies: ReadonlyArray<ReadonlyArray<ScriptedAction>>,
-  options: { readonly start?: Parameters<typeof sessionLayer>[0]['start'] } = {},
+  options: {
+    readonly start?: Parameters<typeof sessionLayer>[0]['start'];
+    /** The worker's skills, or the failure reading them gives. None by default. */
+    readonly skills?: ReadonlyArray<Skill> | TransportError;
+  } = {},
 ): Promise<ScriptedSession> {
   const scope = await Effect.runPromise(Scope.make());
   let modelHold: Deferred.Deferred<void> | null = null;
@@ -141,6 +148,7 @@ export async function scriptedSession(
   let subscriptions = 0;
   let openSubscriptions = 0;
   let openWorkerFeeds = 0;
+  let skillReads = 0;
   let constructionHold: Deferred.Deferred<void> | null = null;
 
   const transport = Transport.of({
@@ -177,7 +185,16 @@ export async function scriptedSession(
         return Stream.never.pipe(Stream.ensuring(Effect.sync(() => void openWorkerFeeds--)));
       }),
     );
-  const workerFeed = WorkerFeed.of({ status: feedRun, transcript: feedRun });
+  const skills = options.skills ?? [];
+  const workerFeed = WorkerFeed.of({
+    status: feedRun,
+    transcript: feedRun,
+    skills: () =>
+      Effect.suspend(() => {
+        skillReads++;
+        return skills instanceof TransportError ? Effect.fail(skills) : Effect.succeed(skills);
+      }),
+  });
 
   return {
     connection: () => {
@@ -193,6 +210,7 @@ export async function scriptedSession(
     relayed,
     openSubscriptions: () => openSubscriptions,
     openWorkerFeeds: () => openWorkerFeeds,
+    skillReads: () => skillReads,
     drive: (command) => Effect.runPromise(session.command(command)),
     failSend: (tag, error) => {
       if (error === null) failures.delete(tag);

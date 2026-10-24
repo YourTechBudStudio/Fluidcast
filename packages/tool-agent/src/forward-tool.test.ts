@@ -269,7 +269,7 @@ describe('forwardAgentTool in a Harness session', () => {
         const [message] = yield* eventually(open!.received, (all) => all.length === 1);
         assert.deepEqual(yield* Ref.get(composed), [[{ name: 'designing-ui' }]]);
         assert.ok(
-          message!.text.startsWith('[designing-ui] three mockups\n\n- You are'),
+          message!.text.startsWith('[designing-ui] three mockups\n\nRules:\n- You are'),
           message!.text,
         );
       }),

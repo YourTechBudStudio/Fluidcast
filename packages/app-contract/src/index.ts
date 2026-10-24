@@ -17,6 +17,7 @@ import {
   SubscriptionMessage,
   ToolCommandRejected,
 } from '@yourtechbudstudio/fluidcast-harness/protocol';
+import { Skill, SkillsUnavailable } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 
 /** Route paths. Every per-session route names the backend session it addresses. */
 export const routes = {
@@ -34,6 +35,8 @@ export const routes = {
   worker: '/api/session/:sessionId/worker',
   /** `GET`: the worker's transcript as SSE: a `TranscriptSnapshot`, then `TranscriptAppended`s. */
   workerTranscript: '/api/session/:sessionId/worker/transcript',
+  /** `GET`: the skills the worker can be sent as `/name`, as JSON. */
+  workerSkills: '/api/session/:sessionId/worker/skills',
 } as const;
 
 /** The per-session paths for one backend session, each segment URI-encoded. */
@@ -46,6 +49,7 @@ export const sessionPaths = (sessionId: string) => {
     speech: (actionId: string) => `${base}/speech/${encodeURIComponent(actionId)}`,
     worker: `${base}/worker`,
     workerTranscript: `${base}/worker/transcript`,
+    workerSkills: `${base}/worker/skills`,
   };
 };
 
@@ -156,3 +160,18 @@ export const heartbeatIntervalMillis = 15_000;
  * NoSession` once the session is discarded. The stream also ends when the session is discarded.
  */
 export const workerStatus = { ok: 200 } as const;
+
+// GET /api/session/:sessionId/worker/skills
+
+/**
+ * Responses:
+ * - `200`: the worker's skills as a JSON array of the Forward tool's `Skill`, read once per session;
+ * - `502`: `SkillsUnavailable` as JSON, when the worker could not list them (for the rest of the session);
+ * - `404`: `NoSession` as JSON, when the session is not the live one.
+ */
+export const skillsStatus = { ok: 200, unavailable: 502 } as const;
+
+export const SkillsJson = Schema.fromJsonString(Schema.Array(Skill));
+
+export const SkillsFailure = Schema.Union([SkillsUnavailable, NoSession]);
+export type SkillsFailure = typeof SkillsFailure.Type;

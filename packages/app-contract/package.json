@@ -24,7 +24,8 @@
   },
   "dependencies": {
     "@yourtechbudstudio/fluidcast-core": "workspace:*",
-    "@yourtechbudstudio/fluidcast-harness": "workspace:*"
+    "@yourtechbudstudio/fluidcast-harness": "workspace:*",
+    "@yourtechbudstudio/fluidcast-tool-agent": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

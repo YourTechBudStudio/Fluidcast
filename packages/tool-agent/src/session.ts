@@ -37,18 +37,13 @@ import {
   type ForwardInput,
   type ForwardResult,
   type Skill,
+  type SkillsUnavailable,
   type TranscriptEntry,
   type TranscriptMessage,
   type WorkerStatus,
   type WorkerSummary,
 } from './schema.ts';
-import type {
-  SkillsUnavailable,
-  WorkerEvent,
-  WorkerMessage,
-  WorkerSetupError,
-  WorkerType,
-} from './worker.ts';
+import type { WorkerEvent, WorkerMessage, WorkerSetupError, WorkerType } from './worker.ts';
 
 type Outcome = Deferred.Deferred<ForwardResult, ToolError | ToolFault>;
 type TurnEndEntry = Extract<TranscriptEntry, { readonly _tag: 'turnEnd' }>;

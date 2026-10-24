@@ -50,6 +50,7 @@ export const fakeWorkerHandle = (sessionId: string | null = 'worker-session'): W
     ),
     fault: Effect.never,
     sessionId: Effect.succeed(sessionId),
+    skills: Effect.succeed([]),
   };
 };
 
