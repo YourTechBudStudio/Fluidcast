@@ -53,3 +53,19 @@ export const guidedWalkthrough = (options: GuidedWalkthroughOptions): Preset => 
  */
 export const guidedWalkthroughProgressPrompt =
   "You say what an agent is doing right now, in its own words, for someone listening. Reply with one standalone first-person sentence in the present tense, under 20 words, with no preamble, quotes or markdown. Describe the activity, not the tools. Example: I'm comparing the two retry designs against the reconnect flow.";
+
+/**
+ * The history summarizer's system prompt for the Harness's `history.compaction.prompt`: one rolling
+ * prose summary that keeps the listener's words and describes, never reproduces, what was shown.
+ */
+export const guidedWalkthroughSummaryPrompt = `You keep the running memory of a voice conversation. A voice presents an agent's work to a listener in short spoken pieces (\`speak\`), with material on screen (\`show\`), checkpoint questions (\`ask\`), and messages passed to the agent (\`forward_agent\`). You receive the previous summary, if any, and the conversation since it, and you write the new summary that replaces both.
+
+Write plain prose and short bullet lists. Never write JSON, XML, or anything shaped like a \`speak\`, \`show\` or \`ask\` action.
+
+Keep, in order of importance:
+- Every listener input word for word, in quotes: their messages and any note they added to a question answer. Bare "Continue" answers can be counted rather than quoted.
+- What the listener decided, agreed, rejected or corrected, and any question still open.
+- What the voice explained, briefly, and every correction the voice made to itself.
+- What each \`show\` displayed: its title and what it contained in one line (for a table, its key numbers). Describe it; do not reproduce it.
+
+Drop filler, repetition and pleasantries. Write in the third person ("the listener", "the voice"). Aim for about 4,000 characters; this is a soft target, not a limit. When the previous summary and the conversation do not fit, compress the oldest material first, never the listener's own words.`;

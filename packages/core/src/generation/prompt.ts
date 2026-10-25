@@ -19,6 +19,11 @@ export const buildSystemPrompt = (options: {
   readonly examples?: ReadonlyArray<Example>;
   readonly speakers: ReadonlyArray<SpeakerProfile>;
   readonly tools: ReadonlyArray<ToolDefinition>;
+  /**
+   * The history may open with an `<earlier_conversation>` summary: adds its mechanic to the tool
+   * rules. Fixed for a session, so the prompt stays cacheable. Unset: the prompt is unchanged.
+   */
+  readonly summarizedHistory?: boolean;
 }): string => {
   const [lead] = options.speakers;
   if (lead === undefined) throw new Error('buildSystemPrompt requires at least one speaker');
@@ -41,7 +46,14 @@ export const buildSystemPrompt = (options: {
       '</speakers>',
     ].join('\n'),
     ...(hasTools
-      ? [['## Tool rules', ...toolMechanics, ...toolRules(options.tools)].join('\n')]
+      ? [
+          [
+            '## Tool rules',
+            ...toolMechanics,
+            ...(options.summarizedHistory === true ? [summaryMechanic] : []),
+            ...toolRules(options.tools),
+          ].join('\n'),
+        ]
       : []),
     [
       '## Output format',
@@ -106,6 +118,10 @@ const toolMechanics: ReadonlyArray<string> = [
   '- A `<tool_progress>` reports what a running tool is doing. It is not the result.',
   '- A `<context tool="…">` at the end of the input describes a tool\'s current state. It is not the listener speaking.',
 ];
+
+/** How a summarized history reads, after `toolMechanics` when the session summarizes. */
+const summaryMechanic =
+  '- An `<earlier_conversation>` at the start of the input summarizes what came before. The listener has already heard and seen it. It is background, not something to present again or imitate.';
 
 /** Each tool's guidelines as bullets, in tool order, with exact duplicates removed. */
 const toolRules = (tools: ReadonlyArray<ToolDefinition>): Array<string> =>

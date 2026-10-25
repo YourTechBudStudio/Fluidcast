@@ -5,7 +5,7 @@
 import { Schema } from 'effect';
 
 import type { Action, ToolCall } from '@yourtechbudstudio/fluidcast-core/actions';
-import { handoffView } from '@yourtechbudstudio/fluidcast-harness/conversation';
+import { settledView } from '@yourtechbudstudio/fluidcast-harness/conversation';
 import {
   effectiveActions,
   type PendingResult,
@@ -108,7 +108,7 @@ const isOutcome = (action: Action | PendingResult): action is Outcome =>
 
 /**
  * Pure: the entries after the forward call `since` (or the whole conversation when `undefined`) up
- * to, not including, the forward call `handle`, read from the hand-off view, so progress and the
+ * to, not including, the forward call `handle`, read from the settled view, so progress and the
  * voice's replies to it are left out. Forward's own results are left out too: the worker wrote them.
  */
 export const conversationSince = (
@@ -116,7 +116,7 @@ export const conversationSince = (
   since: string | undefined,
   handle: string,
 ): ReadonlyArray<ConversationEntry> => {
-  const actions = handoffView(effectiveActions(state));
+  const actions = settledView(effectiveActions(state));
 
   // Calls anywhere in the log: a result in the window may answer a call before it.
   const calls = new Map<string, ToolCall>();

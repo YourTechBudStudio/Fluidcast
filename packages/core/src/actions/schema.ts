@@ -152,6 +152,20 @@ export const LabeledContext = Schema.Struct({
 });
 export type LabeledContext = typeof LabeledContext.Type;
 
+/**
+ * Runtime-authored: a summary of the conversation before `from`, the first action of the episode
+ * kept verbatim. Read by the model only, as `<earlier_conversation>` at the start of its input;
+ * never by the listener or the worker. It supersedes any earlier summary: the model reads only the
+ * latest one, then the actions from its `from` onward.
+ */
+export const HistoryCompaction = Schema.Struct({
+  type: Schema.Literal('history_compaction'),
+  id: ActionId,
+  from: ActionId,
+  text: Schema.String,
+});
+export type HistoryCompaction = typeof HistoryCompaction.Type;
+
 /** Every conversation fact: user-, model-, and runtime-authored actions in one flat union (ADR 0002). */
 export const Action = Schema.Union([
   UserMessage,
@@ -165,6 +179,7 @@ export const Action = Schema.Union([
   ToolProgress,
   ToolContext,
   LabeledContext,
+  HistoryCompaction,
 ]);
 export type Action = typeof Action.Type;
 

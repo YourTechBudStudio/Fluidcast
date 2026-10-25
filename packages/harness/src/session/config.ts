@@ -21,6 +21,12 @@ export const SessionSpeakers = Schema.NonEmptyArray(SessionSpeaker).check(
 );
 export type SessionSpeakers = typeof SessionSpeakers.Type;
 
+/**
+ * The default `history.compaction.aboveInputTokens`: summaries start once a boundary generation's
+ * input passes it, keeping the total input under 64K tokens.
+ */
+export const defaultCompactionThreshold = 50_000;
+
 export interface SessionConfig {
   /** The voice's instructions, first in the system prompt: normally a preset's. */
   readonly instructions: string;
@@ -40,6 +46,31 @@ export interface SessionConfig {
    * Tools supply none. Absent: no reminders.
    */
   readonly reminders?: Reminders;
+  /**
+   * How the history is kept. Absent: the model reads the whole conversation, as the projection
+   * gives it.
+   */
+  readonly history?: {
+    /**
+     * Episode summaries. A call to a tool whose policy `startsEpisode` opens an episode at the input
+     * it answered. When the generation that wrote it finishes over the threshold, everything before
+     * that episode is summarized in the background into one rolling prose summary, which the model
+     * reads in its place from the next iteration on. The listener, the transcript and the worker
+     * never see it. The summary is written by the `SummaryModel` service when one is provided, else
+     * by the session's `LanguageModel`. Off unless `enabled` is `true`.
+     */
+    readonly compaction?: {
+      readonly enabled: boolean;
+      /**
+       * Summarize when the provider's reported input tokens of the generation that wrote the
+       * boundary call exceed this: the total input, including cache reads. When the provider reports
+       * no count, every boundary summarizes. Default: `defaultCompactionThreshold`.
+       */
+      readonly aboveInputTokens?: number;
+      /** The summarizer's system prompt, normally a preset's. Default: Core's `defaultSummaryPrompt`. */
+      readonly prompt?: string;
+    };
+  };
   /**
    * A preloaded start, fixed by the application: the session waits in `ready` until a `Start`
    * command submits `context` (if any), then `message`, then `call` (if any), and only then

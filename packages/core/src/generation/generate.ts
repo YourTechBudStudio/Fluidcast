@@ -1,5 +1,5 @@
-import { Stream } from 'effect';
-import { AiError, LanguageModel } from 'effect/ai';
+import { Duration, Effect, Option, Stream } from 'effect';
+import { AiError, LanguageModel, type Response } from 'effect/ai';
 
 import type { Action, Speak, SpeakerProfile } from '../actions/index.ts';
 import { withCacheBreakpoints } from './cache.ts';
@@ -30,7 +30,38 @@ export interface GenerateOptions {
    * prompt. Absent: no reminders.
    */
   readonly reminders?: Reminders;
+  /**
+   * The history may open with an `<earlier_conversation>` summary: the system prompt explains it.
+   * Keep it fixed for a session, so the prompt stays cacheable. Unset: the prompt is unchanged.
+   */
+  readonly summarizedHistory?: boolean;
+  /**
+   * Also report the provider's input-token count. Unset: the stream ends at the reply's closing
+   * `]` and nothing is drained.
+   */
+  readonly usage?: boolean;
 }
+
+/** With `usage`: the reply closed at its `]` and every action has been emitted. */
+export interface ReplyEnded {
+  readonly type: 'reply_ended';
+}
+
+/**
+ * With `usage`: the provider's input-token count for the generation, including cached input
+ * (`usage.inputTokens.total`). Emitted at most once, after `ReplyEnded`.
+ */
+export interface GenerationUsage {
+  readonly type: 'usage';
+  readonly inputTokens: number;
+}
+
+/**
+ * How long `generate` keeps reading after the reply's `]` for the finish part's usage. After `]`
+ * the provider normally finishes within milliseconds; the limit caps the extra output paid for and
+ * how long the stream stays open.
+ */
+const drainLimit = Duration.seconds(2);
 
 /**
  * Generates the model's next actions from caller-owned history. Each action is emitted, with a
@@ -39,11 +70,38 @@ export interface GenerateOptions {
  * stores nothing; the provider and API come from the `LanguageModel` layer the caller supplies.
  * The prompt always marks the end of its stable prefix as provider cache breakpoints
  * (`withCacheBreakpoints`), so callers get prompt caching without configuration.
+ *
+ * With `usage`, a `ReplyEnded` follows the last action as soon as the reply's `]` closes; the
+ * stream then reads on for at most `drainLimit` and emits a `GenerationUsage` if the provider's
+ * finish part arrives with a total. Neither is an action. Without a count in time, or when the
+ * provider fails after `]`, the stream ends with no usage: the reply was already accepted, so it is
+ * not a failure.
  */
-export const generate = (
+export function generate(
+  options: GenerateOptions & { readonly usage: true },
+): Stream.Stream<
+  Speak | ToolCallDraft | ReplyEnded | GenerationUsage,
+  GenerationError,
+  LanguageModel.LanguageModel
+>;
+export function generate(
+  options: GenerateOptions & { readonly usage?: false },
+): Stream.Stream<Speak | ToolCallDraft, GenerationError, LanguageModel.LanguageModel>;
+export function generate(
   options: GenerateOptions,
-): Stream.Stream<Speak | ToolCallDraft, GenerationError, LanguageModel.LanguageModel> =>
-  Stream.suspend(() => {
+): Stream.Stream<
+  Speak | ToolCallDraft | ReplyEnded | GenerationUsage,
+  GenerationError,
+  LanguageModel.LanguageModel
+>;
+export function generate(
+  options: GenerateOptions,
+): Stream.Stream<
+  Speak | ToolCallDraft | ReplyEnded | GenerationUsage,
+  GenerationError,
+  LanguageModel.LanguageModel
+> {
+  return Stream.suspend(() => {
     const prompt = withCacheBreakpoints([
       { role: 'system', content: buildSystemPrompt(options) },
       ...renderHistory(
@@ -52,26 +110,67 @@ export const generate = (
         options.reminders === undefined ? {} : { reminders: options.reminders },
       ),
     ]);
-    const text = LanguageModel.streamText({ prompt }).pipe(
-      Stream.mapError(toProviderError),
-      Stream.flatMap((part) => {
-        switch (part.type) {
-          case 'text-delta':
-            return Stream.succeed(part.delta);
-          case 'error':
-            return Stream.fail(new ProviderError({ reason: 'ErrorPart' }));
-          default:
-            return Stream.empty;
-        }
+    const parts = LanguageModel.streamText({ prompt }).pipe(Stream.mapError(toProviderError));
+    const parse = <R>(provider: Stream.Stream<Part, ProviderError, R>) =>
+      parseActions(Stream.flatMap(provider, textOf), {
+        speakerIds: new Set(options.speakers.map((speaker) => speaker.id)),
+      });
+    if (options.usage !== true) return parse(parts);
+    // One part per pull, so the parser stops right after the part that closes the reply and the
+    // drain reads on from the same provider stream.
+    return Stream.unwrap(
+      Effect.map(Stream.toPull(Stream.rechunk(parts, 1)), (pull) => {
+        const remaining = Stream.fromPull(Effect.succeed(pull));
+        return parse(remaining).pipe(
+          Stream.concat(Stream.succeed<ReplyEnded>({ type: 'reply_ended' })),
+          Stream.concat(
+            Stream.unwrap(
+              Effect.map(inputTokens(remaining), (total) =>
+                total === undefined
+                  ? Stream.empty
+                  : Stream.succeed<GenerationUsage>({ type: 'usage', inputTokens: total }),
+              ),
+            ),
+          ),
+        );
       }),
     );
-    return parseActions(text, {
-      speakerIds: new Set(options.speakers.map((speaker) => speaker.id)),
-    });
   });
+}
+
+/** A provider stream part, as `LanguageModel.streamText` emits it without a toolkit. */
+export type Part = Response.StreamPart<{}>;
+
+/** A text delta as text; an error part fails the generation. */
+export const textOf = (part: Part): Stream.Stream<string, ProviderError> => {
+  switch (part.type) {
+    case 'text-delta':
+      return Stream.succeed(part.delta);
+    case 'error':
+      return Stream.fail(new ProviderError({ reason: 'ErrorPart' }));
+    default:
+      return Stream.empty;
+  }
+};
+
+/**
+ * The finish part's input total from the rest of the provider stream, read for at most
+ * `drainLimit`. Absent when it does not arrive in time, the stream ends or fails first, or the
+ * provider reports no total.
+ */
+const inputTokens = (
+  remaining: Stream.Stream<Part, ProviderError>,
+): Effect.Effect<number | undefined> =>
+  remaining.pipe(
+    Stream.filter((part): part is Response.FinishPart => part.type === 'finish'),
+    Stream.runHead,
+    Effect.timeoutOption(drainLimit),
+    Effect.map((found) => Option.getOrUndefined(Option.flatten(found))?.usage.inputTokens.total),
+    Effect.orElseSucceed(() => undefined),
+  );
 
 /** Keeps only identifiers from the provider failure; its message text may echo the prompt. */
-const toProviderError = (error: AiError.AiError): ProviderError => {
+export const toProviderError = (error: AiError.AiError): ProviderError => {
   const reason = error.reason;
   const status = 'http' in reason ? reason.http?.response?.status : undefined;
   return new ProviderError({

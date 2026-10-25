@@ -1,6 +1,7 @@
 export {
   guidedWalkthrough,
   guidedWalkthroughProgressPrompt,
+  guidedWalkthroughSummaryPrompt,
   type GuidedWalkthroughOptions,
   type GuidedWalkthroughProfile,
   type Preset,

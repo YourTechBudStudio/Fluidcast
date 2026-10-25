@@ -3,6 +3,7 @@ export {
   Action,
   ActionId,
   GenerationFailed,
+  HistoryCompaction,
   Interrupted,
   isModelAuthored,
   LabeledContext,

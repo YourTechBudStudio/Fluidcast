@@ -34,7 +34,8 @@ type Run =
  *
  * A `tool_context` renders nothing in place. The latest one per tool, when not empty, closes the
  * input as `<context tool="…">`, in `tools` order, so the current context always comes last.
- * A `context` renders in place as `<context label="…">`.
+ * A `context` renders in place as `<context label="…">`. A `history_compaction` renders in place as
+ * `<earlier_conversation>`: the caller's view puts the latest one first.
  *
  * The newest input (the latest tool results or user message in the final user run) is followed by
  * its reminder, if `options.reminders` gives one, as `<reminder>…</reminder>`. Older
@@ -199,6 +200,8 @@ const envelope = (
     case 'tool_faulted':
       // Nothing generates after a halt.
       return undefined;
+    case 'history_compaction':
+      return `<earlier_conversation>${escapeXml(action.text)}</earlier_conversation>`;
   }
 };
 

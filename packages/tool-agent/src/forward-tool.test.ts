@@ -328,7 +328,12 @@ describe('forwardAgentTool', () => {
         assert.equal(tool.input, ForwardInput);
         assert.deepEqual(Schema.decodeUnknownSync(ForwardInput)({}), {});
         assert.deepEqual(tool.renderCall?.({ task: 'stray' }), {});
-        assert.deepEqual(tool.policy, { blocking: false, response: 'all', replay: false });
+        assert.deepEqual(tool.policy, {
+          blocking: false,
+          response: 'all',
+          replay: false,
+          startsEpisode: true,
+        });
         assert.ok(
           tool.guidelines[0]?.startsWith(
             '`forward_agent` (just `{"type":"forward_agent"}`, no fields)',

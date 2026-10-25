@@ -15,6 +15,11 @@ export interface ToolPolicy {
   readonly response: 'all' | 'error' | 'none';
   /** Executes again when forward replay passes the call. */
   readonly replay: boolean;
+  /**
+   * A call to this tool starts a new episode for summaries; the episode begins at the input the
+   * call answered (`SessionConfig.history.compaction`). Absent: it does not.
+   */
+  readonly startsEpisode?: boolean;
 }
 
 /** A reached call the tool may place into one of its own open executions. */

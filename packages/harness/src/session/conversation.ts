@@ -19,10 +19,15 @@
  * The current exchange runs from the latest input that is not inherited to the end of the log. It
  * stays whole in the model view, so a progress update is visible while it is the newest input, and
  * a retry still sees the reply it continues.
+ *
+ * A `history_compaction` is neutral input. Only the model view reads it: the latest one comes first,
+ * in place of everything before its `from`.
  */
 import {
   isModelAuthored,
   type Action,
+  type ActionId,
+  type HistoryCompaction,
   type Speak,
   type ToolCall,
 } from '@yourtechbudstudio/fluidcast-core/actions';
@@ -53,6 +58,7 @@ const inputKind = (action: InputAction): Answers | undefined => {
     case 'tool_context':
     case 'generation_failed':
     case 'tool_faulted':
+    case 'history_compaction':
       return undefined;
   }
 };
@@ -100,7 +106,7 @@ const iterations = (actions: ReadonlyArray<Action>): Array<Iteration> => {
 
 /**
  * Drops throwaway replies and `tool_progress` envelopes: outside the current exchange when
- * `keepCurrentExchange` is set (the model view), else everywhere (the hand-off view). An
+ * `keepCurrentExchange` is set (the model view), else everywhere (the settled view). An
  * interruption after a dropped reply reads as cutting in to speak: the line it cut is gone.
  */
 const project = (
@@ -125,13 +131,71 @@ const project = (
   return projected;
 };
 
-/** Pure: the history as the voice model reads it. Progress shows only in the current exchange. */
-export const modelView = (actions: ReadonlyArray<Action>): ReadonlyArray<Action> =>
-  project(actions, true);
+/** The log's actions from `from` onward, by ID. An unknown `from` is a defect: the log lost it. */
+const idsFrom = (actions: ReadonlyArray<Action>, from: ActionId): ReadonlySet<ActionId> => {
+  const index = actions.findIndex((action) => action.id === from);
+  if (index === -1) throw new Error('a history summary starts at an action that is not in the log');
+  return new Set(actions.slice(index).map((action) => action.id));
+};
 
-/** Pure: the history as the worker's hand-off reads it, without any progress or replies to it. */
-export const handoffView = (actions: ReadonlyArray<Action>): ReadonlyArray<Action> =>
-  project(actions, false);
+/**
+ * Pure: the history as the voice model reads it. Progress shows only in the current exchange. With
+ * a summary, the latest `history_compaction` comes first, then only the actions from its `from`
+ * onward; no summary stays in its own place. Every `tool_context` is kept wherever it sits: it is
+ * the tools' current state, recorded only when it changes, and renders once at the end.
+ */
+export const modelView = (actions: ReadonlyArray<Action>): ReadonlyArray<Action> => {
+  const projected = project(actions, true);
+  const summary = actions.findLast(
+    (action): action is HistoryCompaction => action.type === 'history_compaction',
+  );
+  if (summary === undefined) return projected;
+  const kept = idsFrom(actions, summary.from);
+  return [
+    summary,
+    ...projected.filter(
+      (action) =>
+        action.type === 'tool_context' ||
+        (action.type !== 'history_compaction' && kept.has(action.id)),
+    ),
+  ];
+};
+
+/**
+ * Pure: the settled history, without any progress, replies to it, or summaries: what the worker's
+ * hand-off reads, and what a summary folds in.
+ */
+export const settledView = (actions: ReadonlyArray<Action>): ReadonlyArray<Action> =>
+  project(actions, false).filter((action) => action.type !== 'history_compaction');
+
+/**
+ * Pure: where the episode a reply to `actions` would start begins: the first action of the current
+ * exchange's input, so a retry still starts at the input it retries. Absent for an empty log.
+ */
+export const episodeStart = (actions: ReadonlyArray<Action>): ActionId | undefined => {
+  const all = iterations(actions);
+  return all.findLast((iteration) => iteration.direct)?.input[0]?.id ?? all[0]?.input[0]?.id;
+};
+
+/**
+ * Pure: what a summary folds in: the settled view of the whole log, cut to the actions from `from`
+ * (the log start when absent) up to, not including, `to`, without tool context, which describes a
+ * tool's state at one moment rather than the conversation. Both IDs must be in the log.
+ */
+export const summarySlice = (
+  actions: ReadonlyArray<Action>,
+  from: ActionId | undefined,
+  to: ActionId,
+): ReadonlyArray<Action> => {
+  const after = from === undefined ? undefined : idsFrom(actions, from);
+  const before = idsFrom(actions, to);
+  return settledView(actions).filter(
+    (action) =>
+      action.type !== 'tool_context' &&
+      (after === undefined || after.has(action.id)) &&
+      !before.has(action.id),
+  );
+};
 
 /**
  * Pure: whether the next reply to `actions` answers only progress, so it is throwaway: its speech

@@ -1,8 +1,8 @@
-import { Effect, type Schedule, type Scope, type Stream } from 'effect';
+import { Effect, Option, type Schedule, type Scope, type Stream } from 'effect';
 import { LanguageModel } from 'effect/ai';
 
 import type { ToolDefinition } from '@yourtechbudstudio/fluidcast-core/generation';
-import type { Tool, ToolFault } from '@yourtechbudstudio/fluidcast-harness';
+import { SummaryModel, type Tool, type ToolFault } from '@yourtechbudstudio/fluidcast-harness';
 
 import type { Handoff, HandoffPrompt } from './handoff.ts';
 import { defaultProgressPrompt, defaultProgressSchedule } from './progress.ts';
@@ -102,12 +102,14 @@ export const forwardAgentDefinition: ToolDefinition<ForwardInput, ForwardResult>
 /**
  * The Forward Agent tool: one worker (the agent) behind one model-facing `forward_agent` action
  * with no fields. Its resources live in the current scope, which must outlive the Harness session
- * (acquire it first). The `LanguageModel` writes progress snapshots.
+ * (acquire it first). The Harness's `SummaryModel` writes progress snapshots when it is provided,
+ * else the `LanguageModel`. A call starts an episode for history summaries.
  */
 export const forwardAgentTool = (
   options: ForwardAgentToolOptions,
 ): Effect.Effect<ForwardAgentTool, WorkerSetupError, LanguageModel.LanguageModel | Scope.Scope> =>
   Effect.gen(function* () {
+    const languageModel = yield* LanguageModel.LanguageModel;
     const session = yield* makeWorkerSession({
       type: options.worker,
       sessionId: options.session?.sessionId,
@@ -115,11 +117,11 @@ export const forwardAgentTool = (
         options.hook ?? ((handoff) => ({ prompt: handoff.rendered, modifiers: handoff.modifiers })),
       schedule: options.progress?.schedule ?? defaultProgressSchedule,
       progressPrompt: options.progress?.prompt ?? defaultProgressPrompt,
-      model: yield* LanguageModel.LanguageModel,
+      model: Option.getOrElse(yield* Effect.serviceOption(SummaryModel), () => languageModel),
     });
     const tool: Tool<ForwardInput, ForwardResult> = {
       ...forwardAgentDefinition,
-      policy: { blocking: false, response: 'all', replay: false },
+      policy: { blocking: false, response: 'all', replay: false, startsEpisode: true },
       assign: session.assign,
       context: session.context,
       faults: session.faults,

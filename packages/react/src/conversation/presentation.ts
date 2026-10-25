@@ -614,9 +614,10 @@ function timelineOf(
           rows.push({ kind: 'progress', id: action.id, text: action.text });
         break;
       }
-      // Context is for the model only.
+      // Context and history summaries are for the model only.
       case 'context':
       case 'tool_context':
+      case 'history_compaction':
         break;
       case 'tool_faulted':
         rows.push({ kind: 'faulted', id: action.id, message: action.error.message });

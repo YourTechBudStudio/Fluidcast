@@ -2,6 +2,7 @@ import {
   Cause,
   Clock,
   Context,
+  Deferred,
   Duration,
   Effect,
   Exit,
@@ -9,6 +10,7 @@ import {
   FiberHandle,
   FiberSet,
   Layer,
+  Option,
   Queue,
   Ref,
   Result,
@@ -22,12 +24,25 @@ import {
   makeActionId,
   uuidv7,
   type Action,
+  type ActionId,
   type ToolCall,
   type ToolFaulted,
+  type Speak,
   type ToolProgress,
   type UserMessage,
 } from '@yourtechbudstudio/fluidcast-core/actions';
-import { checkTools, decodeToolCall, generate } from '@yourtechbudstudio/fluidcast-core/generation';
+import {
+  checkTools,
+  decodeToolCall,
+  defaultSummaryPrompt,
+  generate,
+  summarize,
+  type GenerateOptions,
+  type GenerationError,
+  type GenerationUsage,
+  type ReplyEnded,
+  type ToolCallDraft,
+} from '@yourtechbudstudio/fluidcast-core/generation';
 import {
   audioMimeType,
   SpeechSynthesizer,
@@ -35,9 +50,10 @@ import {
   type SpeechError,
 } from '@yourtechbudstudio/fluidcast-core/speech';
 
+import { SummaryModel } from '../summary-model.ts';
 import { ToolError, ToolFault, type Tool } from '../tool.ts';
-import type { SessionConfig } from './config.ts';
-import { answersProgress, modelView } from './conversation.ts';
+import { defaultCompactionThreshold, type SessionConfig } from './config.ts';
+import { answersProgress, episodeStart, modelView, summarySlice } from './conversation.ts';
 import {
   describeFailure,
   describeFault,
@@ -163,7 +179,19 @@ export const make = (config: SessionConfig) =>
     const preloadedCall =
       preloaded?.call === undefined ? null : answeredCall(config.tools, preloaded.call);
     const languageModel = yield* LanguageModel.LanguageModel;
+    const summaryModel = Option.getOrElse(
+      yield* Effect.serviceOption(SummaryModel),
+      () => languageModel,
+    );
     const synthesizer = yield* SpeechSynthesizer;
+    const compactionConfig = config.history?.compaction;
+    const compaction =
+      compactionConfig?.enabled === true
+        ? {
+            aboveInputTokens: compactionConfig.aboveInputTokens ?? defaultCompactionThreshold,
+            prompt: compactionConfig.prompt ?? defaultSummaryPrompt,
+          }
+        : undefined;
 
     // One lock serialises commands, generation appends, execution outcomes and subscription
     // changes. Every event is applied to `state` and offered to the subscriber inside it, so both
@@ -208,6 +236,13 @@ export const make = (config: SessionConfig) =>
       }),
     );
     const continuation = yield* FiberHandle.make<void, never>();
+    // Generations reading on after their reply for its usage, and the one summary in flight. Both
+    // live in the session scope, so closing it interrupts them.
+    const drains = yield* FiberSet.make<void, never>();
+    const summarizing = yield* FiberHandle.make<void, never>();
+    // The summary in flight, by the episode it starts, and the one ready for the next iteration.
+    let summaryFrom: ActionId | undefined;
+    let summaryReady: { readonly from: ActionId; readonly text: string } | undefined;
     // Monotonic: trimmed handles are never reused. A preloaded call holds `call_1`.
     const nextHandle = yield* Ref.make(preloadedCall === null ? 0 : 1);
     const running = new Map<ExecutionId, Running>();
@@ -615,60 +650,230 @@ export const make = (config: SessionConfig) =>
     /**
      * One iteration: appends each parsed action as it arrives, or a failure after them. The model
      * reads the history's model view. A reply that answers only progress is throwaway: its speech
-     * plays, and its tool calls are ignored, logged by tool name only.
+     * plays, and its tool calls are ignored, logged by tool name only. With compaction, a reply
+     * that called a `startsEpisode` tool may start a summary once its usage is known (`drain`).
      */
-    const iterate = (history: ReadonlyArray<Action>) => {
+    const iterate = (history: ReadonlyArray<Action>): Effect.Effect<void> => {
       const throwaway = answersProgress(history);
-      return generate({
+      let startedEpisode = false;
+      // Inside the stream, so a projection defect ends the iteration as a failure below.
+      const options = (): Omit<GenerateOptions, 'usage'> => ({
         instructions: config.instructions,
         ...(config.examples === undefined ? {} : { examples: config.examples }),
         speakers: profiles,
         history: modelView(history),
         tools: config.tools,
         ...(config.reminders === undefined ? {} : { reminders: config.reminders }),
-      }).pipe(
-        Stream.runForEach((element) =>
-          transact(
-            Effect.gen(function* () {
-              if (element.type === 'speak') {
-                yield* append(element);
-              } else if (throwaway) {
-                yield* Effect.logInfo('progress reply tool call ignored').pipe(
-                  Effect.annotateLogs({ tool: element.tool }),
-                );
-                return;
-              } else {
-                const number = yield* Ref.updateAndGet(nextHandle, (last) => last + 1);
-                const { id, tool, input } = element;
-                yield* append({ type: 'tool_call', id, handle: `call_${number}`, tool, input });
-              }
-              yield* settle;
+        ...(compaction === undefined ? {} : { summarizedHistory: true }),
+      });
+      const onElement = (element: Speak | ToolCallDraft) =>
+        transact(
+          Effect.gen(function* () {
+            if (element.type === 'speak') {
+              yield* append(element);
+            } else if (throwaway) {
+              yield* Effect.logInfo('progress reply tool call ignored').pipe(
+                Effect.annotateLogs({ tool: element.tool }),
+              );
+              return;
+            } else {
+              const number = yield* Ref.updateAndGet(nextHandle, (last) => last + 1);
+              const { id, tool, input } = element;
+              yield* append({ type: 'tool_call', id, handle: `call_${number}`, tool, input });
+              if (toolNamed(tool)?.policy.startsEpisode === true) startedEpisode = true;
+            }
+            yield* settle;
+          }),
+        );
+      const conclude = (reply: Effect.Effect<void, GenerationError>): Effect.Effect<void> =>
+        reply.pipe(
+          // A defect must still end the iteration truthfully rather than leave it running forever.
+          Effect.catchDefect(() => Effect.fail(unexpectedFailure)),
+          Effect.matchEffect({
+            onSuccess: () => transact(emit({ _tag: 'GenerationChanged', generation: 'idle' })),
+            onFailure: (error) =>
+              transact(
+                Effect.gen(function* () {
+                  yield* Effect.logWarning('generation failed').pipe(
+                    Effect.annotateLogs(failureAnnotations(error)),
+                  );
+                  yield* append({
+                    type: 'generation_failed',
+                    id: makeActionId(),
+                    error: describeFailure(error),
+                  });
+                  yield* settle;
+                  yield* emit({ _tag: 'GenerationChanged', generation: 'failed' });
+                }),
+              ),
+          }),
+        );
+      if (compaction === undefined) {
+        return Stream.suspend(() => generate(options())).pipe(
+          Stream.runForEach(onElement),
+          Effect.provideService(LanguageModel.LanguageModel, languageModel),
+          conclude,
+        );
+      }
+      return Effect.gen(function* () {
+        // The reply reaches this fiber through `reply`, up to `reply_ended`; a drain fiber outside
+        // the generation handle reads the provider on for the usage, so the session idles at `]`
+        // and a new iteration neither waits for it nor interrupts it.
+        const reply = yield* Queue.bounded<
+          Speak | ToolCallDraft,
+          GenerationError | typeof unexpectedFailure | Cause.Done
+        >(1);
+        const replied = yield* Deferred.make<void>();
+        const reader = yield* FiberSet.run(
+          drains,
+          drain(
+            Stream.suspend(() => generate({ ...options(), usage: true })),
+            reply,
+            replied,
+          ).pipe(
+            // A defect before `reply_ended` fails the reply; after it, the reply stands.
+            Effect.catchDefect(() =>
+              Effect.andThen(Queue.fail(reply, unexpectedFailure), Effect.interrupt),
+            ),
+            Effect.flatMap((usage) =>
+              transact(trigger(history, startedEpisode, usage)).pipe(
+                Effect.catchDefect(() =>
+                  Effect.logWarning('conversation summary failed').pipe(
+                    Effect.annotateLogs(failureAnnotations(unexpectedFailure)),
+                  ),
+                ),
+              ),
+            ),
+            Effect.provideService(LanguageModel.LanguageModel, languageModel),
+          ),
+        );
+        yield* Stream.fromQueue(reply).pipe(
+          Stream.runForEach(onElement),
+          Effect.catch((error) =>
+            error._tag === 'UnexpectedError' ? Effect.die(error) : Effect.fail(error),
+          ),
+          Effect.tap(() => Deferred.succeed(replied, undefined)),
+          // An interrupt while the boundary generation still streams (`stop`), or a failure, ends
+          // the reader too: no summary starts for that boundary. The next boundary's summary covers
+          // the same range, so this degrades gracefully.
+          Effect.onExit((exit) => (Exit.isSuccess(exit) ? Effect.void : Fiber.interrupt(reader))),
+          conclude,
+        );
+      });
+    };
+
+    /**
+     * Reads a generation with usage: hands each action to `reply` and ends it at `reply_ended`, or
+     * fails it with the generation's failure. Then reads on to the end of the stream (Core bounds
+     * it), waits until the reply's actions are all appended (`replied`), and returns the input-token
+     * count, absent when none was reported.
+     */
+    const drain = (
+      stream: Stream.Stream<
+        Speak | ToolCallDraft | ReplyEnded | GenerationUsage,
+        GenerationError,
+        LanguageModel.LanguageModel
+      >,
+      reply: Queue.Queue<
+        Speak | ToolCallDraft,
+        GenerationError | typeof unexpectedFailure | Cause.Done
+      >,
+      replied: Deferred.Deferred<void>,
+    ): Effect.Effect<number | undefined, never, LanguageModel.LanguageModel> =>
+      Effect.gen(function* () {
+        let inputTokens: number | undefined;
+        yield* Stream.runForEach(stream, (element) => {
+          switch (element.type) {
+            case 'reply_ended':
+              return Queue.end(reply);
+            case 'usage':
+              inputTokens = element.inputTokens;
+              return Effect.void;
+            default:
+              return Queue.offer(reply, element);
+          }
+        }).pipe(
+          // The failure is the reply's: the generation fiber records it, and nothing triggers.
+          Effect.catch((error) => Effect.andThen(Queue.fail(reply, error), Effect.interrupt)),
+        );
+        yield* Deferred.await(replied);
+        return inputTokens;
+      });
+
+    // History compaction
+
+    /**
+     * Runs once a generation with usage has ended and its reply is appended. Starts a summary of
+     * everything before the episode the reply started, if it called a `startsEpisode` tool, the
+     * session is open, the input passed the threshold or no count was reported, and the episode
+     * starts after the newest summary's. A boundary call trimmed later by an interrupt does not
+     * cancel it: compressing the earlier conversation is still valid.
+     */
+    const trigger = (
+      history: ReadonlyArray<Action>,
+      startedEpisode: boolean,
+      inputTokens: number | undefined,
+    ): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        if (compaction === undefined || !startedEpisode || closing) return;
+        if (inputTokens !== undefined && inputTokens <= compaction.aboveInputTokens) return;
+        const current = yield* Ref.get(state);
+        if (isHalted(current)) return;
+        const from = episodeStart(history);
+        if (from === undefined) return;
+        const log = effectiveActions(current);
+        const position = (id: ActionId) => log.findIndex((action) => action.id === id);
+        const previous =
+          summaryReady ?? log.findLast((action) => action.type === 'history_compaction');
+        // Resolved first: an episode start missing from the log is a defect, never skipped.
+        const slice = summarySlice(log, previous?.from, from);
+        const newest = summaryFrom ?? previous?.from;
+        if (newest !== undefined && position(from) <= position(newest)) return;
+        if (slice.length === 0) return;
+        summaryFrom = from;
+        // A newer boundary replaces the summary in flight.
+        yield* FiberHandle.run(
+          summarizing,
+          summarize({
+            prompt: compaction.prompt,
+            ...(previous === undefined ? {} : { previous: previous.text }),
+            history: slice,
+            tools: config.tools,
+          }).pipe(
+            Effect.provideService(LanguageModel.LanguageModel, summaryModel),
+            Effect.catchDefect(() => Effect.fail(unexpectedFailure)),
+            Effect.matchEffect({
+              onSuccess: (text) =>
+                transact(
+                  Effect.gen(function* () {
+                    summaryFrom = undefined;
+                    summaryReady = { from, text };
+                    yield* Effect.logInfo('conversation summarized').pipe(
+                      Effect.annotateLogs({ from, characters: text.length }),
+                    );
+                  }),
+                ),
+              onFailure: (error) =>
+                transact(
+                  Effect.gen(function* () {
+                    summaryFrom = undefined;
+                    yield* Effect.logWarning('conversation summary failed').pipe(
+                      Effect.annotateLogs({ from, ...failureAnnotations(error) }),
+                    );
+                  }),
+                ),
             }),
           ),
-        ),
-        // A defect must still end the iteration truthfully rather than leave it running forever.
-        Effect.catchDefect(() => Effect.fail(unexpectedFailure)),
-        Effect.matchEffect({
-          onSuccess: () => transact(emit({ _tag: 'GenerationChanged', generation: 'idle' })),
-          onFailure: (error) =>
-            transact(
-              Effect.gen(function* () {
-                yield* Effect.logWarning('generation failed').pipe(
-                  Effect.annotateLogs(failureAnnotations(error)),
-                );
-                yield* append({
-                  type: 'generation_failed',
-                  id: makeActionId(),
-                  error: describeFailure(error),
-                });
-                yield* settle;
-                yield* emit({ _tag: 'GenerationChanged', generation: 'failed' });
-              }),
-            ),
-        }),
-        Effect.provideService(LanguageModel.LanguageModel, languageModel),
-      );
-    };
+        );
+      });
+
+    /** Appends the ready summary, if any, so the iteration about to read the history uses it. */
+    const appendSummary: Effect.Effect<void> = Effect.gen(function* () {
+      if (summaryReady === undefined) return;
+      const { from, text } = summaryReady;
+      summaryReady = undefined;
+      yield* append({ type: 'history_compaction', id: makeActionId(), from, text });
+    });
 
     /**
      * Records each tool's context when it changed, so the latest one closes this iteration's
@@ -727,6 +932,7 @@ export const make = (config: SessionConfig) =>
         if (input === 'start') yield* emit({ _tag: 'StartSubmitted' });
         else if (input !== undefined) yield* append(input);
         yield* recordContext;
+        yield* appendSummary;
         yield* settle;
         const history = effectiveActions(yield* Ref.get(state));
         yield* FiberHandle.run(generation, iterate(history));

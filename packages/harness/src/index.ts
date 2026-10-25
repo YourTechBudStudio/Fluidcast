@@ -1,4 +1,5 @@
 export * from './session/index.ts';
+export { SummaryModel } from './summary-model.ts';
 export {
   ToolError,
   ToolFault,
