@@ -1,11 +1,15 @@
-import { Effect, type Schema, type Scope, Stream } from 'effect';
-import { FetchHttpClient, HttpClient, type HttpClientError } from 'effect/http';
+import { Effect, Schema, type Scope, Stream } from 'effect';
+import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientError } from 'effect/http';
 
-import { sessionPaths } from '@fluidcast/app-contract';
+import { sessionPaths, SkillsJson, skillsStatus } from '@fluidcast/app-contract';
 import type { TransportError } from '@yourtechbudstudio/fluidcast-client';
-import { TranscriptMessage, WorkerSummary } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
+import {
+  TranscriptMessage,
+  WorkerSummary,
+  type Skill,
+} from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 
-import { fromStatus, isTransportError, sseStream } from './http';
+import { fromStatus, isTransportError, sseStream, toTransportError } from './http';
 
 /** Runs a stream with its own HTTP client, scoped to the stream, so ending the stream aborts the request. */
 const withClient = <A, E>(
@@ -26,7 +30,7 @@ const watch = <A>(path: string, schema: Schema.Decoder<A>) =>
     }),
   );
 
-/** The session's worker status: its summary now, then again whenever its status or session ID changes. */
+/** The session's worker status: its summary now, then again whenever its status, session ID or background-task count changes. */
 export const watchWorker = (sessionId: string): Stream.Stream<WorkerSummary, TransportError> =>
   watch(sessionPaths(sessionId).worker, WorkerSummary);
 
@@ -35,3 +39,21 @@ export const watchTranscript = (
   sessionId: string,
 ): Stream.Stream<TranscriptMessage, TransportError> =>
   watch(sessionPaths(sessionId).workerTranscript, TranscriptMessage);
+
+/**
+ * The skills the session's worker can be sent as `/name`. Any failure, `SkillsUnavailable` included, is a
+ * `TransportError`: the player only leaves its suggestions out.
+ */
+export const readSkills = (
+  sessionId: string,
+): Effect.Effect<ReadonlyArray<Skill>, TransportError> =>
+  Effect.gen(function* () {
+    const client = HttpClient.withScope(yield* HttpClient.HttpClient);
+    const response = yield* client.execute(
+      HttpClientRequest.get(sessionPaths(sessionId).workerSkills).pipe(
+        HttpClientRequest.acceptJson,
+      ),
+    );
+    if (response.status !== skillsStatus.ok) return yield* fromStatus(response.status);
+    return yield* Effect.flatMap(response.text, Schema.decodeEffect(SkillsJson));
+  }).pipe(Effect.scoped, Effect.mapError(toTransportError), Effect.provide(FetchHttpClient.layer));

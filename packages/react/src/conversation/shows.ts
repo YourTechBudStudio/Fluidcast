@@ -8,7 +8,7 @@ import { ShowCommand, showToolName } from '@yourtechbudstudio/fluidcast-tool-sho
 import { clientRuntime } from '../connection';
 import { renderShow, type ShowBody, type ShownShow } from '../tools';
 import { type Palette, UNRESOLVED_PALETTE } from '../ui';
-import { type ReportOutcome, reportActionOf, retryDelay, unseenShows } from './showDriver';
+import { panelChanges, type ReportOutcome, reportActionOf, retryDelay } from './showDriver';
 import { connectionAtom, conversationAtom, sendFailureAtom, unresolvedShowsAtom } from './state';
 import { findCall, latestShowHandle, showCorrectionOf, showOf } from './tools';
 
@@ -96,7 +96,8 @@ const ACCEPTED: ReportOutcome = { _tag: 'Accepted' };
 /**
  * The Show driver, mounted by the app for the page's lifetime. It wakes whenever the view or the connection changes
  * (a reconnect snapshot's view arrives before the connection says `connected`, so either can be the only wakeup) and:
- * 1. opens the panel on every Show execution it has not seen, including a replay's new execution after Back;
+ * 1. opens the panel on every Show execution it has not seen, including a replay's new execution after Back, and closes
+ *    it on every forward execution it has not seen, the later one winning (see `panelChanges`);
  * 2. while connected, runs one reporter per open Show execution not yet reported or unresolved;
  * 3. stops the reporters of executions that closed, and all of them when not connected.
  * Reporting never depends on the panel being visible, so closing it cannot stall a turn.
@@ -106,7 +107,7 @@ export const showDriverAtom = clientRuntime
     Effect.gen(function* () {
       const registry = get.registry;
       const client = yield* Client;
-      const opened = new Set<ExecutionId>();
+      const seen = new Set<ExecutionId>();
       const reported = new Set<ExecutionId>();
       const reporters = yield* FiberMap.make<ExecutionId>();
 
@@ -154,10 +155,11 @@ export const showDriverAtom = clientRuntime
       const wake = Effect.gen(function* () {
         const view = registry.get(conversationAtom);
         const connected = registry.get(connectionAtom) === 'connected';
-        for (const execution of unseenShows(view.executions, opened)) {
-          opened.add(execution.executionId);
-          registry.set(showPanelAtom, { open: true, handle: execution.handles[0] });
-        }
+        const { unseen, change } = panelChanges(view.executions, seen);
+        for (const id of unseen) seen.add(id);
+        if (change?.open) registry.set(showPanelAtom, { open: true, handle: change.handle });
+        else if (change)
+          registry.set(showPanelAtom, { ...registry.get(showPanelAtom), open: false });
         const shows = view.executions.filter((execution) => execution.tool === showToolName);
         const open = new Set(shows.map((execution) => execution.executionId));
         for (const [id] of [...reporters]) {

@@ -5,7 +5,7 @@ import type { Options, SlashCommand } from '@anthropic-ai/claude-agent-sdk';
 import { Effect, Fiber, Logger, References } from 'effect';
 import { TestClock } from 'effect/testing';
 
-import { SkillsUnavailable } from '../worker.ts';
+import { SkillsUnavailable } from '../schema.ts';
 import { queryOptions } from './connect.ts';
 import { listSkillsWith, type CommandsQueryFunction } from './skills.ts';
 

@@ -11,7 +11,7 @@ import {
   type SessionState,
 } from '@yourtechbudstudio/fluidcast-harness/protocol';
 
-import type { Modifier } from './handoff.ts';
+import type { Modifier } from './schema.ts';
 import { forwardToolName, type TranscriptEntry } from './schema.ts';
 import {
   WorkerSetupError,

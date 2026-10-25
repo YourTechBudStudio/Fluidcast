@@ -35,6 +35,7 @@ import {
 import { Chip, Prose, useReducedMotion } from '../ui';
 import { SPEAKER_TONES, type TimelineRow } from './presentation';
 import { bodyOf, showPanelAtom, showRenderAtom } from './shows';
+import { skillPrefixLength } from './skills';
 
 /** Every action up to the cursor as one timeline row. The raw action type sits on the right of each row. */
 export function Transcript({
@@ -119,7 +120,7 @@ function TimelineItem({
             <span className="font-semibold text-fg">You</span>
           </Head>
           <p className="mt-0.5 rounded-[6px_16px_16px_16px] border border-line/35 bg-elevated/70 px-3.5 py-2.5 text-fg">
-            {row.text}
+            <UserText text={row.text} />
           </p>
           {row.contextLabel !== null && <SentWith label={row.contextLabel} />}
         </Row>
@@ -794,4 +795,16 @@ function Node({
         </span>
       );
   }
+}
+
+/** A user message as typed, with a leading `/name` the Agent tool reads as a skill in violet mono, as in a terminal. */
+function UserText({ text }: { readonly text: string }) {
+  const skill = skillPrefixLength(text);
+  if (skill === 0) return text;
+  return (
+    <>
+      <span className="font-mono text-[0.9375em] text-violet">{text.slice(0, skill)}</span>
+      {text.slice(skill)}
+    </>
+  );
 }

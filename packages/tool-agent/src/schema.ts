@@ -1,7 +1,8 @@
 /**
  * The Forward Agent tool's contract: the model-facing input, results, the worker's status,
- * transcript entries and the Worker stream messages, everything a client needs to recognise
- * forward calls and present the worker. A pure export: it imports only `effect`.
+ * transcript entries, the Worker stream messages, skills and the `/name` syntax, everything a client
+ * needs to recognise forward calls, present the worker and suggest skills. A pure export: it
+ * imports only `effect`.
  */
 import { Schema } from 'effect';
 
@@ -73,14 +74,41 @@ export const WorkerStatus = Schema.Literals(['idle', 'working', 'failed']);
 export type WorkerStatus = typeof WorkerStatus.Type;
 
 /**
- * The worker as the Worker view shows it, sent whenever its status or session ID changes.
- * `sessionId` is the agent's, `null` until a new worker's agent reports it.
+ * The worker as the Worker view shows it, sent whenever its status, session ID or background-task
+ * count changes. `sessionId` is the agent's, `null` until a new worker's agent reports it.
+ * `backgroundTasks` is how many of the worker's background tasks (agents or shell commands) are
+ * live; `0` for a worker type that reports none.
  */
 export const WorkerSummary = Schema.TaggedStruct('WorkerSummary', {
   status: WorkerStatus,
   sessionId: Schema.NullOr(Schema.String),
+  backgroundTasks: Schema.Number,
 });
 export type WorkerSummary = typeof WorkerSummary.Type;
+
+/**
+ * A skill or command token, such as `brainstorm`. The prompt itself is what it receives as arguments.
+ * A worker type decides how many one message takes; Claude Code takes one.
+ */
+export interface Modifier {
+  readonly name: string;
+}
+
+/** A valid modifier name, for every worker type and for one the listener types as `/name`. */
+export const modifierName = /^[a-z0-9][a-z0-9:_-]*$/;
+
+/**
+ * Pure: a leading `/name` in a user message's text, and the words after it, trimmed. The first
+ * whitespace-delimited token must be `/` and a valid name, with nothing before it; anything else
+ * (`/`, `/Tmp`, `/tmp/notes.md`) is plain text.
+ */
+export const parseModifier = (
+  text: string,
+): { readonly modifier: Modifier; readonly words: string } | undefined => {
+  const match = /^\/(\S*)([\s\S]*)$/.exec(text);
+  if (match === null || !modifierName.test(match[1]!)) return undefined;
+  return { modifier: { name: match[1]! }, words: match[2]!.trim() };
+};
 
 /**
  * A skill or command the worker can be sent as a modifier, for suggestions while the listener
@@ -92,6 +120,14 @@ export const Skill = Schema.Struct({
   argumentHint: Schema.optionalKey(Schema.String),
 });
 export type Skill = typeof Skill.Type;
+
+/** The worker type's skills could not be listed: it failed, or did not answer in time. */
+export class SkillsUnavailable extends Schema.TaggedError<SkillsUnavailable>()(
+  'SkillsUnavailable',
+  {
+    reason: Schema.Literals(['Failed', 'TimedOut']),
+  },
+) {}
 
 /** The tool call an entry is nested under (a subagent's), or `null` at the top level. */
 const Parent = { parentToolUseId: Schema.NullOr(Schema.String) };
@@ -122,6 +158,11 @@ export const TranscriptEntry = Schema.Union([
     truncated: Schema.Boolean,
     isError: Schema.Boolean,
   }),
+  /**
+   * The start of a thinking stretch: one per stretch, with nothing about its content. `summary` is
+   * reserved for a summary of the thinking and is `''` for now.
+   */
+  Schema.TaggedStruct('thinking', { ...Parent, summary: Schema.String }),
   /** A subagent's progress summary. */
   Schema.TaggedStruct('status', { ...Parent, text: Schema.String }),
   /** A turn ended: `success`, or a display-safe error tag such as `error_max_turns` or `usage_limit` (with when it resets, epoch seconds, if known). */

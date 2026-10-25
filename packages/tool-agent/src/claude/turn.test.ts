@@ -12,6 +12,7 @@ import {
   result,
   say,
   state,
+  thinkingTokens,
   toolResults,
   assistant,
   toolUse,
@@ -36,9 +37,24 @@ const track = (inputs: ReadonlyArray<Input>, newSession = false) => {
   return { state: current, outputs };
 };
 
-/** The outputs without transcript entries. */
+/** The outputs without transcript entries or background-task counts (tested on their own). */
 const signals = (outputs: ReadonlyArray<TrackerOutput>) =>
-  outputs.filter((output) => output._tag !== 'Entry');
+  outputs.filter((output) => output._tag !== 'Entry' && output._tag !== 'BackgroundTasks');
+
+/** The transcript entries' tags, top-level ones bare and nested ones as `parent/tag`. */
+const entryTags = (outputs: ReadonlyArray<TrackerOutput>) =>
+  outputs.flatMap((output) =>
+    output._tag === 'Entry'
+      ? [
+          output.entry.parentToolUseId === null
+            ? output.entry._tag
+            : `${output.entry.parentToolUseId}/${output.entry._tag}`,
+        ]
+      : [],
+  );
+
+const counts = (outputs: ReadonlyArray<TrackerOutput>) =>
+  outputs.flatMap((output) => (output._tag === 'BackgroundTasks' ? [output.count] : []));
 
 const settled = { _tag: 'Settled' } as const;
 
@@ -233,5 +249,90 @@ describe('turn tracker', () => {
   it("reports nothing for a resumed session's init frame", () => {
     const { outputs } = track([init('b0a1c2d3-0000-4000-8000-000000000001')], false);
     assert.deepEqual(outputs, []);
+  });
+
+  it('marks a thinking stretch once, however many thinking_tokens frames it has', () => {
+    const { outputs } = track([
+      state('running'),
+      thinkingTokens(50),
+      thinkingTokens(150),
+      thinkingTokens(300),
+    ]);
+    assert.deepEqual(
+      outputs.filter((output) => output._tag === 'Entry'),
+      [{ _tag: 'Entry', entry: { _tag: 'thinking', parentToolUseId: null, summary: '' } }],
+    );
+  });
+
+  it('marks each stretch before the call or text that follows it, ignoring live thinking blocks', () => {
+    const { outputs } = track([
+      state('running'),
+      thinkingTokens(),
+      thinkingTokens(),
+      // Sent once the thinking ends, with empty text by default: never an entry of its own.
+      assistant([{ type: 'thinking', thinking: '', signature: 'sig' }]),
+      assistant([toolUse('toolu_1', 'Bash', { command: 'cat clue.txt' })]),
+      toolResults([{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'clue' }]),
+      thinkingTokens(),
+      thinkingTokens(),
+      assistant([{ type: 'redacted_thinking', data: 'x' }]),
+      say('Done.'),
+      result(),
+    ]);
+    assert.deepEqual(entryTags(outputs), [
+      'thinking',
+      'toolCall',
+      'toolResult',
+      'thinking',
+      'text',
+      'turnEnd',
+    ]);
+  });
+
+  it("keeps the main agent's stretch open across a subagent's entries", () => {
+    const { outputs } = track([
+      state('running'),
+      thinkingTokens(),
+      assistant([toolUse('toolu_sub', 'Read')], { parent: 'toolu_agent' }),
+      toolResults([{ type: 'tool_result', tool_use_id: 'toolu_sub', content: 'x' }], {
+        parent: 'toolu_agent',
+      }),
+      thinkingTokens(),
+      say('Done.'),
+      thinkingTokens(),
+    ]);
+    assert.deepEqual(entryTags(outputs), [
+      'thinking',
+      'toolu_agent/toolCall',
+      'toolu_agent/toolResult',
+      'text',
+      'thinking',
+    ]);
+  });
+
+  it('ends a stretch with its turn', () => {
+    const { outputs } = track([
+      state('running'),
+      thinkingTokens(),
+      result(),
+      state('idle'),
+      state('running'),
+      thinkingTokens(),
+    ]);
+    assert.deepEqual(entryTags(outputs), ['thinking', 'turnEnd', 'thinking']);
+  });
+
+  it('reports the non-ambient background-task count whenever it changes', () => {
+    const { outputs } = track([
+      state('running'),
+      background('task_1'),
+      background('task_1', 'shell_1'),
+      // The same count with other members, and an ambient task: no change.
+      background('task_2', 'shell_1'),
+      background('task_2', 'shell_1', { id: 'monitor', ambient: true }),
+      background('shell_1'),
+      background(),
+    ]);
+    assert.deepEqual(counts(outputs), [1, 2, 1, 0]);
   });
 });

@@ -11,11 +11,12 @@ import {
   ForwardResult,
   forwardToolName,
   type Skill,
+  type SkillsUnavailable,
   type TranscriptMessage,
   type WorkerSummary,
 } from './schema.ts';
 import { makeWorkerSession } from './session.ts';
-import type { SkillsUnavailable, WorkerSetupError, WorkerType } from './worker.ts';
+import type { WorkerSetupError, WorkerType } from './worker.ts';
 
 export interface ForwardAgentToolOptions {
   /** The worker that does the thinking and the work, such as `claudeWorker(…)`. */
@@ -46,7 +47,7 @@ export interface ForwardAgentToolOptions {
 
 /** A read-only view of the worker for applications (the reference apps' Worker view). */
 export interface WorkerHandle {
-  /** The worker's summary now, then again whenever its status or session ID changes. */
+  /** The worker's summary now, then again whenever its status, session ID or background-task count changes. */
   readonly status: Stream.Stream<WorkerSummary>;
   /** The worker's transcript: a snapshot, then appended entries. */
   readonly transcript: Stream.Stream<TranscriptMessage>;

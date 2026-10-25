@@ -41,7 +41,12 @@ export const unusedProviders = Layer.merge(
  * faults, and its session ID is the one its status reports.
  */
 export const fakeWorkerHandle = (sessionId: string | null = 'worker-session'): WorkerHandle => {
-  const idle: WorkerSummary = { _tag: 'WorkerSummary', status: 'idle', sessionId };
+  const idle: WorkerSummary = {
+    _tag: 'WorkerSummary',
+    status: 'idle',
+    sessionId,
+    backgroundTasks: 0,
+  };
   return {
     status: Stream.concat(Stream.make(idle), Stream.never),
     transcript: Stream.concat(
@@ -50,6 +55,7 @@ export const fakeWorkerHandle = (sessionId: string | null = 'worker-session'): W
     ),
     fault: Effect.never,
     sessionId: Effect.succeed(sessionId),
+    skills: Effect.succeed([]),
   };
 };
 

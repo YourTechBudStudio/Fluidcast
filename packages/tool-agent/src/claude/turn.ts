@@ -7,6 +7,12 @@
  * background set empties after a result, an automatic turn usually starts about 50 ms later, so a
  * grace timer holds the evaluation back; a turn start cancels it, and a timer that is no longer
  * the pending one is rejected by identity.
+ *
+ * Thinking is marked per stretch: the first `thinking_tokens` frame (about one a second while the
+ * main agent thinks; subagents send none) yields one top-level `thinking` entry, and the next
+ * top-level entry ends the stretch. Subagent entries do not end it, since the main agent may go on
+ * thinking while a background subagent works. The background set's size is reported whenever it
+ * changes.
  */
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
@@ -20,6 +26,8 @@ export interface TurnState {
   readonly session: 'idle' | 'running' | 'requires_action';
   /** Non-ambient background task IDs, replaced on each change. */
   readonly background: ReadonlySet<string>;
+  /** The main agent is in a thinking stretch that already has its marker. */
+  readonly thinking: boolean;
   /** A result arrived since the latest turn start. */
   readonly resultSeen: boolean;
   /** The pending grace timer's identity; 0: none. */
@@ -36,6 +44,7 @@ export interface TurnState {
 export const initialTurnState = (newSession: boolean): TurnState => ({
   session: 'idle',
   background: new Set(),
+  thinking: false,
   resultSeen: false,
   grace: 0,
   graces: 0,
@@ -95,6 +104,18 @@ const onFrame = (state: TurnState, frame: SDKMessage): Step => {
           const next = { ...state, session: frame.state };
           return frame.state === 'idle' ? evaluate(next) : [next, []];
         }
+        case 'thinking_tokens':
+          return state.thinking
+            ? [state, []]
+            : [
+                { ...state, thinking: true },
+                [
+                  {
+                    _tag: 'Entry',
+                    entry: { _tag: 'thinking', parentToolUseId: null, summary: '' },
+                  },
+                ],
+              ];
         case 'init':
           return state.reportSession
             ? [
@@ -107,11 +128,15 @@ const onFrame = (state: TurnState, frame: SDKMessage): Step => {
             frame.tasks.filter((task) => task.ambient !== true).map((task) => task.task_id),
           );
           const next = { ...state, background };
+          const count: ReadonlyArray<TrackerOutput> =
+            background.size === state.background.size
+              ? []
+              : [{ _tag: 'BackgroundTasks', count: background.size }];
           if (!state.resultSeen || state.background.size === 0 || background.size > 0) {
-            return [next, []];
+            return [next, count];
           }
           const grace = state.graces + 1;
-          return [{ ...next, grace, graces: grace }, [{ _tag: 'StartGrace', grace }]];
+          return [{ ...next, grace, graces: grace }, [...count, { _tag: 'StartGrace', grace }]];
         }
         default:
           return [state, []];
@@ -132,15 +157,14 @@ export const step = (state: TurnState, input: TrackerInput): Step => {
       : evaluate({ ...state, grace: 0 });
   }
   const { frame } = input;
-  const entries = frameEntries(frame, state.rateLimit).map((entry): TrackerOutput => ({
-    _tag: 'Entry',
-    entry,
-  }));
+  const found = frameEntries(frame, state.rateLimit);
+  const entries = found.map((entry): TrackerOutput => ({ _tag: 'Entry', entry }));
   const fault = faultOf(frame);
   if (fault !== undefined) return [state, [...entries, { _tag: 'Fault', fault }]];
   const ids = consumedIds(frame);
   const consumed: ReadonlyArray<TrackerOutput> =
     ids.length === 0 ? [] : [{ _tag: 'Consumed', ids }];
-  const [next, outputs] = onFrame(state, frame);
+  const ended = found.some((entry) => entry.parentToolUseId === null);
+  const [next, outputs] = onFrame(ended ? { ...state, thinking: false } : state, frame);
   return [next, [...entries, ...consumed, ...outputs]];
 };

@@ -135,16 +135,18 @@ describe('attachWith', () => {
 });
 
 describe('reasoning in stored history', () => {
-  it('is skipped, leaving preload history and the last answer readable', () =>
+  it('becomes one thinking marker per stretch, leaving the last answer readable', () =>
     run(
       Effect.gen(function* () {
         const server = yield* storedServer({
-          [main]: [[userMessage(null, 'Why?'), reasoning(), agentMessage('Because.')]],
+          [main]: [
+            [userMessage(null, 'Why?'), reasoning('r1'), reasoning('r2'), agentMessage('Because.')],
+          ],
         });
         const attached = yield* attachWith(server.open)(main);
         assert.deepEqual(
           attached.history.map((entry) => entry._tag),
-          ['prompt', 'text'],
+          ['prompt', 'thinking', 'text'],
         );
         const stored = yield* readThreadWith(server.open)(main);
         assert.equal(stored.lastAnswer, 'Because.');

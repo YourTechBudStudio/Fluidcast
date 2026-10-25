@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { Effect, Fiber, Logger, References } from 'effect';
 import { TestClock } from 'effect/testing';
 
-import { SkillsUnavailable } from '../worker.ts';
+import { SkillsUnavailable } from '../schema.ts';
 import { fakeServer } from './frames.test.ts';
 import { listSkillsWith } from './skills.ts';
 

@@ -12,6 +12,11 @@
  * worker's thread and its descendants. A subagent is busy between its own `turn/started` and
  * `turn/completed`; the item that starts it (a `spawnAgent` call, or a started `subAgentActivity`)
  * marks it busy only while none of its turn frames has been seen, so a child that finished before its spawn item completed is not resurrected.
+ *
+ * Thinking is marked per stretch and thread: a reasoning item's start yields one `thinking` entry
+ * unless its thread is already in a stretch (Codex splits one stretch into several reasoning
+ * items). Any other entry of that thread, or its turn starting or completing, ends the stretch.
+ * Reasoning completions yield nothing.
  */
 import type { TranscriptEntry } from '../schema.ts';
 import type { WorkerEvent } from '../worker.ts';
@@ -38,6 +43,8 @@ export interface TurnState {
   readonly subagents: ReadonlyMap<string, boolean>;
   /** Each known subagent thread's starting item (shown as a call). */
   readonly spawnedBy: ReadonlyMap<string, string>;
+  /** Threads in a thinking stretch that already has its marker. */
+  readonly thinking: ReadonlySet<string>;
   /** Tool items whose call was shown on `item/started` and whose result is pending. */
   readonly openCalls: ReadonlySet<string>;
   /** Message IDs already reported consumed. */
@@ -53,6 +60,7 @@ export const initialTurnState = (mainThreadId: string): TurnState => ({
   settled: false,
   subagents: new Map(),
   spawnedBy: new Map(),
+  thinking: new Set(),
   openCalls: new Set(),
   consumed: new Set(),
   resetsAt: undefined,
@@ -108,6 +116,14 @@ const onItem = (state: TurnState, threadId: string, item: Item, completed: boole
   if (item.type === 'userMessage') return consumedOf(state, threadId, item);
   const next = noteSpawn(state, item);
   const parent = parentOf(next, threadId);
+  if (item.type === 'reasoning') {
+    return completed || next.thinking.has(threadId)
+      ? [next, []]
+      : [
+          { ...next, thinking: new Set([...next.thinking, threadId]) },
+          [entry({ _tag: 'thinking', parentToolUseId: parent, summary: '' })],
+        ];
+  }
   if (!isToolItem(item)) {
     return [next, completed ? completedEntries(item, parent, false).map(entry) : []];
   }
@@ -172,6 +188,19 @@ const onFrame = (state: TurnState, frame: Frame): Step => {
   }
 };
 
+/** Ends the thread's thinking stretch on its turn's start or completion, or any other entry of it. */
+const endStretch = (frame: Frame, [state, outputs]: Step): Step => {
+  if (!('threadId' in frame) || !state.thinking.has(frame.threadId)) return [state, outputs];
+  const boundary =
+    frame._tag === 'TurnStarted' ||
+    frame._tag === 'TurnCompleted' ||
+    outputs.some((output) => output._tag === 'Entry' && output.entry._tag !== 'thinking');
+  if (!boundary) return [state, outputs];
+  const thinking = new Set(state.thinking);
+  thinking.delete(frame.threadId);
+  return [{ ...state, thinking }, outputs];
+};
+
 const busySubagent = (state: TurnState) => [...state.subagents.values()].some((busy) => busy);
 
 /**
@@ -181,7 +210,7 @@ const busySubagent = (state: TurnState) => [...state.subagents.values()].some((b
 export const step = (state: TurnState, notification: Notification): Step => {
   const frame = frameOf(notification.method, notification.params);
   if (frame === undefined) return [state, []];
-  const [next, outputs] = onFrame(state, frame);
+  const [next, outputs] = endStretch(frame, onFrame(state, frame));
   const entries = outputs.some((output) => output._tag === 'Entry');
   if (next.settled) return [next, entries ? [...outputs, { _tag: 'Settled' }] : outputs];
   if (next.turnCompleted && next.mainIdle && !busySubagent(next)) {

@@ -86,6 +86,44 @@ export type StatusMoment =
  */
 export type PausedStatus = 'paused' | 'workerFinished' | 'resultsReady';
 
+const ERROR_MOMENTS = [
+  'generationFailed',
+  'halted',
+  'audioMissing',
+  'voiceFailed',
+  'audioUnreachable',
+  'audioUnplayable',
+  'audioStreamFailed',
+  'sendUnreachable',
+  'serverFailed',
+  'outOfSync',
+] as const satisfies ReadonlyArray<StatusMoment>;
+
+/** The moments whose status line reports a failure. */
+export type ErrorMoment = (typeof ERROR_MOMENTS)[number];
+
+const ERRORS: ReadonlySet<StatusMoment> = new Set(ERROR_MOMENTS);
+
+/** Whether the status line reports a failure: its line reads red. */
+export const isErrorMoment = (moment: StatusMoment): moment is ErrorMoment => ERRORS.has(moment);
+
+const MUST_SHOW: ReadonlySet<StatusMoment> = new Set<StatusMoment>([
+  'paused',
+  'workerFinished',
+  'resultsReady',
+  'held',
+  'superseded',
+  'connecting',
+  'reconnecting',
+]);
+
+/**
+ * Whether the status line must be shown, even while the worker strip has activity to show: a failure, a pause outcome
+ * or a held line the listener must act on, or a conversation that is not live or not this tab's.
+ */
+export const statusLineMustShow = (moment: StatusMoment): boolean =>
+  isErrorMoment(moment) || MUST_SHOW.has(moment);
+
 /** Which controls the composer offers. */
 export type ComposerMode = 'compose' | 'busy' | 'retry' | 'retryClip' | 'offline';
 
@@ -239,10 +277,10 @@ export interface Presentation {
   /** The Show the Show button opens, if there has been one. */
   readonly latestShow: string | null;
   /**
-   * While thinking, when the open Forward execution started (epoch milliseconds), so the status line counts the whole
-   * time the worker has been busy; `null` when the worker is not running or the moment is not `thinking`.
+   * When the open Forward execution started (epoch milliseconds), whatever the moment, so the status line (while
+   * thinking) and the worker strip count the whole time the worker has been busy; `null` when none is open.
    */
-  readonly thinkingSince: number | null;
+  readonly forwardSince: number | null;
 }
 
 const lastIndexWhere = <A>(items: readonly A[], f: (a: A) => boolean) => {
@@ -824,6 +862,6 @@ export function present(
     transport: transportOf(view, moment, connection),
     fault: view.actions.findLast((a) => a.type === 'tool_faulted')?.error.message ?? null,
     latestShow: latestShowHandle(view) ?? null,
-    thinkingSince: status === 'thinking' ? (forwardThinkingSince(view) ?? null) : null,
+    forwardSince: forwardThinkingSince(view) ?? null,
   };
 }

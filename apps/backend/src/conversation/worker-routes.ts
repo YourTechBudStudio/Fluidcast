@@ -1,7 +1,7 @@
 import { Effect, Layer, Schema, Stream } from 'effect';
-import { HttpRouter } from 'effect/http';
+import { HttpRouter, HttpServerResponse } from 'effect/http';
 
-import { routes } from '@fluidcast/app-contract';
+import { routes, SkillsFailure, SkillsJson, skillsStatus } from '@fluidcast/app-contract';
 import {
   TranscriptMessageJson,
   WorkerSummaryJson,
@@ -12,6 +12,8 @@ import { logConnection, sseResponse } from './sse.ts';
 
 const encodeSummary = Schema.encodeSync(WorkerSummaryJson);
 const encodeTranscript = Schema.encodeSync(TranscriptMessageJson);
+const encodeSkills = Schema.encodeSync(SkillsJson);
+const failureJson = HttpServerResponse.schemaJson(SkillsFailure);
 const SessionParams = Schema.Struct({ sessionId: Schema.String });
 
 /**
@@ -52,5 +54,34 @@ const transcript = HttpRouter.add(
   }).pipe(Effect.catchTags({ NoSession: noSessionResponse }), Effect.orDie),
 );
 
+/**
+ * `GET /api/session/:sessionId/worker/skills`: the worker's skills as JSON, listed once per session.
+ * `502 SkillsUnavailable` when they could not be listed (the worker type has logged why); `404
+ * NoSession` for a session that is not live.
+ */
+const skills = HttpRouter.add(
+  'GET',
+  routes.workerSkills,
+  Effect.gen(function* () {
+    const { sessionId } = yield* HttpRouter.schemaPathParams(SessionParams);
+    const live = yield* liveSession(sessionId);
+    const listed = yield* live.worker.skills;
+    return HttpServerResponse.text(encodeSkills(listed), {
+      status: skillsStatus.ok,
+      contentType: 'application/json',
+    });
+  }).pipe(
+    Effect.catchTags({
+      NoSession: noSessionResponse,
+      SkillsUnavailable: (error) =>
+        Effect.logInfo('worker skills: unavailable').pipe(
+          Effect.annotateLogs({ reason: error.reason }),
+          Effect.andThen(failureJson(error, { status: skillsStatus.unavailable })),
+        ),
+    }),
+    Effect.orDie,
+  ),
+);
+
 /** The Worker view's routes. They need `ActiveSession`. */
-export const workerRoutes = Layer.mergeAll(status, transcript);
+export const workerRoutes = Layer.mergeAll(status, transcript, skills);

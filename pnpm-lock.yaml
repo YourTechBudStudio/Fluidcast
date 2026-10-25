@@ -396,6 +396,9 @@ importers:
       '@yourtechbudstudio/fluidcast-harness':
         specifier: workspace:*
         version: link:../harness
+      '@yourtechbudstudio/fluidcast-tool-agent':
+        specifier: workspace:*
+        version: link:../tool-agent
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

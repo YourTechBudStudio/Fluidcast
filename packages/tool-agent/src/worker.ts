@@ -3,8 +3,7 @@ import { Cause, Effect, Schema, type Stream } from 'effect';
 
 import type { ToolFault } from '@yourtechbudstudio/fluidcast-harness';
 
-import type { Modifier } from './handoff.ts';
-import type { Skill, TranscriptEntry } from './schema.ts';
+import { SkillsUnavailable, type Modifier, type Skill, type TranscriptEntry } from './schema.ts';
 
 /** One message for the worker. `id` is a UUID the worker reports back in `Consumed`. */
 export interface WorkerMessage {
@@ -20,6 +19,11 @@ export type WorkerEvent =
   | { readonly _tag: 'Consumed'; readonly ids: ReadonlyArray<string> }
   /** Idle, with no live background work, and a turn's result seen. */
   | { readonly _tag: 'Settled' }
+  /**
+   * How many background tasks (agents or shell commands) are live now, whenever that changes.
+   * Neither activity nor the transcript. A worker type that cannot tell never sends it.
+   */
+  | { readonly _tag: 'BackgroundTasks'; readonly count: number }
   /**
    * The agent's ID for a new session, once, before or with the connection's first entry. The agent
    * owns the ID: a new worker has none until this arrives. Optional on resume, where it must equal
@@ -65,14 +69,6 @@ export class WorkerSetupError extends Schema.TaggedError<WorkerSetupError>()('Wo
   sessionId: Schema.String,
   reason: Schema.Literals(['SessionNotFound', 'SessionUnreadable']),
 }) {}
-
-/** The worker type's skills could not be listed: it failed, or did not answer in time. */
-export class SkillsUnavailable extends Schema.TaggedError<SkillsUnavailable>()(
-  'SkillsUnavailable',
-  {
-    reason: Schema.Literals(['Failed', 'TimedOut']),
-  },
-) {}
 
 /** How long a worker type may take to list its skills. */
 const listSkillsTimeout = '10 seconds';

@@ -1,0 +1,149 @@
+/* The worker strip and the dock's border glow (`WorkerStrip`, `WorkerGlow`). Their colour is `--fc-activity`, which a
+   `TONE_CLASS` (`tone.ts`) points at a palette token, so a theme switch recolours them with everything else. */
+
+/* Registered so a change of activity colour glides instead of snapping. */
+@property --fc-activity {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+
+.worker-tone {
+  transition: --fc-activity var(--duration-room) var(--ease-expo);
+}
+
+/* A slow light sweep through "Thinking", so a long think still visibly moves. */
+.worker-shimmer {
+  color: transparent;
+  background: linear-gradient(
+      100deg,
+      var(--color-fg-muted) 0%,
+      var(--color-fg-muted) 38%,
+      color-mix(in srgb, var(--color-violet) 35%, var(--color-tint)) 50%,
+      var(--color-fg-muted) 62%,
+      var(--color-fg-muted) 100%
+    )
+    0 0 / 250% 100%;
+  background-clip: text;
+  animation: fc-worker-shimmer 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes fc-worker-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+/* ─── The border glow: light that lives only in the dock's own 1 px border ─── */
+
+.worker-glow {
+  position: absolute;
+  inset: -1px;
+  z-index: 10;
+  border-radius: inherit;
+  pointer-events: none;
+  transition:
+    --fc-activity var(--duration-room) var(--ease-expo),
+    opacity var(--duration-room) var(--ease-expo);
+}
+
+/* Painted only on the 1 px border ring: everything else is masked away, so nothing reaches past the dock. */
+.worker-glow-ring {
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  mask:
+    linear-gradient(black 0 0) content-box,
+    linear-gradient(black 0 0);
+  mask-composite: exclude;
+}
+
+/* The resting tint: the top border takes the activity's colour and fades down the sides. */
+.worker-glow-tint {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--fc-activity) var(--fc-glow-tint), transparent),
+    transparent 45%
+  );
+}
+
+/* A soft spot of light centred on the top border, drifting slowly to and fro. */
+.worker-glow-drift,
+.worker-glow-spill {
+  background: radial-gradient(closest-side, var(--fc-activity), transparent) no-repeat;
+  animation: fc-worker-drift 7s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+}
+
+.worker-glow-drift {
+  background-size: 34% 44px;
+  background-position: 0% -22px;
+}
+
+/* The same spot, faint, spilling a little light into the dock under the border (clipped to its shape). */
+.worker-glow-spill {
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  opacity: var(--fc-glow-spill);
+  background-size: 40% 56px;
+  background-position: 0% -28px;
+}
+
+@keyframes fc-worker-drift {
+  from {
+    background-position-x: -8%;
+  }
+  to {
+    background-position-x: 108%;
+  }
+}
+
+/* One unhurried sweep along the border for each new transcript entry. Its core mixes the activity with `tint`. */
+.worker-glow-sweep {
+  background: radial-gradient(
+      closest-side,
+      color-mix(in srgb, var(--color-tint) var(--fc-glow-core), var(--fc-activity)),
+      var(--fc-activity) 45%,
+      transparent
+    )
+    no-repeat;
+  background-size: 22% 30px;
+  background-position: -30% -15px;
+  animation: fc-worker-sweep 1.7s cubic-bezier(0.33, 0, 0.2, 1) both;
+}
+
+@keyframes fc-worker-sweep {
+  from {
+    background-position-x: -30%;
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  to {
+    background-position-x: 130%;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .worker-shimmer {
+    animation: none;
+    color: var(--color-fg-muted);
+  }
+  .worker-glow-drift,
+  .worker-glow-spill {
+    animation: none;
+    background-position-x: 50%;
+  }
+  .worker-glow-sweep {
+    display: none;
+  }
+}

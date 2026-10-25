@@ -134,7 +134,12 @@ describe('worker session', () => {
         const ctx = yield* setup();
         assert.equal(yield* ctx.context, undefined, 'an idle worker adds no context');
         const [idle] = yield* Stream.runHead(ctx.worker.status).pipe(Effect.map(Option.toArray));
-        assert.deepEqual(idle, { _tag: 'WorkerSummary', status: 'idle', sessionId: null });
+        assert.deepEqual(idle, {
+          _tag: 'WorkerSummary',
+          status: 'idle',
+          sessionId: null,
+          backgroundTasks: 0,
+        });
         assert.equal(
           (yield* ctx.fake.connections).length,
           0,
@@ -517,9 +522,14 @@ describe('worker session', () => {
         yield* open.emit({ _tag: 'SessionStarted', sessionId: 'agent-session' });
         const seen = yield* eventually(Ref.get(summaries), (all) => all.length === 3);
         assert.deepEqual(seen, [
-          { _tag: 'WorkerSummary', status: 'idle', sessionId: null },
-          { _tag: 'WorkerSummary', status: 'working', sessionId: null },
-          { _tag: 'WorkerSummary', status: 'working', sessionId: 'agent-session' },
+          { _tag: 'WorkerSummary', status: 'idle', sessionId: null, backgroundTasks: 0 },
+          { _tag: 'WorkerSummary', status: 'working', sessionId: null, backgroundTasks: 0 },
+          {
+            _tag: 'WorkerSummary',
+            status: 'working',
+            sessionId: 'agent-session',
+            backgroundTasks: 0,
+          },
         ]);
         assert.deepEqual((yield* ctx.snapshot).entries, before, 'no transcript entry');
 
@@ -530,6 +540,7 @@ describe('worker session', () => {
           _tag: 'WorkerSummary',
           status: 'idle',
           sessionId: 'agent-session',
+          backgroundTasks: 0,
         });
       }),
     ));
@@ -552,8 +563,71 @@ describe('worker session', () => {
           _tag: 'WorkerSummary',
           status: 'idle',
           sessionId: 'agent-session',
+          backgroundTasks: 0,
         });
         assert.equal(yield* ctx.context, undefined);
+      }),
+    ));
+
+  it('reports the background-task count, alone or with status, and resets it on a fault', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* setup();
+        const summaries = yield* Ref.make<ReadonlyArray<WorkerSummary>>([]);
+        yield* Effect.forkChild(
+          Stream.runForEach(ctx.worker.status, (summary) =>
+            Ref.update(summaries, (all) => [...all, summary]),
+          ),
+        );
+        yield* eventually(Ref.get(summaries), (all) => all.length === 1);
+        const sent = yield* ctx.send('call_1');
+        const open = yield* ctx.connection();
+        const [id] = yield* ctx.ids(open, 1);
+        yield* eventually(Ref.get(summaries), (all) => all.length === 2);
+
+        // A count change alone is a new summary; it is not activity and not in the transcript.
+        const before = (yield* ctx.snapshot).entries;
+        yield* open.emit({ _tag: 'BackgroundTasks', count: 2 });
+        yield* eventually(Ref.get(summaries), (all) => all.length === 3);
+        yield* open.emit({ _tag: 'BackgroundTasks', count: 2 });
+        assert.deepEqual((yield* ctx.snapshot).entries, before, 'no transcript entry');
+        yield* open.emit(consumed(id!), entry(text('Started.')), entry(turnEnd()), settled);
+        yield* Fiber.join(sent.fiber);
+        yield* open.fail(new ToolFault({ reason: 'ClaudeExited' }));
+        const seen = yield* eventually(Ref.get(summaries), (all) => all.length === 5);
+        assert.deepEqual(
+          seen.map((summary) => [summary.status, summary.backgroundTasks]),
+          [
+            ['idle', 0],
+            ['working', 0],
+            ['working', 2],
+            ['idle', 2],
+            ['failed', 0],
+          ],
+        );
+      }),
+    ));
+
+  it('records thinking entries as activity, never as result text', () =>
+    run(
+      Effect.gen(function* () {
+        const ctx = yield* setup();
+        const sent = yield* ctx.send('call_1');
+        const open = yield* ctx.connection();
+        const [id] = yield* ctx.ids(open, 1);
+        const thinking: TranscriptEntry = { _tag: 'thinking', parentToolUseId: null, summary: '' };
+        yield* open.emit(
+          consumed(id!),
+          entry(thinking),
+          entry(text('Done.')),
+          entry(turnEnd()),
+          settled,
+        );
+        assert.deepEqual(yield* Fiber.join(sent.fiber), { messages: ['Done.'] });
+        assert.deepEqual(
+          (yield* ctx.snapshot).entries.map((value) => value._tag),
+          ['prompt', 'thinking', 'text', 'turnEnd'],
+        );
       }),
     ));
 
@@ -698,6 +772,7 @@ describe('worker session preload', () => {
           _tag: 'WorkerSummary',
           status: 'idle',
           sessionId: 'session-1',
+          backgroundTasks: 0,
         });
         assert.equal(yield* ctx.context, undefined);
         assert.deepEqual(yield* ctx.snapshot, { _tag: 'TranscriptSnapshot', entries: history });

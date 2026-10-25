@@ -5,7 +5,7 @@
  */
 import type { Effect } from 'effect';
 
-import { modifierName, type Modifier } from '../handoff.ts';
+import { modifierName, type Modifier } from '../schema.ts';
 import type { WorkerSetupError, WorkerType } from '../worker.ts';
 import { attachWith, readThreadWith, type CodexThread } from './attach.ts';
 import { connectWith, type CodexThreadOptions } from './connect.ts';

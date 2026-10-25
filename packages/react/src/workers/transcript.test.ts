@@ -48,6 +48,11 @@ const status = (value: string, parent: string): TranscriptEntry => ({
   parentToolUseId: parent,
   text: value,
 });
+const thinking = (parent: string | null = null, summary = ''): TranscriptEntry => ({
+  _tag: 'thinking',
+  parentToolUseId: parent,
+  summary,
+});
 const turnEnd = (outcome = 'success'): TranscriptEntry => ({
   _tag: 'turnEnd',
   parentToolUseId: null,
@@ -84,6 +89,23 @@ describe('transcriptTree', () => {
     expect(agent?.children.map((node) => node.kind)).toEqual(['status', 'tool', 'text']);
     expect(tools(agent?.children ?? [])[0]?.result).toMatchObject({ toolUseId: 'n1' });
     expect(tree[1]).toMatchObject({ kind: 'text', text: 'Orphan.' });
+  });
+
+  it('keeps thinking markers in place, nested ones inside their subagent call', () => {
+    const tree = transcriptTree([
+      prompt('Go.'),
+      thinking(),
+      toolCall('a1', 'Agent'),
+      thinking('a1', 'Planning'),
+      text('Found it.', 'a1'),
+      toolResult('a1'),
+    ]);
+    expect(tree.map((node) => node.kind)).toEqual(['prompt', 'thinking', 'tool']);
+    expect(tree[1]).toMatchObject({ kind: 'thinking', summary: '' });
+    expect(tools(tree)[0]?.children).toMatchObject([
+      { kind: 'thinking', summary: 'Planning' },
+      { kind: 'text', text: 'Found it.' },
+    ]);
   });
 });
 

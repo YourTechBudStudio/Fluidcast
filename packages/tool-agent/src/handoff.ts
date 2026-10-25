@@ -20,7 +20,7 @@ import {
 } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 import { ShowInput, showToolName } from '@yourtechbudstudio/fluidcast-tool-show/schema';
 
-import { forwardToolName } from './schema.ts';
+import { forwardToolName, parseModifier, type Modifier } from './schema.ts';
 
 /** One item of the conversation the worker is handed, in log order. */
 export type ConversationEntry =
@@ -48,30 +48,6 @@ export type ConversationEntry =
       readonly outcome: 'result' | 'error';
       readonly text: string;
     };
-
-/**
- * A skill or command token, such as `brainstorm`. The prompt itself is what it receives as arguments.
- * A worker type decides how many one message takes; Claude Code takes one.
- */
-export interface Modifier {
-  readonly name: string;
-}
-
-/** A valid modifier name, for every worker type and for one the listener types as `/name`. */
-export const modifierName = /^[a-z0-9][a-z0-9:_-]*$/;
-
-/**
- * Pure: a leading `/name` in a user message's text, and the words after it, trimmed. The first
- * whitespace-delimited token must be `/` and a valid name, with nothing before it; anything else
- * (`/`, `/Tmp`, `/tmp/notes.md`) is plain text.
- */
-export const parseModifier = (
-  text: string,
-): { readonly modifier: Modifier; readonly words: string } | undefined => {
-  const match = /^\/(\S*)([\s\S]*)$/.exec(text);
-  if (match === null || !modifierName.test(match[1]!)) return undefined;
-  return { modifier: { name: match[1]! }, words: match[2]!.trim() };
-};
 
 /** Everything the hook receives about one message to the worker. */
 export interface Handoff {
@@ -360,9 +336,10 @@ export const renderHandoff = (handoff: Omit<Handoff, 'rendered' | 'modifiers'>):
 
 /**
  * The text a skill receives as its arguments: the listener's words, the questions they answered in
- * `conversation` (never Continue checkpoints or declined questions), and the standing instructions
- * that do not refer to the voice. Nothing the voice said or showed. Blocks are a blank line apart;
- * without words, the text starts on a new line, so the skill name sits on its own.
+ * `conversation` (never Continue checkpoints or declined questions), each as a `Question:` line and
+ * an `Answer:` that may span lines, and, under `Rules:`, the standing instructions that do not refer
+ * to the voice. Nothing the voice said or showed. Blocks are a blank line apart; without words, the
+ * text starts on a new line, so the skill name sits on its own.
  */
 export const renderSkillHandoff = (
   words: string,
@@ -370,7 +347,7 @@ export const renderSkillHandoff = (
 ): string => {
   const answers = conversation.flatMap((entry) =>
     entry.kind === 'question' && entry.answer !== undefined && entry.answer.kind !== 'continue'
-      ? [`- ${entry.input.question} → ${renderAnswer(entry.answer)}`]
+      ? [`Question: ${entry.input.question}\nAnswer: ${renderAnswer(entry.answer)}`]
       : [],
   );
   const blocks: Array<string> = [];
@@ -380,12 +357,15 @@ export const renderSkillHandoff = (
       [
         ...(words === '' ? [] : ['---']),
         "The user's answers (the questions are the voice's wording):",
-        ...answers,
+        '',
+        answers.join('\n\n'),
       ].join('\n'),
     );
   }
   blocks.push(
-    [instruction.unattended, instruction.noAskUserQuestion, instruction.foreground].join('\n'),
+    ['Rules:', instruction.unattended, instruction.noAskUserQuestion, instruction.foreground].join(
+      '\n',
+    ),
   );
   const text = blocks.join('\n\n');
   return words === '' ? `\n${text}` : text;
