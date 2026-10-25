@@ -23,40 +23,52 @@ providers:
   #   baseUrl: https://api.anthropic.com
   #   apiKeyEnv: FLUIDCAST_ANTHROPIC_API_KEY
 
+# The models. voice writes the conversation; summary is an optional, cheaper helper.
 llm:
-  model: gpt-4.1-mini
-  # The provider type, which selects its connection above, plus that type's own options.
-  provider:
-    type: openai
-    # reasoningEffort: low
-  # Or any Chat Completions server (the openai-compatible connection above). structuredOutput
-  # constrains the voice's replies to the output's JSON Schema via response_format (vLLM supports
-  # it); off by default, and only this type accepts it. With vLLM, start the server with
-  # structured-output whitespace disabled (disable_any_whitespace), or a stray quote can turn into a
-  # long run of spaces.
-  # provider:
-  #   type: openai-compatible
-  #   structuredOutput: true
-  # Or use your ChatGPT Plus/Pro subscription instead of an API key: run pnpm chatgpt:login once,
-  # and set model to one your ChatGPT plan offers. No providers entry or key is needed for it;
-  # tts below still needs the OpenAI API key.
-  # provider:
-  #   type: chatgpt
-  #   # reasoningEffort: low
-  # Or Anthropic (the anthropic connection above), with an exact model ID such as
-  # claude-sonnet-5-5, claude-haiku-5-5 or claude-opus-5-5. Prompt caching is automatic. temperature
-  # is not accepted. reasoningEffort is low, medium, high, xhigh or max; absent uses the model's
-  # default. speed: fast is fast mode: Opus models only, premium-priced, with its own rate limit.
-  # Thinking counts against maxOutputTokens, so a small value can produce empty replies.
-  # model: claude-sonnet-5-5
-  # provider:
-  #   type: anthropic
-  #   reasoningEffort: low
-  #   # speed: fast
-  # Sampling temperature. Absent uses the server's default. Not with anthropic.
-  # temperature: 0.7
-  # The most tokens one reply may use. Absent uses the server's limit. Not with chatgpt.
-  # maxOutputTokens: 8192
+  voice:
+    model: gpt-4.1-mini
+    # The provider type, which selects its connection above, plus that type's own options.
+    provider:
+      type: openai
+      # reasoningEffort: low
+    # Or any Chat Completions server (the openai-compatible connection above). structuredOutput
+    # constrains the voice's replies to the output's JSON Schema via response_format (vLLM supports
+    # it); off by default, and only this type accepts it. With vLLM, start the server with
+    # structured-output whitespace disabled (disable_any_whitespace), or a stray quote can turn into
+    # a long run of spaces.
+    # provider:
+    #   type: openai-compatible
+    #   structuredOutput: true
+    # Or use your ChatGPT Plus/Pro subscription instead of an API key: run pnpm chatgpt:login once,
+    # and set model to one your ChatGPT plan offers. No providers entry or key is needed for it;
+    # tts below still needs the OpenAI API key.
+    # provider:
+    #   type: chatgpt
+    #   # reasoningEffort: low
+    # Or Anthropic (the anthropic connection above), with an exact model ID such as
+    # claude-sonnet-5-5, claude-haiku-5-5 or claude-opus-5-5. Prompt caching is automatic.
+    # temperature is not accepted. reasoningEffort is low, medium, high, xhigh or max; absent uses the model's
+    # default. speed: fast is fast mode: Opus models only, premium-priced, with its own rate limit.
+    # Thinking counts against maxOutputTokens, so a small value can produce empty replies.
+    # model: claude-sonnet-5-5
+    # provider:
+    #   type: anthropic
+    #   reasoningEffort: low
+    #   # speed: fast
+    # Sampling temperature. Absent uses the server's default. Not with anthropic.
+    # temperature: 0.7
+    # The most tokens one reply may use. Absent uses the server's limit. Not with chatgpt.
+    # maxOutputTokens: 8192
+
+  # Optional: a second model that writes the forward_agent tool's progress sentences and the
+  # history summaries below. Same settings as voice, except structuredOutput (its replies are plain
+  # text). Absent: the voice model writes both. It cannot be a second chatgpt sign-in beside a
+  # chatgpt voice. On paid APIs with cheap cache reads, such as Anthropic, compaction costs more
+  # than it saves unless a cheap model writes the summaries or the threshold is high.
+  # summary:
+  #   model: claude-haiku-5-5
+  #   provider:
+  #     type: anthropic
 
 tts:
   model: gpt-4o-mini-tts
@@ -76,6 +88,17 @@ preset:
     name: alloy
     # Optional delivery guidance, for voices that support it.
     # instructions: Calm and unhurried.
+
+# How the voice's history is kept. Off unless enabled.
+# history:
+#   # Compaction: once the generation that writes a forward_agent call reads more than
+#   # aboveInputTokens of input (the total, including cache reads), everything before that episode
+#   # is replaced, for the voice only, by one rolling summary. The listener, the transcript and the
+#   # agent still get the full conversation. The default, 50000, keeps the total input under 64K. If
+#   # the provider reports no count, every forward compacts. llm.summary writes the summaries.
+#   compaction:
+#     enabled: true
+#     aboveInputTokens: 50000
 
 # The agents behind the forward_agent tool: Claude Code or Codex, picked on the mode screen for each
 # session. Both run the CLI installed on this machine (`claude`, `codex app-server`).

@@ -5,11 +5,14 @@ import { parseEnv } from 'node:util';
 import { Effect, FileSystem, Path, Redacted, Schema } from 'effect';
 import { Yaml } from 'effect/encoding';
 
+import { defaultCompactionThreshold } from '@yourtechbudstudio/fluidcast-harness';
+
 import { credentialsPath, readCredentials } from './chatgpt/index.ts';
 import {
   ConversationSections,
   type ConversationConfig,
   type LlmConfig,
+  type LlmSection,
   type ReasoningEffort,
 } from './conversation/index.ts';
 import { defaultApiKeyEnv, ProvidersSection, ProviderType, type Connection } from './providers.ts';
@@ -97,6 +100,11 @@ export const loadConfig = (
         `${file} uses removed sections: ${removed.join(', ')}. The voice's behavior now comes from the Guided Walkthrough preset: delete them and add \`preset: { profile, voice }\`, moving the speaker's voice to preset.voice. See fluidcast.example.yaml.`,
       );
     }
+    if (usesFlatLlm(document)) {
+      return yield* fail(
+        `${file} puts the model directly under llm. It now goes under llm.voice: indent the existing llm settings one level under \`voice:\`. llm.summary is an optional second model for progress and history summaries. See fluidcast.example.yaml.`,
+      );
+    }
     const parsed = yield* Schema.decodeUnknownEffect(ConfigFile)(document, {
       errors: 'all',
       onExcessProperty: 'error',
@@ -133,6 +141,19 @@ const removedSections = (document: unknown): ReadonlyArray<string> =>
   typeof document === 'object' && document !== null
     ? replacedByPreset.filter((key) => Object.hasOwn(document, key))
     : [];
+
+/** Whether the document has the old `llm` shape: a model's settings directly under `llm`. */
+const usesFlatLlm = (document: unknown): boolean => {
+  if (typeof document !== 'object' || document === null || !Object.hasOwn(document, 'llm')) {
+    return false;
+  }
+  const llm: unknown = (document as { readonly llm: unknown }).llm;
+  return (
+    typeof llm === 'object' &&
+    llm !== null &&
+    (Object.hasOwn(llm, 'model') || Object.hasOwn(llm, 'provider'))
+  );
+};
 
 /** The real environment over the `.env` file's variables, if the file exists. */
 const readEnvironment = (fs: FileSystem.FileSystem, envFile: string, real: Environment) =>
@@ -205,7 +226,7 @@ const workerConfig = (
   claudeExecutable: string | undefined,
 ): ConversationConfig['worker'] => {
   const providerKeyNames = new Set(
-    [file.llm.provider.type, file.tts.provider.type]
+    [file.llm.voice.provider.type, file.llm.summary?.provider.type, file.tts.provider.type]
       .filter(isApiKeyProvider)
       .map((type) => apiKeyEnvFor(file, type)),
   );
@@ -252,31 +273,34 @@ const connection = (
 };
 
 /**
- * The LLM's settings, and how it is reached: an API-key connection, or the ChatGPT sign-in, which
- * must exist (it is not refreshed here).
+ * One LLM section's settings (`path` is `llm.voice` or `llm.summary`, for messages), and how it is
+ * reached: an API-key connection, or the ChatGPT sign-in, which must exist (it is not refreshed
+ * here).
  */
 const llmConfig = (
   file: ConfigFile,
+  section: LlmSection,
+  path: string,
   environment: Environment,
   homeDirectory: string,
 ): Effect.Effect<LlmConfig, string, FileSystem.FileSystem> =>
   Effect.gen(function* () {
-    const { provider } = file.llm;
+    const { provider } = section;
     const shared = {
-      model: file.llm.model,
-      ...(file.llm.maxOutputTokens === undefined
+      model: section.model,
+      ...(section.maxOutputTokens === undefined
         ? {}
-        : { maxOutputTokens: file.llm.maxOutputTokens }),
+        : { maxOutputTokens: section.maxOutputTokens }),
     };
     if (provider.structuredOutput === true && provider.type !== 'openai-compatible') {
       return yield* Effect.fail(
-        `llm.provider.structuredOutput is supported only by the openai-compatible provider type, not ${provider.type}: it sends Chat Completions' response_format with a JSON Schema whose root is an array. Remove it.`,
+        `${path}.provider.structuredOutput is supported only by the openai-compatible provider type, not ${provider.type}: it sends Chat Completions' response_format with a JSON Schema whose root is an array. Remove it.`,
       );
     }
     /** The OpenAI types' settings: Anthropic takes no `temperature`, and its own effort levels. */
     const openAi = (reasoningEffort: ReasoningEffort | undefined) => ({
       ...shared,
-      ...(file.llm.temperature === undefined ? {} : { temperature: file.llm.temperature }),
+      ...(section.temperature === undefined ? {} : { temperature: section.temperature }),
       ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
     });
     switch (provider.type) {
@@ -294,9 +318,9 @@ const llmConfig = (
           connection: yield* connection(file, environment, provider.type),
         };
       case 'anthropic': {
-        if (file.llm.temperature !== undefined) {
+        if (section.temperature !== undefined) {
           return yield* Effect.fail(
-            'llm.temperature is not supported with the anthropic provider type: current Claude models reject non-default sampling. Remove it, and use llm.provider.reasoningEffort to trade quality for speed.',
+            `${path}.temperature is not supported with the anthropic provider type: current Claude models reject non-default sampling. Remove it, and use ${path}.provider.reasoningEffort to trade quality for speed.`,
           );
         }
         return {
@@ -310,27 +334,51 @@ const llmConfig = (
         };
       }
       case 'chatgpt': {
-        if (file.llm.maxOutputTokens !== undefined) {
+        if (section.maxOutputTokens !== undefined) {
           return yield* Effect.fail(
-            'llm.maxOutputTokens is not supported with the chatgpt provider type. Remove it.',
+            `${path}.maxOutputTokens is not supported with the chatgpt provider type. Remove it.`,
           );
         }
-        const path = credentialsPath(homeDirectory);
-        yield* readCredentials(path).pipe(
+        const credentials = credentialsPath(homeDirectory);
+        yield* readCredentials(credentials).pipe(
           Effect.mapError((error) =>
             error.reason === 'Missing'
-              ? `llm.provider is chatgpt but you are not signed in to ChatGPT (no ${path}). Run pnpm chatgpt:login.`
-              : `${path} is not a valid ChatGPT sign-in. Run pnpm chatgpt:login again.`,
+              ? `${path}.provider is chatgpt but you are not signed in to ChatGPT (no ${credentials}). Run pnpm chatgpt:login.`
+              : `${credentials} is not a valid ChatGPT sign-in. Run pnpm chatgpt:login again.`,
           ),
         );
         return {
           ...openAi(provider.reasoningEffort),
           type: provider.type,
-          credentialsPath: path,
+          credentialsPath: credentials,
         };
       }
     }
   });
+
+/**
+ * `llm.summary`'s settings. Its replies are plain text, so it takes no `structuredOutput`. It
+ * cannot be a second ChatGPT sign-in beside a ChatGPT voice: two sign-ins on one credentials file
+ * refresh the same rotating token independently, and can sign the user out.
+ */
+const summaryConfig = (
+  file: ConfigFile,
+  section: LlmSection,
+  environment: Environment,
+  homeDirectory: string,
+): Effect.Effect<LlmConfig, string, FileSystem.FileSystem> => {
+  if (section.provider.structuredOutput !== undefined) {
+    return Effect.fail(
+      'llm.summary.provider.structuredOutput is not accepted: the summary model writes plain text (progress sentences and history summaries), not actions. Remove it.',
+    );
+  }
+  if (section.provider.type === 'chatgpt' && file.llm.voice.provider.type === 'chatgpt') {
+    return Effect.fail(
+      'llm.summary cannot also use the chatgpt provider type: it would open a second sign-in on the same credentials. Omit llm.summary to use the voice model, or use an API-key provider for it.',
+    );
+  }
+  return llmConfig(file, section, 'llm.summary', environment, homeDirectory);
+};
 
 /** Applies defaults and resolves secrets. Fails with a message naming what is missing. */
 const resolve = (
@@ -346,13 +394,23 @@ const resolve = (
     if (cwd._tag === 'None' || cwd.value.type !== 'Directory') {
       return yield* Effect.fail(`workers.cwd ${worker.cwd} is not a directory.`);
     }
-    const llm = yield* llmConfig(file, environment, homeDirectory);
+    const voice = yield* llmConfig(file, file.llm.voice, 'llm.voice', environment, homeDirectory);
+    const summary =
+      file.llm.summary === undefined
+        ? undefined
+        : yield* summaryConfig(file, file.llm.summary, environment, homeDirectory);
+    const compaction = file.history?.compaction;
     const ttsConnection = yield* connection(file, environment, file.tts.provider.type);
 
     return {
       server: { host: file.server?.host ?? '127.0.0.1', port: file.server?.port ?? 4700 },
       conversation: {
-        llm,
+        llm: { voice, ...(summary === undefined ? {} : { summary }) },
+        ...(compaction?.enabled === true && {
+          compaction: {
+            aboveInputTokens: compaction.aboveInputTokens ?? defaultCompactionThreshold,
+          },
+        }),
         preset: file.preset,
         worker,
         ...(file.debug?.generationLog === undefined

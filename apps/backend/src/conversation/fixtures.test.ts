@@ -111,7 +111,7 @@ export const startNew = Effect.gen(function* () {
 export const conversationConfig = (
   overrides: Partial<ConversationConfig> = {},
 ): ConversationConfig => ({
-  llm: { type: 'chatgpt', model: 'm', credentialsPath: '/unused' },
+  llm: { voice: { type: 'chatgpt', model: 'm', credentialsPath: '/unused' } },
   preset: { voice: { name: 'alloy' } },
   worker: {
     cwd: process.cwd(),

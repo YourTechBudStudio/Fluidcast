@@ -15,7 +15,7 @@ after(() => directories.forEach((directory) => rmSync(directory, { recursive: tr
 const validYaml = `
 providers:
   openai-compatible: { baseUrl: http://127.0.0.1:9/v1 }
-llm: { model: m, provider: { type: openai-compatible, reasoningEffort: low }, temperature: 0.7 }
+llm: { voice: { model: m, provider: { type: openai-compatible, reasoningEffort: low }, temperature: 0.7 } }
 tts: { model: t, provider: { type: openai } }
 preset: { voice: { name: alloy } }
 `;
@@ -44,7 +44,7 @@ const load = (yaml: string, environment: Environment, envFile?: string, homeDire
 
 /** The LLM's API-key connection; fails the test for the ChatGPT sign-in. */
 const llmConnection = (config: Config) => {
-  const { llm } = config.conversation;
+  const llm = config.conversation.llm.voice;
   if (llm.type === 'chatgpt') return assert.fail('expected an API-key LLM provider');
   return llm.connection;
 };
@@ -74,9 +74,9 @@ describe('loadConfig', () => {
 
   it('resolves each section against its provider type, and applies defaults', async () => {
     const config = await loaded(validYaml, keys);
-    assert.equal(config.conversation.llm.type, 'openai-compatible');
-    assert.equal(config.conversation.llm.reasoningEffort, 'low');
-    assert.equal(config.conversation.llm.temperature, 0.7);
+    assert.equal(config.conversation.llm.voice.type, 'openai-compatible');
+    assert.equal(config.conversation.llm.voice.reasoningEffort, 'low');
+    assert.equal(config.conversation.llm.voice.temperature, 0.7);
     assert.equal(llmConnection(config).baseUrl, 'http://127.0.0.1:9/v1');
     assert.equal(Redacted.value(config.speech.connection.apiKey), 'openai-key');
     assert.equal(config.speech.connection.baseUrl, undefined);
@@ -86,7 +86,7 @@ describe('loadConfig', () => {
 
   it('turns structured output on only when an openai-compatible provider asks for it', async () => {
     const structuredOutput = (config: Config) => {
-      const { llm } = config.conversation;
+      const llm = config.conversation.llm.voice;
       return llm.type === 'openai-compatible' ? llm.structuredOutput : assert.fail(llm.type);
     };
     assert.equal(structuredOutput(await loaded(validYaml, keys)), false);
@@ -100,7 +100,7 @@ describe('loadConfig', () => {
   it('rejects structured output on a provider type other than openai-compatible', async () => {
     const message = await failure(
       `
-llm: { model: m, provider: { type: openai, structuredOutput: true } }
+llm: { voice: { model: m, provider: { type: openai, structuredOutput: true } } }
 tts: { model: t, provider: { type: openai } }
 preset: { voice: { name: alloy } }
 `,
@@ -108,7 +108,7 @@ preset: { voice: { name: alloy } }
     );
     assert.match(
       message,
-      /llm\.provider\.structuredOutput is supported only by the openai-compatible provider type, not openai/,
+      /llm\.voice\.provider\.structuredOutput is supported only by the openai-compatible provider type, not openai/,
     );
   });
 
@@ -117,7 +117,7 @@ preset: { voice: { name: alloy } }
       `
 providers:
   openai: { baseUrl: http://127.0.0.1:9/v1, apiKeyEnv: SHARED_KEY }
-llm: { model: m, provider: { type: openai } }
+llm: { voice: { model: m, provider: { type: openai } } }
 tts: { model: t, provider: { type: openai } }
 preset: { voice: { name: alloy, instructions: calm } }
 `,
@@ -173,12 +173,12 @@ preset: { voice: { name: alloy, instructions: calm } }
   });
 
   it('passes an optional reply limit, except with the ChatGPT sign-in', async () => {
-    assert.equal((await loaded(validYaml, keys)).conversation.llm.maxOutputTokens, undefined);
+    assert.equal((await loaded(validYaml, keys)).conversation.llm.voice.maxOutputTokens, undefined);
     const limited = validYaml.replace(
       'temperature: 0.7',
       'temperature: 0.7, maxOutputTokens: 4096',
     );
-    assert.equal((await loaded(limited, keys)).conversation.llm.maxOutputTokens, 4096);
+    assert.equal((await loaded(limited, keys)).conversation.llm.voice.maxOutputTokens, 4096);
     const zero = validYaml.replace('temperature: 0.7', 'temperature: 0.7, maxOutputTokens: 0');
     assert.match(await failure(zero, keys), /maxOutputTokens/);
   });
@@ -343,7 +343,7 @@ preset: { voice: { name: alloy, instructions: calm } }
   it('lists every invalid section', async () => {
     const message = await failure(
       `
-llm: { model: m, provider: { type: gemini } }
+llm: { voice: { model: m, provider: { type: gemini } } }
 tts: { model: t, format: flac, provider: { type: openai-compatible } }
 preset: { voice: alloy }
 `,
@@ -356,7 +356,7 @@ preset: { voice: alloy }
 
 describe('loadConfig with the ChatGPT sign-in', () => {
   const chatGptYaml = `
-llm: { model: m, provider: { type: chatgpt, reasoningEffort: low } }
+llm: { voice: { model: m, provider: { type: chatgpt, reasoningEffort: low } } }
 tts: { model: t, provider: { type: openai } }
 preset: { voice: { name: alloy } }
 `;
@@ -392,7 +392,7 @@ preset: { voice: { name: alloy } }
       undefined,
       directory,
     );
-    const { llm } = config.conversation;
+    const llm = config.conversation.llm.voice;
     assert.deepEqual(llm, {
       model: 'm',
       reasoningEffort: 'low',
@@ -439,12 +439,15 @@ preset: { voice: { name: alloy } }
 
   it('rejects a reply limit', async () => {
     const message = await failure(
-      chatGptYaml.replace('} }\ntts', '} , maxOutputTokens: 100 }\ntts'),
+      chatGptYaml.replace('} } }\ntts', '} , maxOutputTokens: 100 } }\ntts'),
       { FLUIDCAST_OPENAI_API_KEY: 'openai-key' },
       undefined,
       signedIn(),
     );
-    assert.match(message, /llm\.maxOutputTokens is not supported with the chatgpt provider type/);
+    assert.match(
+      message,
+      /llm\.voice\.maxOutputTokens is not supported with the chatgpt provider type/,
+    );
   });
 
   it('rejects a providers.chatgpt connection', async () => {
@@ -470,7 +473,7 @@ preset: { voice: { name: alloy } }
 
 describe('loadConfig with Anthropic', () => {
   const anthropicYaml = `
-llm: { model: claude-sonnet-5-5, provider: { type: anthropic, reasoningEffort: low } }
+llm: { voice: { model: claude-sonnet-5-5, provider: { type: anthropic, reasoningEffort: low } } }
 tts: { model: t, provider: { type: openai } }
 preset: { voice: { name: alloy } }
 `;
@@ -478,7 +481,7 @@ preset: { voice: { name: alloy } }
 
   /** The resolved `anthropic` LLM settings; fails the test for any other type. */
   const anthropic = (config: Config) => {
-    const { llm } = config.conversation;
+    const llm = config.conversation.llm.voice;
     return llm.type === 'anthropic' ? llm : assert.fail(llm.type);
   };
 
@@ -502,9 +505,10 @@ preset: { voice: { name: alloy } }
 providers:
   anthropic: { apiKeyEnv: ANTHROPIC_API_KEY, baseUrl: http://127.0.0.1:9 }
 llm:
-  model: claude-opus-5-5
-  maxOutputTokens: 8192
-  provider: { type: anthropic, reasoningEffort: max, speed: fast }
+  voice:
+    model: claude-opus-5-5
+    maxOutputTokens: 8192
+    provider: { type: anthropic, reasoningEffort: max, speed: fast }
 tts: { model: t, provider: { type: openai } }
 preset: { voice: { name: alloy } }
 `,
@@ -532,7 +536,10 @@ preset: { voice: { name: alloy } }
       ),
       anthropicKeys,
     );
-    assert.match(message, /llm\.temperature is not supported with the anthropic provider type/);
+    assert.match(
+      message,
+      /llm\.voice\.temperature is not supported with the anthropic provider type/,
+    );
     assert.match(message, /reasoningEffort/);
   });
 
@@ -564,14 +571,14 @@ preset: { voice: { name: alloy } }
       new URL('../../../fluidcast.example.yaml', import.meta.url),
       'utf8',
     );
-    const block = /^ {2}# model: claude.*\n {2}# provider:\n(?: {2}# {3}.*\n)*/m.exec(example)?.[0];
+    const block = /^ {4}# model: claude.*\n {4}# provider:\n(?: {4}# {3}.*\n)*/m.exec(example)?.[0];
     assert.ok(block !== undefined);
     const llm = block
       .split('\n')
-      .map((line) => line.replace(/^( {2})# ?/, '$1'))
+      .map((line) => line.replace(/^( {4})# ?/, '$1'))
       .join('\n');
     const config = await loaded(
-      `llm:\n${llm}tts: { model: t, provider: { type: openai } }\npreset: { voice: { name: alloy } }\n`,
+      `llm:\n  voice:\n${llm}tts: { model: t, provider: { type: openai } }\npreset: { voice: { name: alloy } }\n`,
       anthropicKeys,
     );
     assert.deepEqual(

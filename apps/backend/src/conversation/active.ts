@@ -23,6 +23,7 @@ import {
 } from '@fluidcast/app-contract';
 import { uuidv7 } from '@yourtechbudstudio/fluidcast-core/actions';
 import { type AudioFormat, SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';
+import { SummaryModel } from '@yourtechbudstudio/fluidcast-harness';
 
 import {
   type BuiltSession,
@@ -188,9 +189,10 @@ export const activeSessionLayer = (
   Layer.effect(
     ActiveSession,
     Effect.gen(function* () {
-      // Only these four: the full context also holds this layer's own `Scope`, which would replace
-      // each session's scope, so Reset would close a scope that owns nothing.
-      const services = Context.pick(
+      // Only these four, plus the optional `SummaryModel` when provided: the full context also
+      // holds this layer's own `Scope`, which would replace each session's scope, so Reset would
+      // close a scope that owns nothing.
+      const required = Context.pick(
         LanguageModel.LanguageModel,
         SpeechSynthesizer,
         FileSystem.FileSystem,
@@ -200,6 +202,11 @@ export const activeSessionLayer = (
           LanguageModel.LanguageModel | SpeechSynthesizer | FileSystem.FileSystem | Path.Path
         >(),
       );
+      const summaryModel = yield* Effect.serviceOption(SummaryModel);
+      const services = Option.match(summaryModel, {
+        onNone: () => required,
+        onSome: (model) => Context.add(required, SummaryModel, model),
+      });
       return yield* makeActiveSession((request) =>
         buildSession(config, speechFormat, request, sources).pipe(Effect.provideContext(services)),
       );

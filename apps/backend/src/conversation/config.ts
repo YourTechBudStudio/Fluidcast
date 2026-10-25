@@ -32,7 +32,7 @@ export type AnthropicEffort = typeof AnthropicEffort.Type;
  */
 const structuredOutput = Schema.optionalKey(Schema.Boolean);
 
-/** `llm.provider`: the provider type, which selects how it is reached, plus that type's options. */
+/** An LLM's `provider`: the provider type, which selects how it is reached, plus that type's options. */
 export const LlmProvider = Schema.Union([
   /** OpenAI's Responses API. */
   Schema.Struct({
@@ -70,7 +70,7 @@ export const LlmProvider = Schema.Union([
 ]);
 export type LlmProvider = typeof LlmProvider.Type;
 
-/** The chat model. */
+/** One chat model: `llm.voice` or `llm.summary`. */
 export const LlmSection = Schema.Struct({
   model: Schema.NonEmptyString,
   provider: LlmProvider,
@@ -140,9 +140,35 @@ export const WorkersSection = Schema.Struct({
 });
 export type WorkersSection = typeof WorkersSection.Type;
 
+/**
+ * `llm`: the models. `voice` writes the conversation. `summary` is an optional helper that writes
+ * the Agent tool's progress sentences and the history summaries; absent, the voice model writes
+ * both. It takes no `structuredOutput`: its replies are plain text.
+ */
+export const LlmSections = Schema.Struct({
+  voice: LlmSection,
+  summary: Schema.optionalKey(LlmSection),
+});
+export type LlmSections = typeof LlmSections.Type;
+
+/**
+ * `history.compaction`: once a forward's generation reads more than `aboveInputTokens` input
+ * tokens, everything before that episode is summarized for the voice. Off unless `enabled`.
+ */
+export const HistorySection = Schema.Struct({
+  compaction: Schema.optionalKey(
+    Schema.Struct({
+      enabled: Schema.optionalKey(Schema.Boolean),
+      aboveInputTokens: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
+    }),
+  ),
+});
+export type HistorySection = typeof HistorySection.Type;
+
 /** The conversation slice's config sections. */
 export const ConversationSections = {
-  llm: LlmSection,
+  llm: LlmSections,
+  history: Schema.optionalKey(HistorySection),
   preset: PresetSection,
   workers: Schema.optionalKey(WorkersSection),
 };

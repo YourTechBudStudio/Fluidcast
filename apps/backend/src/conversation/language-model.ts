@@ -2,9 +2,11 @@ import * as AnthropicLanguageModel from '@effect/ai-anthropic/AnthropicLanguageM
 import * as CompatClient from '@effect/ai-openai-compat/OpenAiClient';
 import * as CompatLanguageModel from '@effect/ai-openai-compat/OpenAiLanguageModel';
 import * as OpenAiLanguageModel from '@effect/ai-openai/OpenAiLanguageModel';
-import { type FileSystem, Layer } from 'effect';
-import type { LanguageModel } from 'effect/ai';
+import { Effect, type FileSystem, Layer } from 'effect';
+import { LanguageModel } from 'effect/ai';
 import type { HttpClient } from 'effect/http';
+
+import { SummaryModel } from '@yourtechbudstudio/fluidcast-harness';
 
 import { chatGptClientLayer } from '../chatgpt/index.ts';
 import { anthropicClientLayer, type Connection, openAiClientLayer } from '../providers.ts';
@@ -96,6 +98,27 @@ export const languageModelLayer = (
         ),
       );
   }
+};
+
+/**
+ * The configured models: `voice` as the `LanguageModel`, and `summary`, when set, as the Harness's
+ * `SummaryModel` beside it. A `SummaryModel` the context lacks is filled in per session by
+ * `buildSession`, from the unwrapped voice model.
+ */
+export const languageModelsLayer = (llm: {
+  readonly voice: LlmConfig;
+  readonly summary?: LlmConfig;
+}): Layer.Layer<
+  LanguageModel.LanguageModel,
+  never,
+  HttpClient.HttpClient | FileSystem.FileSystem
+> => {
+  const voice = languageModelLayer(llm.voice);
+  if (llm.summary === undefined) return voice;
+  const summary = Layer.effect(SummaryModel, Effect.service(LanguageModel.LanguageModel)).pipe(
+    Layer.provide(languageModelLayer(llm.summary)),
+  );
+  return Layer.merge(voice, summary);
 };
 
 /**

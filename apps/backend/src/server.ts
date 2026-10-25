@@ -8,7 +8,7 @@ import type { Config } from './config.ts';
 import {
   activeSessionLayer,
   conversationRoutes,
-  languageModelLayer,
+  languageModelsLayer,
 } from './conversation/index.ts';
 import { speechRoutes, synthesizerLayer } from './speech/index.ts';
 
@@ -20,9 +20,9 @@ import { speechRoutes, synthesizerLayer } from './speech/index.ts';
 export const serverLayer = (config: Config) =>
   HttpRouter.serve(Layer.mergeAll(conversationRoutes, speechRoutes(config.speech.format))).pipe(
     Layer.provide(activeSessionLayer(config.conversation, config.speech.format)),
-    // Provided once, so the whole server shares one model (and one ChatGPT sign-in).
+    // Provided once, so the whole server shares its models (and one ChatGPT sign-in).
     Layer.provide(
-      Layer.merge(languageModelLayer(config.conversation.llm), synthesizerLayer(config.speech)),
+      Layer.merge(languageModelsLayer(config.conversation.llm), synthesizerLayer(config.speech)),
     ),
     Layer.provide(FetchHttpClient.layer),
     // Shut down at once: waiting for open connections to drain would hold Ctrl+C on the

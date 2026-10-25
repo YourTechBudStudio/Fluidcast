@@ -64,9 +64,16 @@ describe('referenceTools', () => {
 describe('buildSession', () => {
   const config = (
     generationLog?: string,
-    llm: ConversationConfig['llm'] = { type: 'chatgpt', model: 'm', credentialsPath: '/unused' },
+    voice: ConversationConfig['llm']['voice'] = {
+      type: 'chatgpt',
+      model: 'm',
+      credentialsPath: '/unused',
+    },
   ): ConversationConfig =>
-    conversationConfig({ llm, ...(generationLog === undefined ? {} : { generationLog }) });
+    conversationConfig({
+      llm: { voice },
+      ...(generationLog === undefined ? {} : { generationLog }),
+    });
 
   const speech = Layer.succeed(
     SpeechSynthesizer,
