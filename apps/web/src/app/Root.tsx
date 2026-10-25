@@ -7,6 +7,7 @@ import { RouterProvider } from 'react-router/dom';
 import { FluidcastPlayer } from '@yourtechbudstudio/fluidcast-react';
 
 import { referenceConnection, sessionStatusAtom } from '../client';
+import { WorkerStripMock } from './mock/WorkerStripMock';
 import { ModeScreen } from './ModeScreen';
 import { ResetControl } from './ResetControl';
 import { routeFor } from './route';
@@ -76,6 +77,8 @@ function PlayerScreen({ sessionId }: { readonly sessionId: string }) {
 
 /** `/` is the mode screen and `/session/:sessionId` the player; the status gate keeps the URL in line with the backend. */
 const router = createBrowserRouter([
+  // Throwaway design mock, outside the status gate so it needs no backend.
+  { path: 'mock/worker-strip', element: <WorkerStripMock /> },
   {
     element: <StatusGate />,
     children: [

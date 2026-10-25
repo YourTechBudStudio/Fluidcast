@@ -19,7 +19,12 @@ import { workerRoutes } from './worker-routes.ts';
 const decodeSummary = Schema.decodeSync(WorkerSummaryJson);
 const decodeTranscript = Schema.decodeSync(TranscriptMessageJson);
 
-const idle: WorkerSummary = { _tag: 'WorkerSummary', status: 'idle', sessionId: 'session-1' };
+const idle: WorkerSummary = {
+  _tag: 'WorkerSummary',
+  status: 'idle',
+  sessionId: 'session-1',
+  backgroundTasks: 0,
+};
 const working: WorkerSummary = { ...idle, status: 'working' };
 
 const snapshot: TranscriptMessage = {

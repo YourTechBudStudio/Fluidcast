@@ -40,7 +40,7 @@ export interface ForwardAgentToolOptions {
 
 /** A read-only view of the worker for applications (the reference apps' Worker view). */
 export interface WorkerHandle {
-  /** The worker's summary now, then again whenever its status or session ID changes. */
+  /** The worker's summary now, then again whenever its status, session ID or background-task count changes. */
   readonly status: Stream.Stream<WorkerSummary>;
   /** The worker's transcript: a snapshot, then appended entries. */
   readonly transcript: Stream.Stream<TranscriptMessage>;

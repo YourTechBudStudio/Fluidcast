@@ -1,12 +1,13 @@
 /**
  * Codex thread items and stored threads as `TranscriptEntry`s. Pure.
  *
- * Agent text becomes `text`; reasoning is left out; commands, file changes, MCP, dynamic tool,
+ * Agent text becomes `text`; reasoning becomes a `thinking` marker (live on its start, see the turn
+ * tracker; in stored history from the item), never its content; commands, file changes, MCP, dynamic tool,
  * web search, image and subagent calls, and subagent starts, become a `toolCall` and its
  * `toolResult`, sharing the item `id`; plans and compaction become `status`. Live user messages are not echoed (the pool
  * records what it sends); stored ones are `prompt`s.
  */
-import { capped } from '../content.ts';
+import { capped, oneThinkingPerStretch } from '../content.ts';
 import type { TranscriptEntry } from '../schema.ts';
 import { errorInfoName, type Item } from './protocol.ts';
 
@@ -190,14 +191,17 @@ const promptText = (item: Item): string =>
 
 /**
  * The entries of a finished item other than a tool call (those take a call and a result):
- * text, plan and compaction status, and, for stored history only (`prompts`), user prompts.
+ * text, plan and compaction status, and, for stored history only (`history`), user prompts and a
+ * `thinking` marker per reasoning item. Live, a reasoning item is marked when it starts instead.
  */
 export const completedEntries = (
   item: Item,
   parentToolUseId: string | null,
-  prompts: boolean,
+  history: boolean,
 ): ReadonlyArray<TranscriptEntry> => {
   switch (item.type) {
+    case 'reasoning':
+      return history ? [{ _tag: 'thinking', parentToolUseId, summary: '' }] : [];
     case 'agentMessage':
       return item.text ? [{ _tag: 'text', parentToolUseId, text: item.text }] : [];
     case 'plan':
@@ -206,7 +210,7 @@ export const completedEntries = (
       return [{ _tag: 'status', parentToolUseId, text: 'Context compacted.' }];
     case 'userMessage': {
       const text = promptText(item);
-      return prompts && text !== ''
+      return history && text !== ''
         ? [{ _tag: 'prompt', parentToolUseId, source: 'earlier', text }]
         : [];
     }
@@ -248,6 +252,7 @@ export const turnEnd = (
  * A stored thread and its subagents as entries. `threads` holds every thread's items in order,
  * by thread ID. Each subagent's entries come right after the item that started it
  * (before that call's result), nested under it. No `turnEnd` is invented, as for Claude Code.
+ * Consecutive reasoning items of one thread are one stretch, so they show one marker.
  */
 export const historyEntries = (
   mainThreadId: string,
@@ -271,7 +276,7 @@ export const historyEntries = (
         : completedEntries(item, parentToolUseId, true),
     );
   };
-  return render(mainThreadId, null);
+  return oneThinkingPerStretch(render(mainThreadId, null));
 };
 
 /**

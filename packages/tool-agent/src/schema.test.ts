@@ -72,7 +72,12 @@ describe('forward input', () => {
 
 describe('Worker stream messages', () => {
   it('round-trip as JSON text', () => {
-    const summary = { _tag: 'WorkerSummary' as const, status: 'working' as const, sessionId: 's' };
+    const summary = {
+      _tag: 'WorkerSummary' as const,
+      status: 'working' as const,
+      sessionId: 's',
+      backgroundTasks: 2,
+    };
     assert.deepEqual(
       Schema.decodeSync(WorkerSummaryJson)(Schema.encodeSync(WorkerSummaryJson)(summary)),
       summary,
@@ -91,6 +96,7 @@ describe('Worker stream messages', () => {
           source: 'fluidcast' as const,
           text: 'Hi',
         },
+        { _tag: 'thinking' as const, parentToolUseId: 'call_1', summary: '' },
         { _tag: 'turnEnd' as const, parentToolUseId: null, outcome: 'usage_limit', resetsAt: 1 },
       ],
     };
