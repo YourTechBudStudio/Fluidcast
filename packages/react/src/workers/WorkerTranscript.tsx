@@ -153,6 +153,16 @@ function itemOf(node: TranscriptNode, speaker: Speaker, afterText: boolean, gap:
         marker: <Marker tone="dot" />,
         body: <p className="pt-1.5 text-[14px] text-fg-subtle italic">{node.text}</p>,
       };
+    case 'thinking':
+      return {
+        key: node.key,
+        marker: <Marker tone="dot" />,
+        body: (
+          <p className="truncate pt-1.5 text-[14px] text-fg-subtle">
+            {node.summary === '' ? 'Thinking' : `Thinking · ${node.summary}`}
+          </p>
+        ),
+      };
     case 'tool': {
       const state = toolState(node, speaker.working);
       return {

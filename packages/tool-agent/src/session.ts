@@ -84,6 +84,8 @@ interface WorkerState {
   readonly lastHandle: string | undefined;
   /** From events: any entry makes it `running`; `Settled` makes it `settled`. */
   readonly activity: 'running' | 'settled';
+  /** The live background-task count, as the adapter last reported it; `0` after a fault. */
+  readonly backgroundTasks: number;
   /** The last busy period ended in an error, or it faulted. */
   readonly failed: boolean;
   readonly fault: ToolFault | undefined;
@@ -121,6 +123,7 @@ const summaryOf = (worker: WorkerState): WorkerSummary => ({
   _tag: 'WorkerSummary',
   status: statusOf(worker),
   sessionId: worker.sessionId ?? null,
+  backgroundTasks: worker.backgroundTasks,
 });
 
 /** The per-iteration context: the worker's state, or nothing while it is idle. */
@@ -184,6 +187,7 @@ export const makeWorkerSession = (
       connected: false,
       lastHandle: undefined,
       activity: 'settled',
+      backgroundTasks: 0,
       failed: false,
       fault: undefined,
       period: undefined,
@@ -220,6 +224,7 @@ export const makeWorkerSession = (
             {
               ...current,
               activity: 'settled',
+              backgroundTasks: 0,
               failed: true,
               fault,
               period: undefined,
@@ -399,7 +404,12 @@ export const makeWorkerSession = (
 
     const status: Stream.Stream<WorkerSummary> = SubscriptionRef.changes(state).pipe(
       Stream.map(summaryOf),
-      Stream.changesWith((a, b) => a.status === b.status && a.sessionId === b.sessionId),
+      Stream.changesWith(
+        (a, b) =>
+          a.status === b.status &&
+          a.sessionId === b.sessionId &&
+          a.backgroundTasks === b.backgroundTasks,
+      ),
     );
 
     // Every emission is the whole append-only array, so a skipped value loses no entries.
@@ -460,6 +470,9 @@ const applyEvent = (
     // Identity only: neither activity nor the transcript.
     case 'SessionStarted':
       return [Effect.void, { ...current, sessionId: event.sessionId }];
+    // A fact for the Worker view only: neither activity nor the transcript.
+    case 'BackgroundTasks':
+      return [Effect.void, { ...current, backgroundTasks: event.count }];
     case 'Entry': {
       const { entry } = event;
       const topLevel = entry.parentToolUseId === null;

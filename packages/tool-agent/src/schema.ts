@@ -74,12 +74,15 @@ export const WorkerStatus = Schema.Literals(['idle', 'working', 'failed']);
 export type WorkerStatus = typeof WorkerStatus.Type;
 
 /**
- * The worker as the Worker view shows it, sent whenever its status or session ID changes.
- * `sessionId` is the agent's, `null` until a new worker's agent reports it.
+ * The worker as the Worker view shows it, sent whenever its status, session ID or background-task
+ * count changes. `sessionId` is the agent's, `null` until a new worker's agent reports it.
+ * `backgroundTasks` is how many of the worker's background tasks (agents or shell commands) are
+ * live; `0` for a worker type that reports none.
  */
 export const WorkerSummary = Schema.TaggedStruct('WorkerSummary', {
   status: WorkerStatus,
   sessionId: Schema.NullOr(Schema.String),
+  backgroundTasks: Schema.Number,
 });
 export type WorkerSummary = typeof WorkerSummary.Type;
 
@@ -155,6 +158,11 @@ export const TranscriptEntry = Schema.Union([
     truncated: Schema.Boolean,
     isError: Schema.Boolean,
   }),
+  /**
+   * The start of a thinking stretch: one per stretch, with nothing about its content. `summary` is
+   * reserved for a summary of the thinking and is `''` for now.
+   */
+  Schema.TaggedStruct('thinking', { ...Parent, summary: Schema.String }),
   /** A subagent's progress summary. */
   Schema.TaggedStruct('status', { ...Parent, text: Schema.String }),
   /** A turn ended: `success`, or a display-safe error tag such as `error_max_turns` or `usage_limit` (with when it resets, epoch seconds, if known). */

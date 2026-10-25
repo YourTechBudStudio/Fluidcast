@@ -83,6 +83,9 @@ export const turnStartParams = (
   input: [{ type: 'text', text: message.text, text_elements: [] }],
   clientUserMessageId: message.id,
   ...(effort === undefined ? {} : { effort }),
+  // Without a summary requested, Codex reports a reasoning item only when it ends, so a thinking
+  // stretch could not be marked at its start. The summary text itself is not used.
+  summary: 'concise',
 });
 
 /**

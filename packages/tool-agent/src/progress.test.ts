@@ -158,6 +158,12 @@ describe('progressLoop', () => {
         ]);
         yield* loop.advanceTo(35);
         assert.equal((yield* loop.calls).length, 1, 'a result alone is not activity');
+        yield* SubscriptionRef.update(loop.transcript, (entries) => [
+          ...entries,
+          { _tag: 'thinking', parentToolUseId: null, summary: '' },
+        ]);
+        yield* loop.advanceTo(40);
+        assert.equal((yield* loop.calls).length, 1, 'thinking alone is not activity');
         yield* SubscriptionRef.update(loop.transcript, (entries) => [...entries, text('Writing.')]);
         yield* loop.advanceTo(45);
         assert.deepEqual(
@@ -200,7 +206,7 @@ describe('progressLoop', () => {
       }),
     ));
 
-  it("describes the last 20 activity entries of the period, not prompts, results or earlier periods' entries", () =>
+  it("describes the last 20 activity entries of the period, not prompts, results, thinking or earlier periods' entries", () =>
     run(
       Effect.gen(function* () {
         const entries: Array<TranscriptEntry> = [text('Before the period.')];
@@ -220,6 +226,7 @@ describe('progressLoop', () => {
           truncated: false,
         });
         entries.push({ _tag: 'status', parentToolUseId: 't', text: 'Subagent is searching.' });
+        entries.push({ _tag: 'thinking', parentToolUseId: null, summary: '' });
         entries.push({ _tag: 'turnEnd', parentToolUseId: null, outcome: 'success' });
         const loop = yield* setup({ entries, start: 1 });
         yield* loop.advanceTo(10);

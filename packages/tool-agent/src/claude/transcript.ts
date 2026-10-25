@@ -6,7 +6,7 @@
  */
 import type { SDKMessage, SessionMessage } from '@anthropic-ai/claude-agent-sdk';
 
-import { capped } from '../content.ts';
+import { capped, oneThinkingPerStretch } from '../content.ts';
 import type { TranscriptEntry } from '../schema.ts';
 import { turnOutcome, type RateLimit } from './failure.ts';
 
@@ -34,12 +34,21 @@ const toolResultText = (block: Block): string => {
     .join('\n');
 };
 
-/** Assistant content: text and tool calls; thinking and other blocks are left out. */
+/**
+ * Assistant content: text and tool calls, and, when `history` is set (stored messages), a
+ * `thinking` marker per thinking block. Live thinking blocks are left out: they arrive only after
+ * the thinking ends, and the turn tracker marks the stretch from `thinking_tokens` frames instead.
+ * Other blocks are left out.
+ */
 const assistantEntries = (
   content: unknown,
   parentToolUseId: string | null,
+  history: boolean,
 ): ReadonlyArray<TranscriptEntry> =>
   blocksOf(content).flatMap((block): ReadonlyArray<TranscriptEntry> => {
+    if (block['type'] === 'thinking' || block['type'] === 'redacted_thinking') {
+      return history ? [{ _tag: 'thinking', parentToolUseId, summary: '' }] : [];
+    }
     if (block['type'] === 'text') {
       const text = stringField(block, 'text');
       return text === undefined || text === '' ? [] : [{ _tag: 'text', parentToolUseId, text }];
@@ -61,16 +70,16 @@ const assistantEntries = (
   });
 
 /**
- * User content: tool results, and, when `prompts` is set (stored history), the prompt text. Live
+ * User content: tool results, and, when `history` is set (stored messages), the prompt text. Live
  * prompts are not re-read from echoes: the pool records what it sends.
  */
 const userEntries = (
   content: unknown,
   parentToolUseId: string | null,
-  prompts: boolean,
+  history: boolean,
 ): ReadonlyArray<TranscriptEntry> => {
   if (typeof content === 'string') {
-    return prompts ? [{ _tag: 'prompt', parentToolUseId, source: 'earlier', text: content }] : [];
+    return history ? [{ _tag: 'prompt', parentToolUseId, source: 'earlier', text: content }] : [];
   }
   const blocks = blocksOf(content);
   const text = blocks
@@ -80,7 +89,7 @@ const userEntries = (
     })
     .join('\n\n');
   const prompt: ReadonlyArray<TranscriptEntry> =
-    prompts && text !== '' ? [{ _tag: 'prompt', parentToolUseId, source: 'earlier', text }] : [];
+    history && text !== '' ? [{ _tag: 'prompt', parentToolUseId, source: 'earlier', text }] : [];
   const results = blocks.flatMap((block): ReadonlyArray<TranscriptEntry> => {
     const toolUseId = stringField(block, 'tool_use_id');
     if (block['type'] !== 'tool_result' || toolUseId === undefined) return [];
@@ -101,7 +110,8 @@ const userEntries = (
 
 /**
  * The entries of one live frame. A top-level result becomes its turn's `turnEnd`; `rateLimit` is
- * the rejected rate-limit event seen in that turn, if any. Replayed user messages are left out.
+ * the rejected rate-limit event seen in that turn, if any. Replayed user messages are left out, and
+ * so are `thinking_tokens` frames: the turn tracker turns those into thinking markers.
  */
 export const frameEntries = (
   frame: SDKMessage,
@@ -109,7 +119,7 @@ export const frameEntries = (
 ): ReadonlyArray<TranscriptEntry> => {
   switch (frame.type) {
     case 'assistant':
-      return assistantEntries(frame.message.content, frame.parent_tool_use_id);
+      return assistantEntries(frame.message.content, frame.parent_tool_use_id, false);
     case 'user':
       return 'isReplay' in frame && frame.isReplay
         ? []
@@ -135,7 +145,7 @@ const storedEntries = (
     const content = message.message['content'];
     switch (message.type) {
       case 'assistant':
-        return assistantEntries(content, parentToolUseId);
+        return assistantEntries(content, parentToolUseId, true);
       case 'user':
         return userEntries(content, parentToolUseId, true);
       default:
@@ -182,6 +192,8 @@ type Owner = string | null;
  *    too (`SendMessage` results carry them in JSON), so nothing looser is accepted.
  * 3. Otherwise, including a subagent whose calls lead back to itself, it is shown unlinked: a
  *    top-level `status` line naming it, then its entries at the top level, after the main chain.
+ *
+ * Consecutive thinking blocks of one agent are one stretch, so they show one marker.
  */
 export const historyEntries = (
   mainMessages: ReadonlyArray<SessionMessage>,
@@ -258,7 +270,7 @@ export const historyEntries = (
     );
 
   const unlinked = subagents.filter(({ agentId }) => !anchors.has(agentId));
-  return [
+  return oneThinkingPerStretch([
     ...render(mainMessages, null),
     ...unlinked.flatMap(({ agentId, messages }): ReadonlyArray<TranscriptEntry> => [
       {
@@ -268,5 +280,5 @@ export const historyEntries = (
       },
       ...render(messages, null),
     ]),
-  ];
+  ]);
 };

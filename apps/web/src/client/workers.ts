@@ -30,7 +30,7 @@ const watch = <A>(path: string, schema: Schema.Decoder<A>) =>
     }),
   );
 
-/** The session's worker status: its summary now, then again whenever its status or session ID changes. */
+/** The session's worker status: its summary now, then again whenever its status, session ID or background-task count changes. */
 export const watchWorker = (sessionId: string): Stream.Stream<WorkerSummary, TransportError> =>
   watch(sessionPaths(sessionId).worker, WorkerSummary);
 

@@ -158,6 +158,7 @@ describe('connectWith', () => {
           input: [{ type: 'text', text: 'Message m1.', text_elements: [] }],
           clientUserMessageId: 'm1',
           effort: 'low',
+          summary: 'concise',
         });
         assert.deepEqual(yield* worker.tags, [
           'SessionStarted',

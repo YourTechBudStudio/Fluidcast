@@ -53,10 +53,19 @@ describe('runTracker', () => {
         yield* flush;
         yield* TestClock.adjust('999 millis');
         yield* flush;
-        assert.deepEqual(yield* worker.tags, ['Entry:turnEnd']);
+        assert.deepEqual(yield* worker.tags, [
+          'BackgroundTasks',
+          'Entry:turnEnd',
+          'BackgroundTasks',
+        ]);
         yield* TestClock.adjust('1 millis');
         yield* flush;
-        assert.deepEqual(yield* worker.tags, ['Entry:turnEnd', 'Settled']);
+        assert.deepEqual(yield* worker.tags, [
+          'BackgroundTasks',
+          'Entry:turnEnd',
+          'BackgroundTasks',
+          'Settled',
+        ]);
         yield* Fiber.interrupt(worker.fiber);
       }),
     ));
@@ -81,13 +90,19 @@ describe('runTracker', () => {
         yield* flush;
         yield* TestClock.adjust('5 seconds');
         yield* flush;
-        assert.deepEqual(yield* worker.tags, ['Entry:turnEnd']);
+        assert.deepEqual(yield* worker.tags, [
+          'BackgroundTasks',
+          'Entry:turnEnd',
+          'BackgroundTasks',
+        ]);
         yield* Queue.offer(frames, say('Background work done.'));
         yield* Queue.offer(frames, result());
         yield* Queue.offer(frames, state('idle'));
         yield* flush;
         assert.deepEqual(yield* worker.tags, [
+          'BackgroundTasks',
           'Entry:turnEnd',
+          'BackgroundTasks',
           'Entry:text',
           'Entry:turnEnd',
           'Settled',

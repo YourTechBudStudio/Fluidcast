@@ -50,6 +50,12 @@ const prompt = (value: string, parentToolUseId: string | null = null): Transcrip
   text: value,
 });
 
+const thinking = (parentToolUseId: string | null = null): TranscriptEntry => ({
+  _tag: 'thinking',
+  parentToolUseId,
+  summary: '',
+});
+
 const line = (value: string, parentToolUseId: string | null = null): TranscriptEntry => ({
   _tag: 'text',
   parentToolUseId,
@@ -62,6 +68,7 @@ describe('frame entries', () => {
       frameEntries(
         assistant([
           { type: 'thinking', thinking: 'Hmm.' },
+          { type: 'redacted_thinking', data: 'x' },
           text('Looking.'),
           toolUse('call_1', 'Grep', { pattern: 'todo' }),
         ]),
@@ -144,6 +151,46 @@ describe('frame entries', () => {
 });
 
 describe('history entries', () => {
+  it('marks stored thinking, once per stretch of each agent', () => {
+    assert.deepEqual(
+      historyEntries(
+        [
+          stored('user', 'Why?'),
+          // Claude Code stores each content block as its own message.
+          stored('assistant', [{ type: 'thinking', thinking: '', signature: 'sig' }]),
+          stored('assistant', [{ type: 'redacted_thinking', data: 'x' }]),
+          stored('assistant', [toolUse('call_agent', 'Agent')]),
+          stored('assistant', [{ type: 'thinking', thinking: '', signature: 'sig' }]),
+          stored('user', [toolResult('call_agent', 'Done.')]),
+          stored('assistant', [text('Because.')]),
+        ],
+        [
+          {
+            agentId: 'sub',
+            messages: [
+              stored('user', 'Explore.', 'call_agent'),
+              stored('assistant', [{ type: 'thinking', thinking: 'Hm.' }], 'call_agent'),
+              stored('assistant', [{ type: 'thinking', thinking: 'Hm.' }], 'call_agent'),
+              stored('assistant', [text('Explored.')], 'call_agent'),
+            ],
+          },
+        ],
+      ),
+      [
+        prompt('Why?'),
+        thinking(),
+        call('call_agent', 'Agent', '{}'),
+        prompt('Explore.', 'call_agent'),
+        thinking('call_agent'),
+        line('Explored.', 'call_agent'),
+        // Its call ended the earlier stretch; the subagent's entries in between are not its own.
+        thinking(),
+        answer('call_agent', 'Done.'),
+        line('Because.'),
+      ],
+    );
+  });
+
   it('reads the main chain: prompts, text, calls and results, and invents no turn end', () => {
     assert.deepEqual(
       historyEntries(

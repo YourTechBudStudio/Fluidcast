@@ -7,6 +7,7 @@
 @import '../visuals/visuals.css';
 @import '../tools/tools.css';
 @import '../ui/markdown.css';
+@import '../workers/workers.css';
 
 @source '../';
 /* "container" appears in the source as a word (portal containers), not as Tailwind's viewport-sized utility. */
@@ -70,6 +71,10 @@
   --color-green: #a6da95;
   --color-red: #ed8796;
   --color-cyan: #91d7e3;
+  --color-pink: #f5bde6;
+  --color-yellow: #eed49f;
+  --color-teal: #8bd5ca;
+  --color-sapphire: #7dc4e4;
 
   /* Attention semantics — alias the palette by meaning. */
   --color-working: var(--color-violet);
@@ -153,6 +158,11 @@
   /* From `shade`, so each theme's shadows follow its ink without restating them. */
   --shadow-soft-color: color-mix(in srgb, var(--color-shade) 40%, transparent);
   --shadow-lift-color: color-mix(in srgb, var(--color-shade) 45%, transparent);
+  /* The worker glow's strengths (`workers/workers.css`): its border tint, the spill inside, and how much of `tint` the
+     sweep's core takes. */
+  --fc-glow-tint: 55%;
+  --fc-glow-spill: 0.13;
+  --fc-glow-core: 70%;
 }
 
 /*
@@ -186,6 +196,16 @@
   --color-green: #40a02b;
   --color-red: #d20f39;
   --color-cyan: #04a5e5; /* sky */
+  --color-pink: #ea76cb;
+  --color-yellow: #df8e1d;
+  --color-teal: #179299;
+  --color-sapphire: #209fb5;
+
+  /* Latte's accents are deeper on a light dock: a lighter tint and spill keep the glow subtle, and the sweep's core
+     stays mostly the accent, since `tint` here is dark text. */
+  --fc-glow-tint: 45%;
+  --fc-glow-spill: 0.1;
+  --fc-glow-core: 15%;
 }
 
 /* Scrollbars — slim, inset, and quiet. */

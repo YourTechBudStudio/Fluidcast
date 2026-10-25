@@ -16,6 +16,7 @@ export type {
   StatusMoment,
   TimelineRow,
 } from './presentation';
+export { statusLineMustShow } from './presentation';
 export {
   showDriverAtom,
   showPaletteAtom,

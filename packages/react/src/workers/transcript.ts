@@ -16,6 +16,8 @@ export type TranscriptNode =
     }
   | { readonly kind: 'text'; readonly key: string; readonly text: string }
   | { readonly kind: 'status'; readonly key: string; readonly text: string }
+  /** The start of a thinking stretch; `summary` is `''` when the worker reports none. */
+  | { readonly kind: 'thinking'; readonly key: string; readonly summary: string }
   | {
       /** A tool call with its result folded in; a result is never a node of its own. */
       readonly kind: 'tool';
@@ -76,6 +78,8 @@ export const transcriptTree = (entries: ReadonlyArray<TranscriptEntry>): Transcr
           return [{ kind: 'text', key, text: entry.text }];
         case 'status':
           return [{ kind: 'status', key, text: entry.text }];
+        case 'thinking':
+          return [{ kind: 'thinking', key, summary: entry.summary }];
         case 'turnEnd':
           return [{ kind: 'turnEnd', key, outcome: entry.outcome, resetsAt: entry.resetsAt }];
         case 'toolResult':

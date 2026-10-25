@@ -76,6 +76,7 @@ describe('the worker status feed', () => {
     _tag: 'WorkerSummary',
     status,
     sessionId: 'session-1',
+    backgroundTasks: 0,
   });
 
   it('replaces the summary on every message, across reconnections', () => {

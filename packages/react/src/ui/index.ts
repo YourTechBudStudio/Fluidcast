@@ -7,6 +7,7 @@ export {
   useRootKeydown,
   type PlayerInstance,
 } from './instance';
+export { formatElapsed } from './elapsed';
 export { Kbd } from './Kbd';
 export { createMarkdown } from './markdown';
 export { Prose } from './Prose';
@@ -41,5 +42,6 @@ export { useMeasuredHeight } from './useMeasuredHeight';
 export { useDomId } from './useDomId';
 export { useElementWidth } from './useElementWidth';
 export { useMedia } from './useMedia';
+export { useNow } from './useNow';
 export { useNearViewport } from './useNearViewport';
 export { useReducedMotion } from './useReducedMotion';

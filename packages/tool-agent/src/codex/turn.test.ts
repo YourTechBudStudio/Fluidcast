@@ -34,6 +34,18 @@ const run = (notifications: ReadonlyArray<Notification>) => {
 const tags = (outputs: ReadonlyArray<TrackerOutput>) =>
   outputs.map((output) => (output._tag === 'Entry' ? `Entry:${output.entry._tag}` : output._tag));
 
+/** The entries' tags, top-level ones bare and nested ones as `parent/tag`. */
+const entryTags = (outputs: ReadonlyArray<TrackerOutput>) =>
+  outputs.flatMap((output) =>
+    output._tag === 'Entry'
+      ? [
+          output.entry.parentToolUseId === null
+            ? output.entry._tag
+            : `${output.entry.parentToolUseId}/${output.entry._tag}`,
+        ]
+      : [],
+  );
+
 describe('step', () => {
   it('reports a main-thread user message with a client ID as consumed, once', () => {
     const { outputs } = run([
@@ -45,7 +57,7 @@ describe('step', () => {
     assert.deepEqual(outputs, [{ _tag: 'Consumed', ids: ['m1'] }]);
   });
 
-  it('skips live reasoning with string content and maps what follows', () => {
+  it('marks live reasoning when it starts, never when it completes, and maps what follows', () => {
     const { outputs } = run([
       turnStarted(),
       itemStarted(reasoning()),
@@ -53,7 +65,56 @@ describe('step', () => {
       itemCompleted(agentMessage('Done.')),
     ]);
     assert.deepEqual(outputs, [
+      { _tag: 'Entry', entry: { _tag: 'thinking', parentToolUseId: null, summary: '' } },
       { _tag: 'Entry', entry: { _tag: 'text', parentToolUseId: null, text: 'Done.' } },
+    ]);
+  });
+
+  it('marks a stretch split into several reasoning items once', () => {
+    const { outputs } = run([
+      turnStarted(),
+      itemStarted(reasoning('r1')),
+      itemCompleted(reasoning('r1')),
+      itemStarted(reasoning('r2')),
+      itemCompleted(reasoning('r2')),
+      itemStarted(command('cmd-1')),
+      itemCompleted(command('cmd-1')),
+      itemStarted(reasoning('r3')),
+      itemCompleted(reasoning('r3')),
+      itemCompleted(agentMessage('Done.')),
+    ]);
+    assert.deepEqual(entryTags(outputs), [
+      'thinking',
+      'toolCall',
+      'toolResult',
+      'thinking',
+      'text',
+    ]);
+  });
+
+  it("keeps each thread's stretch apart, nests subagent thinking, and ends it with the thread's turn", () => {
+    const { outputs } = run([
+      turnStarted(),
+      itemStarted(spawn('spawn-1', ['thread-child'], 'inProgress')),
+      itemStarted(reasoning('r-main')),
+      turnStarted('thread-child'),
+      itemStarted(reasoning('r-child'), 'thread-child'),
+      // The child's text ends only the child's stretch.
+      itemCompleted(agentMessage('Child done.', 'a-child'), 'thread-child'),
+      itemStarted(reasoning('r-main-2')),
+      itemStarted(reasoning('r-child-2'), 'thread-child'),
+      // A child turn completes with no entry, yet a later turn's reasoning is a new stretch.
+      turnCompleted('thread-child'),
+      turnStarted('thread-child'),
+      itemStarted(reasoning('r-child-3'), 'thread-child'),
+    ]);
+    assert.deepEqual(entryTags(outputs), [
+      'toolCall',
+      'thinking',
+      'spawn-1/thinking',
+      'spawn-1/text',
+      'spawn-1/thinking',
+      'spawn-1/thinking',
     ]);
   });
 

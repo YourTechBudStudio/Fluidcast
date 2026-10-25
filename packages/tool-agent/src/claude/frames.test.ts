@@ -71,6 +71,15 @@ export const background = (
     ),
   });
 
+/** A live thinking progress frame: the main agent is thinking (sent about once a second). */
+export const thinkingTokens = (estimated = 50) =>
+  frame({
+    type: 'system',
+    subtype: 'thinking_tokens',
+    estimated_tokens: estimated,
+    estimated_tokens_delta: 50,
+  });
+
 export const rateLimit = (status: 'allowed' | 'rejected', resetsAt?: number) =>
   frame({
     type: 'rate_limit_event',

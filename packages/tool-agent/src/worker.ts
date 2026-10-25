@@ -20,6 +20,11 @@ export type WorkerEvent =
   /** Idle, with no live background work, and a turn's result seen. */
   | { readonly _tag: 'Settled' }
   /**
+   * How many background tasks (agents or shell commands) are live now, whenever that changes.
+   * Neither activity nor the transcript. A worker type that cannot tell never sends it.
+   */
+  | { readonly _tag: 'BackgroundTasks'; readonly count: number }
+  /**
    * The agent's ID for a new session, once, before or with the connection's first entry. The agent
    * owns the ID: a new worker has none until this arrives. Optional on resume, where it must equal
    * the resumed ID.

@@ -25,14 +25,20 @@ const SURFACE = {
  * between shapes as real layout, not a transform, so the Show panel and the orb above follow it frame by frame and text
  * never stretches; the edge colour and background follow by CSS transition, and the contents crossfade. A cyan light line fades in along the top edge
  * while a question is up. Reduced motion changes shape at once and only fades the contents.
+ *
+ * The bordered surface never clips, so `edge` (light drawn in the border itself) can sit on the border; an inner
+ * wrapper clips the contents while the height glides.
  */
 export function Dock({
   shape,
   contentKey,
+  edge,
   children,
 }: {
   readonly shape: DockShape;
   readonly contentKey: string;
+  /** Rendered as a direct child of the bordered surface, outside the clipping wrapper. */
+  readonly edge?: ReactNode;
   readonly children: ReactNode;
 }) {
   const reduced = useReducedMotion();
@@ -44,17 +50,21 @@ export function Dock({
       initial={false}
       animate={{ height, ...SHAPE[shape] }}
       transition={glide}
-      className={`relative mx-auto w-full overflow-hidden border shadow-soft backdrop-blur-xl backdrop-saturate-130 transition-[border-color,background-color] duration-(--duration-room) ease-expo motion-reduce:transition-none ${SURFACE[shape]} ${asking ? '' : 'has-[textarea:focus]:border-blue/45!'}`}
+      data-dock
+      className={`relative mx-auto w-full border shadow-soft backdrop-blur-xl backdrop-saturate-130 transition-[border-color,background-color] duration-(--duration-room) ease-expo motion-reduce:transition-none ${SURFACE[shape]} ${asking ? '' : 'has-[textarea:focus]:border-blue/45!'}`}
     >
-      <motion.span
-        aria-hidden
-        initial={false}
-        animate={{ opacity: asking ? 1 : 0, scaleX: asking || reduced ? 1 : 0.4 }}
-        transition={reduced ? { duration: DURATION.surface, ease: EASE_EXPO } : glide}
-        className="pointer-events-none absolute inset-x-12 top-0 z-10 h-px bg-linear-to-r from-transparent via-cyan/80 to-transparent"
-      />
-      <div ref={inner} className="relative">
-        <Swap contentKey={contentKey}>{children}</Swap>
+      {edge}
+      <div data-dock-clip className="relative h-full overflow-hidden rounded-[inherit]">
+        <motion.span
+          aria-hidden
+          initial={false}
+          animate={{ opacity: asking ? 1 : 0, scaleX: asking || reduced ? 1 : 0.4 }}
+          transition={reduced ? { duration: DURATION.surface, ease: EASE_EXPO } : glide}
+          className="pointer-events-none absolute inset-x-12 top-0 z-10 h-px bg-linear-to-r from-transparent via-cyan/80 to-transparent"
+        />
+        <div ref={inner} className="relative">
+          <Swap contentKey={contentKey}>{children}</Swap>
+        </div>
       </div>
     </motion.div>
   );

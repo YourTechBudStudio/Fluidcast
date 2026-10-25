@@ -157,7 +157,10 @@ describe('tool items', () => {
 describe('itemOf', () => {
   it('decodes reasoning with string content, and keeps the identity of an item it cannot read', () => {
     assert.equal(itemOf(reasoning())?.type, 'reasoning');
-    assert.deepEqual(completedEntries(item(reasoning()), null, true), []);
+    assert.deepEqual(completedEntries(item(reasoning()), null, false), []);
+    assert.deepEqual(completedEntries(item(reasoning()), 'spawn-1', true), [
+      { _tag: 'thinking', parentToolUseId: 'spawn-1', summary: '' },
+    ]);
     assert.deepEqual(itemOf({ type: 'commandExecution', id: 'cmd', exitCode: 'not a number' }), {
       type: 'commandExecution',
       id: 'cmd',
@@ -167,7 +170,7 @@ describe('itemOf', () => {
 });
 
 describe('completedEntries', () => {
-  it('maps text, plans and compaction; skips reasoning; prompts only from stored history', () => {
+  it('maps text, plans and compaction; prompts and reasoning only from stored history', () => {
     assert.deepEqual(completedEntries(item(agentMessage('Hi.')), null, false), [
       { _tag: 'text', parentToolUseId: null, text: 'Hi.' },
     ]);

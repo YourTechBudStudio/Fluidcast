@@ -1,11 +1,19 @@
-import { Context, Deferred, Effect, Exit, Layer, Scope, Stream } from 'effect';
+import { Context, Deferred, Effect, Exit, Layer, Scope, Stream, SubscriptionRef } from 'effect';
 import { LanguageModel } from 'effect/ai';
 
 import { Transport, TransportError } from '@yourtechbudstudio/fluidcast-client';
 import { SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';
-import { layer as sessionLayer, Session } from '@yourtechbudstudio/fluidcast-harness';
+import { layer as sessionLayer, Session, type Tool } from '@yourtechbudstudio/fluidcast-harness';
 import type { Command, SubscriptionMessage } from '@yourtechbudstudio/fluidcast-harness/protocol';
-import type { Skill } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
+import {
+  ForwardInput,
+  ForwardResult,
+  forwardToolName,
+  type Skill,
+  type TranscriptEntry,
+  type TranscriptMessage,
+  type WorkerSummary,
+} from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 import { askTool } from '@yourtechbudstudio/fluidcast-tool-ask';
 import { showTool } from '@yourtechbudstudio/fluidcast-tool-show';
 
@@ -34,6 +42,22 @@ export const askChoice = (question: string, labels: readonly string[]): Scripted
   options: labels.map((label) => ({ label })),
 });
 
+export const forward: ScriptedAction = { type: forwardToolName };
+
+/**
+ * A stand-in for the Agent tool's `forward_agent`, so tests can open a Forward execution without a worker: it runs
+ * until the session closes. The worker the player sees comes from `pushWorkerStatus` and `pushTranscript`.
+ */
+const forwardTool: Tool<ForwardInput, ForwardResult> = {
+  name: forwardToolName,
+  input: ForwardInput,
+  guidelines: [],
+  result: ForwardResult,
+  renderResult: () => '',
+  policy: { blocking: false, response: 'all', replay: false },
+  run: () => Effect.never,
+};
+
 type CommandTag = Command['_tag'];
 
 /** A control that releases something the fixture holds. */
@@ -58,6 +82,10 @@ export interface ScriptedSession {
   readonly openWorkerFeeds: () => number;
   /** How many times the player read the worker's skills. */
   readonly skillReads: () => number;
+  /** Sends a worker status to every open status connection, and to those that open later. */
+  readonly pushWorkerStatus: (summary: Omit<WorkerSummary, '_tag'>) => Promise<void>;
+  /** Appends transcript entries: open connections get them appended, later ones in their snapshot. */
+  readonly pushTranscript: (...entries: ReadonlyArray<TranscriptEntry>) => Promise<void>;
   /** Sends a command straight to the session, without a player: prepares state. */
   readonly drive: (command: Command) => Promise<void>;
   /** Makes `send` fail with `error` for commands tagged `tag`, until cleared with `failSend(tag, null)`. */
@@ -125,7 +153,7 @@ export async function scriptedSession(
     instructions: 'Be brief.',
     speakers: [{ id: 'host', name: 'Host', personality: 'Warm.', voice: { name: 'alloy' } }],
     speechFormat: 'opus',
-    tools: [showTool(), askTool()],
+    tools: [showTool(), askTool(), forwardTool],
     ...(options.start === undefined ? {} : { start: options.start }),
   }).pipe(
     Layer.provide(
@@ -177,18 +205,49 @@ export async function scriptedSession(
     speech: (actionId) => session.speech(actionId),
   });
 
+  const status = await Effect.runPromise(SubscriptionRef.make<WorkerSummary | null>(null));
+  const transcript = await Effect.runPromise(
+    SubscriptionRef.make<ReadonlyArray<TranscriptEntry>>([]),
+  );
   /** A Worker connection that stays open until the player drops it, counting while it is. */
-  const feedRun = <A>(): Stream.Stream<A, TransportError> =>
+  const feedRun = <A>(messages: Stream.Stream<A>): Stream.Stream<A, TransportError> =>
     Stream.unwrap(
       Effect.sync(() => {
         openWorkerFeeds++;
-        return Stream.never.pipe(Stream.ensuring(Effect.sync(() => void openWorkerFeeds--)));
+        return messages.pipe(
+          Stream.concat(Stream.never),
+          Stream.ensuring(Effect.sync(() => void openWorkerFeeds--)),
+        );
       }),
     );
   const skills = options.skills ?? [];
   const workerFeed = WorkerFeed.of({
-    status: feedRun,
-    transcript: feedRun,
+    status: () =>
+      feedRun(
+        SubscriptionRef.changes(status).pipe(
+          Stream.filter((summary): summary is WorkerSummary => summary !== null),
+        ),
+      ),
+    // The current entries as a snapshot, then each change as the entries it appended.
+    transcript: () =>
+      feedRun(
+        SubscriptionRef.changes(transcript).pipe(
+          Stream.mapAccum(
+            (): ReadonlyArray<TranscriptEntry> | null => null,
+            (
+              previous,
+              entries,
+            ): readonly [ReadonlyArray<TranscriptEntry>, ReadonlyArray<TranscriptMessage>] => [
+              entries,
+              [
+                previous === null
+                  ? { _tag: 'TranscriptSnapshot', entries }
+                  : { _tag: 'TranscriptAppended', entries: entries.slice(previous.length) },
+              ],
+            ],
+          ),
+        ),
+      ),
     skills: () =>
       Effect.suspend(() => {
         skillReads++;
@@ -211,6 +270,12 @@ export async function scriptedSession(
     openSubscriptions: () => openSubscriptions,
     openWorkerFeeds: () => openWorkerFeeds,
     skillReads: () => skillReads,
+    pushWorkerStatus: (summary) =>
+      Effect.runPromise(
+        SubscriptionRef.set(status, { _tag: 'WorkerSummary' as const, ...summary }),
+      ),
+    pushTranscript: (...entries) =>
+      Effect.runPromise(SubscriptionRef.update(transcript, (current) => [...current, ...entries])),
     drive: (command) => Effect.runPromise(session.command(command)),
     failSend: (tag, error) => {
       if (error === null) failures.delete(tag);

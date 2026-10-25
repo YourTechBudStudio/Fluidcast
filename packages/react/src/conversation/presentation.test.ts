@@ -8,7 +8,7 @@ import type { AskCommand, AskInput } from '@yourtechbudstudio/fluidcast-tool-ask
 
 import type { PlaybackStatus } from '../playback';
 import type { Action, Connection, ConversationView } from './model';
-import { present, type TimelineRow } from './presentation';
+import { isErrorMoment, present, statusLineMustShow, type TimelineRow } from './presentation';
 import { showCorrectionOf } from './tools';
 
 // Fixtures: a view is built from its actions, like the Client SDK's projection.
@@ -790,7 +790,7 @@ describe('the Forward tool', () => {
     expect(afterSpeak.moment).toBe('thinking');
     expect(afterSpeak.status).toBe('thinking');
     // An earlier open Show does not count; only the Forward execution does.
-    expect(afterSpeak.thinkingSince).toBe(5_000);
+    expect(afterSpeak.forwardSince).toBe(5_000);
     expect(afterSpeak.subtitle).toMatchObject({ key: 's1', tone: 'dim' });
     // With results from another tool queued.
     const queued = presentOf(
@@ -813,10 +813,10 @@ describe('the Forward tool', () => {
     expect(generating.moment).toBe('thinking');
   });
 
-  it('has no elapsed start without a running worker, or outside thinking', () => {
+  it('has no elapsed start without a running worker, and keeps it outside thinking', () => {
     const noWorker = presentOf(view({ actions: [user('u1')], phase: 'working' }));
     expect(noWorker.moment).toBe('thinking');
-    expect(noWorker.thinkingSince).toBeNull();
+    expect(noWorker.forwardSince).toBeNull();
     const speaking = presentOf(
       view({
         actions: handed,
@@ -825,7 +825,7 @@ describe('the Forward tool', () => {
       }),
     );
     expect(speaking.moment).toBe('speaking');
-    expect(speaking.thinkingSince).toBeNull();
+    expect(speaking.forwardSince).toBe(5_000);
   });
 
   it('shows where each forward stands, and which forwards share an execution or a result', () => {
@@ -1179,7 +1179,7 @@ describe('paused', () => {
     );
     expect(p.status).toBe('thinking');
     expect(p.paused).toBe(true);
-    expect(p.thinkingSince).toBe(5_000);
+    expect(p.forwardSince).toBe(5_000);
     expect(p.composer).toBe('busy');
     expect(p.visual).toBe('thinking');
     expect(p.held).toBe(true);
@@ -1343,5 +1343,32 @@ describe('paused', () => {
     expect(p.paused).toBe(true);
     expect(p.composer).toBe('compose');
     expect(p.transport).toMatchObject({ forward: false, middle: { shows: 'play', does: 'play' } });
+  });
+});
+
+describe('the status line over the worker strip', () => {
+  it('must show failures, pause outcomes, a held line and a conversation that is not live', () => {
+    for (const moment of ['generationFailed', 'halted', 'outOfSync', 'voiceFailed'] as const) {
+      expect(isErrorMoment(moment)).toBe(true);
+      expect(statusLineMustShow(moment)).toBe(true);
+    }
+    for (const moment of [
+      'paused',
+      'workerFinished',
+      'resultsReady',
+      'held',
+      'superseded',
+      'connecting',
+      'reconnecting',
+    ] as const) {
+      expect(isErrorMoment(moment)).toBe(false);
+      expect(statusLineMustShow(moment)).toBe(true);
+    }
+  });
+
+  it('gives way while thinking, speaking or asking', () => {
+    for (const moment of ['thinking', 'waiting', 'speaking', 'asking', 'complete'] as const) {
+      expect(statusLineMustShow(moment)).toBe(false);
+    }
   });
 });
