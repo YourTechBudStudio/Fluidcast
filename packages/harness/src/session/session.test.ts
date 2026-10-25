@@ -3282,8 +3282,8 @@ describe('Session queued progress', () => {
         assert.equal(
           lastUser(yield* model.prompt),
           [
-            '<tool_result call="call_1" tool="fetch">f: data</tool_result>',
             '<tool_progress call="call_2" tool="worker">Working.</tool_progress>',
+            '<tool_result call="call_1" tool="fetch">f: data</tool_result>',
           ].join('\n'),
         );
         assert.deepEqual(progressTexts(yield* ctx.state), ['Working.']);
@@ -3387,7 +3387,7 @@ describe('Session queued progress', () => {
         const result = prompt.indexOf('<tool_result');
         const progress = prompt.indexOf('<tool_progress');
         const message = prompt.indexOf('Go on');
-        assert.ok(result >= 0 && result < progress && progress < message, prompt);
+        assert.ok(progress >= 0 && progress < result && result < message, prompt);
         assert.equal(yield* ctx.calls, 2);
         yield* assertAgreement(subscription, ctx.state);
       }),
@@ -3453,8 +3453,8 @@ describe('Session queued progress', () => {
           lastUser(yield* retry.prompt),
           [
             '<notice>Your previous response was cut off after the last line. Continue from there.</notice>',
-            '<tool_result call="call_2" tool="fetch">f: data</tool_result>',
             '<tool_progress call="call_1" tool="worker">Working.</tool_progress>',
+            '<tool_result call="call_2" tool="fetch">f: data</tool_result>',
           ].join('\n'),
         );
       }),

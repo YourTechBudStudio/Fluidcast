@@ -22,6 +22,10 @@
     "./protocol": {
       "types": "./dist/session/protocol.d.ts",
       "default": "./dist/session/protocol.js"
+    },
+    "./conversation": {
+      "types": "./dist/session/conversation.d.ts",
+      "default": "./dist/session/conversation.js"
     }
   },
   "publishConfig": {

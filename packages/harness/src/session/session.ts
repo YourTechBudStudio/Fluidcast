@@ -37,6 +37,7 @@ import {
 
 import { ToolError, ToolFault, type Tool } from '../tool.ts';
 import type { SessionConfig } from './config.ts';
+import { answersProgress, modelView } from './conversation.ts';
 import {
   describeFailure,
   describeFault,
@@ -611,13 +612,18 @@ export const make = (config: SessionConfig) =>
 
     // Generation
 
-    /** One iteration: appends each parsed action as it arrives, or a failure after them. */
-    const iterate = (history: ReadonlyArray<Action>) =>
-      generate({
+    /**
+     * One iteration: appends each parsed action as it arrives, or a failure after them. The model
+     * reads the history's model view. A reply that answers only progress is throwaway: its speech
+     * plays, and its tool calls are ignored, logged by tool name only.
+     */
+    const iterate = (history: ReadonlyArray<Action>) => {
+      const throwaway = answersProgress(history);
+      return generate({
         instructions: config.instructions,
         ...(config.examples === undefined ? {} : { examples: config.examples }),
         speakers: profiles,
-        history,
+        history: modelView(history),
         tools: config.tools,
         ...(config.reminders === undefined ? {} : { reminders: config.reminders }),
       }).pipe(
@@ -626,6 +632,11 @@ export const make = (config: SessionConfig) =>
             Effect.gen(function* () {
               if (element.type === 'speak') {
                 yield* append(element);
+              } else if (throwaway) {
+                yield* Effect.logInfo('progress reply tool call ignored').pipe(
+                  Effect.annotateLogs({ tool: element.tool }),
+                );
+                return;
               } else {
                 const number = yield* Ref.updateAndGet(nextHandle, (last) => last + 1);
                 const { id, tool, input } = element;
@@ -657,6 +668,7 @@ export const make = (config: SessionConfig) =>
         }),
         Effect.provideService(LanguageModel.LanguageModel, languageModel),
       );
+    };
 
     /**
      * Records each tool's context when it changed, so the latest one closes this iteration's

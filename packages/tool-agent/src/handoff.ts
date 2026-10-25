@@ -5,6 +5,7 @@
 import { Schema } from 'effect';
 
 import type { Action, ToolCall } from '@yourtechbudstudio/fluidcast-core/actions';
+import { handoffView } from '@yourtechbudstudio/fluidcast-harness/conversation';
 import {
   effectiveActions,
   type PendingResult,
@@ -107,15 +108,15 @@ const isOutcome = (action: Action | PendingResult): action is Outcome =>
 
 /**
  * Pure: the entries after the forward call `since` (or the whole conversation when `undefined`) up
- * to, not including, the forward call `handle`. Forward's own results are left out: the worker wrote
- * them. So is the voice's speech in reply to a progress update: it retells the worker's progress.
+ * to, not including, the forward call `handle`, read from the hand-off view, so progress and the
+ * voice's replies to it are left out. Forward's own results are left out too: the worker wrote them.
  */
 export const conversationSince = (
   state: SessionState,
   since: string | undefined,
   handle: string,
 ): ReadonlyArray<ConversationEntry> => {
-  const actions = effectiveActions(state);
+  const actions = handoffView(effectiveActions(state));
 
   // Calls anywhere in the log: a result in the window may answer a call before it.
   const calls = new Map<string, ToolCall>();
@@ -145,8 +146,6 @@ export const conversationSince = (
 
   const entries: Array<ConversationEntry> = [];
   let paragraphSpeaker: string | undefined;
-  // Whether the actions are the reply to a progress update: until the next input, or through a retry.
-  let answeringProgress = false;
   const push = (entry: ConversationEntry) => {
     entries.push(entry);
     paragraphSpeaker = undefined;
@@ -154,11 +153,7 @@ export const conversationSince = (
 
   for (const action of window) {
     switch (action.type) {
-      case 'tool_progress':
-        answeringProgress = true;
-        break;
       case 'speak': {
-        if (answeringProgress) break;
         const last = entries.at(-1);
         if (last?.kind === 'voice' && paragraphSpeaker === action.speaker) {
           entries[entries.length - 1] = { ...last, text: `${last.text} ${action.text}` };
@@ -169,11 +164,9 @@ export const conversationSince = (
         break;
       }
       case 'user_message':
-        answeringProgress = false;
         push({ kind: 'user', text: action.text });
         break;
       case 'interrupted':
-        answeringProgress = false;
         push({ kind: 'interruption', during: action.during });
         break;
       case 'tool_call': {
@@ -206,7 +199,6 @@ export const conversationSince = (
       }
       case 'tool_result':
       case 'tool_errored': {
-        answeringProgress = false;
         const folded = action.handles.some(
           (call) =>
             invalid.has(call) ||

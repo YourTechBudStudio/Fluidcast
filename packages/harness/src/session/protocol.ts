@@ -103,7 +103,7 @@ export type SubmittedStart = typeof SubmittedStart.Type;
  * - `replay` is the speak being re-presented behind the cursor after `Back`, or null. It is always
  *   below `cursor`.
  * - `pendingProgress` holds at most one progress update per open execution, the latest, kept while
- *   it could not be used (paused, or replacing one kept earlier). Submitted with the results.
+ *   it could not be used (paused, or replacing one kept earlier). Submitted just before the results.
  * - `start` is a preloaded start waiting for `Start`. Like `pendingResults`, it is beside the log
  *   until submitted. `started` then records it, so clients can still tell its actions apart.
  * - `paused` holds presentation and new iterations (`Pause`, `Play`). Running generation and tools
@@ -172,9 +172,11 @@ export const ToolCompleted = Schema.TaggedStruct('ToolCompleted', { executionId:
 /** A model-visible outcome waits to be submitted. */
 export const ResultQueued = Schema.TaggedStruct('ResultQueued', { result: PendingResult });
 /**
- * Every pending result, then `progress` (the kept progress updates, in execution start order, with
- * each execution's handles at submission), was submitted to the model and appended to the log.
- * Both queues are now empty.
+ * `progress` (the kept progress updates, in execution start order, with each execution's handles at
+ * submission), then every pending result, was submitted to the model and appended to the log. Both
+ * queues are now empty. Progress comes first so a submission with results always ends in real
+ * input: progress after an input's last real action was submitted on its own (the conversation
+ * projection relies on this).
  */
 export const ResultsSubmitted = Schema.TaggedStruct('ResultsSubmitted', {
   progress: Schema.Array(ToolProgress),
@@ -354,7 +356,7 @@ export const reduce = (state: SessionState, event: SessionEvent): SessionState =
     case 'ResultsSubmitted':
       return {
         ...state,
-        actions: [...state.actions, ...state.pendingResults, ...event.progress],
+        actions: [...state.actions, ...event.progress, ...state.pendingResults],
         pendingResults: [],
         pendingProgress: [],
       };
