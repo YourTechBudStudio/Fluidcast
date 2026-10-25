@@ -5,6 +5,7 @@ import type {
   ExecutionId,
   ToolCommandRejected,
 } from '@yourtechbudstudio/fluidcast-harness/protocol';
+import { forwardToolName } from '@yourtechbudstudio/fluidcast-tool-agent/schema';
 import { showToolName } from '@yourtechbudstudio/fluidcast-tool-show/schema';
 
 /** The Show driver's decisions, kept pure so they can be pinned by tests. The driver itself is `shows.ts`. */
@@ -57,14 +58,30 @@ export function reportActionOf(outcome: ReportOutcome): ReportAction {
 /** Milliseconds before retry `attempt` (from 0): exponential from 250 ms, capped at 4 s. */
 export const retryDelay = (attempt: number): number => Math.min(250 * 2 ** attempt, 4000);
 
+/** What new executions do to the Show panel: open it on a Show, or close it. */
+export type PanelChange =
+  | { readonly open: true; readonly handle: string }
+  | { readonly open: false };
+
 /**
- * The Show executions that open the panel: every one not seen before on this page. A replay after Back runs the call
- * again under a new execution id, so it opens the panel again; a Show only reopened from the transcript never runs.
+ * The executions that move the Show panel, every one not seen before on this page, in start order (the view keeps
+ * executions in start order), and the panel change they add up to. Each Show opens the panel on itself, and each
+ * forward closes it, a Show the listener reopened included; when both are new, the later one wins. A replay after
+ * Back runs a Show again under a new execution id, so it opens the panel again; a Show only reopened from the
+ * transcript never runs, and forwards never replay.
  */
-export const unseenShows = (
+export const panelChanges = (
   executions: ReadonlyArray<Execution>,
   seen: ReadonlySet<ExecutionId>,
-): ReadonlyArray<Execution> =>
-  executions.filter(
-    (execution) => execution.tool === showToolName && !seen.has(execution.executionId),
-  );
+): { readonly unseen: ReadonlyArray<ExecutionId>; readonly change: PanelChange | null } => {
+  const unseen: ExecutionId[] = [];
+  let change: PanelChange | null = null;
+  for (const execution of executions) {
+    if (seen.has(execution.executionId)) continue;
+    if (execution.tool === showToolName) change = { open: true, handle: execution.handles[0] };
+    else if (execution.tool === forwardToolName) change = { open: false };
+    else continue;
+    unseen.push(execution.executionId);
+  }
+  return { unseen, change };
+};

@@ -26,7 +26,7 @@ const FOLLOW_PX = 48;
 
 /**
  * The Worker layer: a header with the worker's status, its session-ID copy button and a close button, then its
- * transcript. A session has exactly one worker. Mounted only while the layer shows, so its streams run only then.
+ * transcript. A session has exactly one worker. Mounted only while the layer shows; the player keeps its streams open throughout.
  */
 export function WorkersLayer({ onClose }: { readonly onClose: () => void }) {
   const worker = useAtomValue(workerAtom);

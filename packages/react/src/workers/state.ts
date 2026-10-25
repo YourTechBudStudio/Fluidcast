@@ -17,7 +17,7 @@ import { clientRuntime, WorkerFeed } from '../connection';
  */
 export type WorkersConnection = 'connecting' | 'live' | 'reconnecting';
 
-/** A Worker stream as the page shows it. Page-local: it lives while the Worker layer is showing. */
+/** A Worker stream as the player shows it: the strip, the glow and the Worker layer read the same one. */
 export interface WorkersFeed<A> {
   readonly data: A | undefined;
   readonly connection: WorkersConnection;
@@ -104,8 +104,8 @@ export const connections = <M>(
 };
 
 /**
- * A feed's atom for this instance's backend session, over the host's `WorkerFeed`. It connects only while something
- * reads it, and disconnects when nothing does.
+ * A feed's atom for this instance's backend session, over the host's `WorkerFeed`. It stays connected for the
+ * instance's lifetime (the player mounts it), and disconnects when the instance's registry is released.
  */
 const feedAtom = <A, M>(
   connect: (feed: WorkerFeed['Service']) => Stream.Stream<M, TransportError>,
@@ -130,7 +130,7 @@ const feedAtom = <A, M>(
       Option.map((state) => state.feed),
       Option.getOrElse(() => initialFeed.feed),
     ),
-  );
+  ).pipe(Atom.keepAlive);
 };
 
 /** The worker's status. */

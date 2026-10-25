@@ -1,5 +1,6 @@
 import { useAtom, useAtomMount, useAtomValue } from '@effect/atom-react';
 import { RotateCcw, Square } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 
 import {
@@ -10,6 +11,7 @@ import {
   showPanelAtom,
   shownShowAtom,
   StatusLine,
+  statusLineMustShow,
   Transcript,
   useConversationCommands,
 } from '../conversation';
@@ -23,9 +25,27 @@ import {
   usePresent,
 } from '../playback';
 import { AskForm, ShowPanel, ShowSheet } from '../tools';
-import { Button, typingTarget, usePlayerInstance, useReducedMotion, useRootKeydown } from '../ui';
+import {
+  Button,
+  DURATION,
+  EASE_EXPO,
+  typingTarget,
+  usePlayerInstance,
+  useReducedMotion,
+  useRootKeydown,
+} from '../ui';
 import { analyserSource, createAnalysis, Visual } from '../visuals';
-import { WorkersLayer } from '../workers';
+import {
+  activityTone,
+  pulseKey,
+  TONE_CLASS,
+  workerActivity,
+  workerAtom,
+  WorkerGlow,
+  WorkersLayer,
+  WorkerStrip,
+  workerTranscriptAtom,
+} from '../workers';
 import { Dock } from './Dock';
 import { focusTargetOnSwitch, type Layer, nextLayer } from './layers';
 import { layoutFor, SHOW_PANEL_MIN_PX, SHOW_PANEL_SHARE } from './layout';
@@ -39,6 +59,13 @@ const inMenu = (target: EventTarget | null) =>
 export function Player() {
   useAtomMount(showDriverAtom);
   const presentation = useAtomValue(presentationAtom);
+  // The worker's feeds stay open for the whole instance: the strip, the glow and the Worker layer read them.
+  const worker = useAtomValue(workerAtom);
+  const workerTranscript = useAtomValue(workerTranscriptAtom);
+  const activity = useMemo(
+    () => workerActivity(worker, workerTranscript),
+    [worker, workerTranscript],
+  );
   const commands = useConversationCommands();
   const playback = usePlaybackControls();
   const analyser = usePlaybackAnalyser();
@@ -132,6 +159,9 @@ export function Player() {
     () => ({ state: presentation.visual, analysis, reducedMotion, held: presentation.held }),
     [presentation.visual, presentation.held, analysis, reducedMotion],
   );
+
+  const showStrip = activity !== null && !statusLineMustShow(presentation.status);
+  const forwardOpen = presentation.forwardSince !== null;
 
   // A paused line is selected, not narrated.
   const narrating = moment === 'speaking' && !presentation.paused;
@@ -234,7 +264,7 @@ export function Player() {
             inert={!workersOpen || sheetCovers}
             className={layerClass(workersOpen)}
           >
-            {/* Mounted only while showing, so the Worker streams run only then. */}
+            {/* Mounted only while showing; the player keeps the Worker streams open throughout. */}
             {workersOpen && (
               <WorkersLayer onClose={() => switchLayer('stage', { viaWorkersClose: true })} />
             )}
@@ -264,18 +294,56 @@ export function Player() {
         <ShowSheet show={shown} open={panelOpen} speaking={narrating} onClose={closePanel} />
       )}
 
-      <footer className="relative z-20 col-start-1 row-start-3 px-4 pt-3 pb-5 compact:px-3 compact:pt-2.5 compact:pb-3">
-        <div className="mb-3.5 compact:mb-2.5">
-          <StatusLine
-            moment={presentation.status}
-            paused={presentation.paused}
-            fault={presentation.fault}
-            thinkingSince={presentation.thinkingSince}
-          />
+      {/* The footer carries the worker's activity colour (`--fc-activity`) for the strip and the glow: thinking's while a
+          forward is open and the worker has reported nothing yet. */}
+      <footer
+        className={`worker-tone relative z-20 col-start-1 row-start-3 px-4 pt-3 pb-5 compact:px-3 compact:pt-2.5 compact:pb-3 ${activity ? TONE_CLASS[activityTone(activity)] : forwardOpen ? TONE_CLASS.violet : ''}`}
+      >
+        {/* While the worker has activity to show, the strip takes the status line's slot, unless the status line must
+            be shown. Both share one grid cell, so the entering one never waits on the exit. The status line stays
+            mounted, so its copy rotation and clock carry on. */}
+        <div className="mb-3.5 grid grid-cols-[minmax(0,1fr)] compact:mb-2.5 [&>*]:col-start-1 [&>*]:row-start-1">
+          <div
+            inert={showStrip}
+            className={`transition-[opacity,visibility] duration-(--duration-surface) ease-expo ${showStrip ? 'invisible opacity-0' : 'visible opacity-100'}`}
+          >
+            <StatusLine
+              moment={presentation.status}
+              paused={presentation.paused}
+              fault={presentation.fault}
+              forwardSince={presentation.forwardSince}
+            />
+          </div>
+          <AnimatePresence initial={false}>
+            {showStrip && activity && (
+              <motion.div
+                key="strip"
+                initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
+                transition={{ duration: DURATION.surface, ease: EASE_EXPO }}
+                className="flex justify-center"
+              >
+                <WorkerStrip
+                  activity={activity}
+                  since={presentation.forwardSince}
+                  onOpen={() => switchLayer('workers')}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
         <Dock
           shape={ask ? 'ask' : 'composer'}
           contentKey={ask ? `ask-${askHandle(ask)}` : 'composer'}
+          edge={
+            <WorkerGlow
+              worker={worker}
+              activity={activity}
+              forwardOpen={forwardOpen}
+              pulse={pulseKey(workerTranscript.data)}
+            />
+          }
         >
           {ask ? (
             // The accepted placement: the transport sits inside the dock, in a strip under the question.

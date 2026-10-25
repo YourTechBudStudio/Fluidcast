@@ -16,6 +16,7 @@ import {
 } from './support/render';
 import {
   askChoice,
+  forward,
   type ScriptedSession,
   scriptedSession,
   showMarkdown,
@@ -354,6 +355,116 @@ const ORDINARY = new Set([
   'Back',
   'Next',
 ]);
+
+describe('the worker strip', () => {
+  const working = { status: 'working', sessionId: 'w1', backgroundTasks: 0 } as const;
+  const prompt = {
+    _tag: 'prompt',
+    parentToolUseId: null,
+    source: 'fluidcast',
+    text: 'Go',
+  } as const;
+  const bash = {
+    _tag: 'toolCall',
+    parentToolUseId: null,
+    toolUseId: 't1',
+    name: 'Bash',
+    input: JSON.stringify({ command: 'pnpm test' }),
+    truncated: false,
+  } as const;
+  const strip = (p: Player) => p.has('Open the worker');
+  /** The status line's slot is given to the strip: the status line is still there, but inert. */
+  const statusLineShown = (p: Player) =>
+    p.root.querySelector('[role="status"]')?.closest('[inert]') === null;
+
+  it('keeps the worker feeds open for the instance, without the Worker layer', async () => {
+    const s = await session();
+    await mount(<FluidcastPlayer connection={s.connection()} visible />);
+    await waitFor(() => s.openWorkerFeeds() === 2, 'both Worker feeds open');
+  });
+
+  it('takes the status line’s slot while the worker works, and opens the Worker layer', async () => {
+    const s = await session();
+    const view = await mount(<FluidcastPlayer connection={s.connection()} visible />);
+    const p = player(view.container);
+    await s.pushWorkerStatus(working);
+    await s.pushTranscript(prompt);
+    await settle();
+    // Nothing is invented before the turn's first event.
+    expect(strip(p)).toBe(false);
+    expect(statusLineShown(p)).toBe(true);
+
+    await s.pushTranscript(bash);
+    await waitFor(() => strip(p), 'strip shown');
+    expect(p.button('Open the worker').textContent).toContain('Bash');
+    expect(p.button('Open the worker').textContent).toContain('pnpm test');
+    expect(statusLineShown(p)).toBe(false);
+
+    await press(p.button('Open the worker'));
+    expect(p.pressed('Worker')).toBe(true);
+
+    await s.pushWorkerStatus({ ...working, status: 'idle' });
+    await waitFor(() => !strip(p), 'strip gone');
+    expect(statusLineShown(p)).toBe(true);
+  });
+
+  it('gives way to a status line reporting an error', async () => {
+    const s = await session();
+    const view = await mount(<FluidcastPlayer connection={s.connection()} visible />);
+    const p = player(view.container);
+    await s.pushWorkerStatus(working);
+    await s.pushTranscript(prompt, bash);
+    await waitFor(() => strip(p), 'strip shown');
+
+    s.failSend('SendMessage', new TransportError({ reason: 'Unreachable' }));
+    await p.send('Are you there?');
+    await waitFor(() => !strip(p), 'strip gone');
+    expect(statusLineShown(p)).toBe(true);
+    expect(p.root.querySelector('[role="status"]')?.textContent).not.toBe('');
+  });
+
+  it('lights the dock’s border from outside its clipping wrapper', async () => {
+    const s = await session();
+    const view = await mount(<FluidcastPlayer connection={s.connection()} visible />);
+    const glow = view.container.querySelector('[data-worker-glow]');
+    expect(glow?.parentElement?.hasAttribute('data-dock')).toBe(true);
+    expect(glow?.closest('[data-dock-clip]')).toBeNull();
+    expect(view.container.querySelector('[data-dock-clip] textarea')).not.toBeNull();
+  });
+});
+
+describe('a forward', () => {
+  it('closes an open Show panel', async () => {
+    const s = await scriptedSession([
+      [showMarkdown('# Before'), speak('A.')],
+      [forward, speak('On it.')],
+    ]);
+    sessions.push(s);
+    const view = await mount(<FluidcastPlayer connection={s.connection()} visible />);
+    const p = player(view.container);
+    const audio = await startPlayback(p, s);
+    await waitFor(() => p.pressed('Show'), 'Show open');
+    await end(audio.element);
+    await waitFor(() => p.has('Send'), 'composer open');
+
+    await p.send('Hand it over.');
+    await waitFor(() => !p.pressed('Show'), 'Show closed by the forward');
+  });
+
+  it('lights the glow before the worker reports anything, without inventing a strip line', async () => {
+    const s = await scriptedSession([[forward, speak('On it.')]]);
+    sessions.push(s);
+    const view = await mount(<FluidcastPlayer connection={s.connection()} visible />);
+    const p = player(view.container);
+    const glow = () => p.root.querySelector('[data-worker-glow]');
+    expect(glow()?.classList.contains('opacity-0')).toBe(true);
+
+    await p.send('Hand it over.');
+    await waitFor(() => glow()?.querySelector('.worker-glow-drift') != null, 'glow lit');
+    expect(glow()?.classList.contains('opacity-100')).toBe(true);
+    expect(p.has('Open the worker')).toBe(false);
+  });
+});
 
 describe('releasing an instance', () => {
   it('cleans up without ending the session, which a new player picks up', async () => {
