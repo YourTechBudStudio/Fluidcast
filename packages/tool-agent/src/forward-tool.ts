@@ -1,8 +1,8 @@
-import { Effect, Option, type Schedule, type Scope, type Stream } from 'effect';
+import { Effect, type Schedule, type Scope, type Stream } from 'effect';
 import { LanguageModel } from 'effect/ai';
 
 import type { ToolDefinition } from '@yourtechbudstudio/fluidcast-core/generation';
-import { SummaryModel, type Tool, type ToolFault } from '@yourtechbudstudio/fluidcast-harness';
+import { summaryModel, type Tool, type ToolFault } from '@yourtechbudstudio/fluidcast-harness';
 
 import type { Handoff, HandoffPrompt } from './handoff.ts';
 import { defaultProgressPrompt, defaultProgressSchedule } from './progress.ts';
@@ -110,7 +110,6 @@ export const forwardAgentTool = (
   options: ForwardAgentToolOptions,
 ): Effect.Effect<ForwardAgentTool, WorkerSetupError, LanguageModel.LanguageModel | Scope.Scope> =>
   Effect.gen(function* () {
-    const languageModel = yield* LanguageModel.LanguageModel;
     const session = yield* makeWorkerSession({
       type: options.worker,
       sessionId: options.session?.sessionId,
@@ -118,7 +117,7 @@ export const forwardAgentTool = (
         options.hook ?? ((handoff) => ({ prompt: handoff.rendered, modifiers: handoff.modifiers })),
       schedule: options.progress?.schedule ?? defaultProgressSchedule,
       progressPrompt: options.progress?.prompt ?? defaultProgressPrompt,
-      model: Option.getOrElse(yield* Effect.serviceOption(SummaryModel), () => languageModel),
+      model: yield* summaryModel,
     });
     const tool: Tool<ForwardInput, ForwardResult> = {
       ...forwardAgentDefinition,

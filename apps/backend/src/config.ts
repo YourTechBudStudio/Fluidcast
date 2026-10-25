@@ -5,7 +5,7 @@ import { parseEnv } from 'node:util';
 import { Effect, FileSystem, Path, Redacted, Schema } from 'effect';
 import { Yaml } from 'effect/encoding';
 
-import { defaultCompactionThreshold } from '@yourtechbudstudio/fluidcast-harness';
+import { defaultCompactionThreshold } from '@yourtechbudstudio/fluidcast-presets';
 
 import { credentialsPath, readCredentials } from './chatgpt/index.ts';
 import {
@@ -407,8 +407,10 @@ const resolve = (
       conversation: {
         llm: { voice, ...(summary === undefined ? {} : { summary }) },
         ...(compaction?.enabled === true && {
-          compaction: {
-            aboveInputTokens: compaction.aboveInputTokens ?? defaultCompactionThreshold,
+          history: {
+            compaction: {
+              aboveInputTokens: compaction.aboveInputTokens ?? defaultCompactionThreshold,
+            },
           },
         }),
         preset: file.preset,

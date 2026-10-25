@@ -21,12 +21,6 @@ export const SessionSpeakers = Schema.NonEmptyArray(SessionSpeaker).check(
 );
 export type SessionSpeakers = typeof SessionSpeakers.Type;
 
-/**
- * The default `history.compaction.aboveInputTokens`: summaries start once a boundary generation's
- * input passes it, keeping the total input under 64K tokens.
- */
-export const defaultCompactionThreshold = 50_000;
-
 export interface SessionConfig {
   /** The voice's instructions, first in the system prompt: normally a preset's. */
   readonly instructions: string;
@@ -64,11 +58,11 @@ export interface SessionConfig {
       /**
        * Summarize when the provider's reported input tokens of the generation that wrote the
        * boundary call exceed this: the total input, including cache reads. When the provider reports
-       * no count, every boundary summarizes. Default: `defaultCompactionThreshold`.
+       * no count, every boundary summarizes.
        */
-      readonly aboveInputTokens?: number;
-      /** The summarizer's system prompt, normally a preset's. Default: Core's `defaultSummaryPrompt`. */
-      readonly prompt?: string;
+      readonly aboveInputTokens: number;
+      /** The summarizer's system prompt, normally a preset's. */
+      readonly prompt: string;
     };
   };
   /**

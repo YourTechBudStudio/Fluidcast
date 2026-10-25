@@ -7,18 +7,8 @@ import { textOf, toProviderError } from './generate.ts';
 import { renderHistory } from './history.ts';
 import type { ToolDefinition } from './tools.ts';
 
-/**
- * A neutral summary prompt, for configurations without a preset's. Prose only, so the voice never
- * reads a summary shaped like its own output.
- */
-export const defaultSummaryPrompt = `You keep the running memory of a voice conversation between a listener and a voice that presents an agent's work. You receive the previous summary, if any, and the conversation since it, and you write one new summary that replaces both.
-
-Write plain prose in the third person ("the listener", "the voice"). Never write JSON, XML, or anything shaped like the voice's actions.
-
-Keep the listener's own words verbatim in quotes, what they decided, corrected or still asked, and briefly what the voice explained and showed. Drop filler and repetition. Aim for about 4,000 characters; when everything does not fit, compress the oldest material first, never the listener's words.`;
-
 export interface SummarizeOptions {
-  /** The system prompt: `defaultSummaryPrompt`, or a preset's. */
+  /** The system prompt, normally a preset's. */
   readonly prompt: string;
   /** The summary this one replaces. Absent: the history starts at the beginning. */
   readonly previous?: string;

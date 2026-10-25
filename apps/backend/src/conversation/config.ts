@@ -141,9 +141,9 @@ export const WorkersSection = Schema.Struct({
 export type WorkersSection = typeof WorkersSection.Type;
 
 /**
- * `llm`: the models. `voice` writes the conversation. `summary` is an optional helper that writes
- * the Agent tool's progress sentences and the history summaries; absent, the voice model writes
- * both. It takes no `structuredOutput`: its replies are plain text.
+ * `llm`: the models. `voice` writes the conversation. `summary` optionally writes the Agent tool's
+ * progress sentences and the history summaries; absent, the voice model writes both. Resolution
+ * rejects `structuredOutput` under `summary`: its replies are plain text.
  */
 export const LlmSections = Schema.Struct({
   voice: LlmSection,
@@ -153,7 +153,8 @@ export type LlmSections = typeof LlmSections.Type;
 
 /**
  * `history.compaction`: once a forward's generation reads more than `aboveInputTokens` input
- * tokens, everything before that episode is summarized for the voice. Off unless `enabled`.
+ * tokens, everything before that episode is summarized for the voice. Off unless `enabled`;
+ * `aboveInputTokens` defaults to the presets' `defaultCompactionThreshold`.
  */
 export const HistorySection = Schema.Struct({
   compaction: Schema.optionalKey(

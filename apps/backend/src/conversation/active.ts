@@ -184,29 +184,28 @@ export const activeSessionLayer = (
 ): Layer.Layer<
   ActiveSession,
   never,
-  LanguageModel.LanguageModel | SpeechSynthesizer | FileSystem.FileSystem | Path.Path
+  LanguageModel.LanguageModel | SummaryModel | SpeechSynthesizer | FileSystem.FileSystem | Path.Path
 > =>
   Layer.effect(
     ActiveSession,
     Effect.gen(function* () {
-      // Only these four, plus the optional `SummaryModel` when provided: the full context also
-      // holds this layer's own `Scope`, which would replace each session's scope, so Reset would
-      // close a scope that owns nothing.
-      const required = Context.pick(
+      // Only these five: the full context also holds this layer's own `Scope`, which would replace
+      // each session's scope, so Reset would close a scope that owns nothing.
+      const services = Context.pick(
         LanguageModel.LanguageModel,
+        SummaryModel,
         SpeechSynthesizer,
         FileSystem.FileSystem,
         Path.Path,
       )(
         yield* Effect.context<
-          LanguageModel.LanguageModel | SpeechSynthesizer | FileSystem.FileSystem | Path.Path
+          | LanguageModel.LanguageModel
+          | SummaryModel
+          | SpeechSynthesizer
+          | FileSystem.FileSystem
+          | Path.Path
         >(),
       );
-      const summaryModel = yield* Effect.serviceOption(SummaryModel);
-      const services = Option.match(summaryModel, {
-        onNone: () => required,
-        onSome: (model) => Context.add(required, SummaryModel, model),
-      });
       return yield* makeActiveSession((request) =>
         buildSession(config, speechFormat, request, sources).pipe(Effect.provideContext(services)),
       );

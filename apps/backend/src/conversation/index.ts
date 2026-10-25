@@ -11,7 +11,7 @@ export {
   PresetSection,
   WorkersSection,
 } from './config.ts';
-export { languageModelLayer, languageModelsLayer, type LlmConfig } from './language-model.ts';
+export { languageModelsLayer, type LlmConfig, type LlmConfigs } from './language-model.ts';
 export { conversationRoutes } from './routes.ts';
 export { liveSession, noSessionResponse } from './session-routes.ts';
 export { type ConversationConfig } from './session.ts';

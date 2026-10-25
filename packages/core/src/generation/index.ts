@@ -16,4 +16,4 @@ export {
   type ToolDefinition,
   type ToolInput,
 } from './tools.ts';
-export { defaultSummaryPrompt, summarize, type SummarizeOptions } from './summarize.ts';
+export { summarize, type SummarizeOptions } from './summarize.ts';

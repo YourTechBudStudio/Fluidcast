@@ -19,7 +19,13 @@ import { askToolName } from '@yourtechbudstudio/fluidcast-tool-ask/schema';
 import { showTool } from '@yourtechbudstudio/fluidcast-tool-show';
 import { showToolName } from '@yourtechbudstudio/fluidcast-tool-show/schema';
 
-import { conversationConfig, fakeSources, storedMessage, unusedModel } from './fixtures.test.ts';
+import {
+  conversationConfig,
+  fakeSources,
+  storedMessage,
+  unusedModel,
+  voiceModels,
+} from './fixtures.test.ts';
 import { continueCallLabel, continueMessage, continueStart } from './modes.ts';
 import {
   buildSession,
@@ -91,11 +97,13 @@ describe('buildSession', () => {
     sources: SessionSources = fakeSources({}).sources,
   ) => {
     let count = 0;
-    const model = Layer.effect(
-      LanguageModel.LanguageModel,
-      Effect.andThen(
-        Effect.sync(() => count++),
-        unusedModel,
+    const model = voiceModels(
+      Layer.effect(
+        LanguageModel.LanguageModel,
+        Effect.andThen(
+          Effect.sync(() => count++),
+          unusedModel,
+        ),
       ),
     );
     return Effect.runPromise(
@@ -126,7 +134,7 @@ describe('buildSession', () => {
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
-            Layer.effect(LanguageModel.LanguageModel, unusedModel),
+            voiceModels(Layer.effect(LanguageModel.LanguageModel, unusedModel)),
             speech,
             NodeServices.layer,
           ),
@@ -143,7 +151,7 @@ describe('buildSession', () => {
         Effect.map((error) => error.reason),
         Effect.provide(
           Layer.mergeAll(
-            Layer.effect(LanguageModel.LanguageModel, unusedModel),
+            voiceModels(Layer.effect(LanguageModel.LanguageModel, unusedModel)),
             speech,
             NodeServices.layer,
           ),

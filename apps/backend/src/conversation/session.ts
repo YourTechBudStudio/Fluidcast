@@ -1,14 +1,5 @@
 import { getSessionMessages, type SessionMessage } from '@anthropic-ai/claude-agent-sdk';
-import {
-  Context,
-  Effect,
-  type FileSystem,
-  Layer,
-  Option,
-  type Path,
-  Schema,
-  type Scope,
-} from 'effect';
+import { Context, Effect, type FileSystem, Layer, type Path, Schema, type Scope } from 'effect';
 import { LanguageModel } from 'effect/ai';
 
 import { type Agent, StartFailed, type StartRequest } from '@fluidcast/app-contract';
@@ -48,19 +39,19 @@ import { showTool } from '@yourtechbudstudio/fluidcast-tool-show';
 import { lastAnswer, recordedEffort } from './claude-session.ts';
 import type { ClaudeEffort, PresetSection } from './config.ts';
 import { withGenerationLog } from './generation-log.ts';
-import type { LlmConfig } from './language-model.ts';
+import type { LlmConfigs } from './language-model.ts';
 import { brainstormHook, continueStart } from './modes.ts';
 import { withStructuredOutput } from './structured-output.ts';
 
 /** The conversation slice's resolved config. */
 export interface ConversationConfig {
   /** `llm.voice`, and the optional `llm.summary` that writes progress sentences and summaries. */
-  readonly llm: { readonly voice: LlmConfig; readonly summary?: LlmConfig };
+  readonly llm: LlmConfigs;
   /**
    * `history.compaction`, present only when enabled, with the threshold's default applied: the
    * input tokens above which a forward's generation summarizes the history before its episode.
    */
-  readonly compaction?: { readonly aboveInputTokens: number };
+  readonly history?: { readonly compaction: { readonly aboveInputTokens: number } };
   /** The `preset` section: the Guided Walkthrough's profile and the speaker's voice. */
   readonly preset: PresetSection;
   /** The workers behind the Forward Agent tool, from the `workers` section. */
@@ -170,7 +161,7 @@ export const referenceTools = (forward: Tool): ReadonlyArray<Tool> => [
  * The Harness session config: the Guided Walkthrough preset in the configured profile and voice,
  * plus the speech format and tools. The preset is the only source of instructions, examples and
  * speakers. A continued session adds Continue's preloaded start, with its stored last `answer` as
- * an answered `forward_agent` call. `compaction`, when set, turns on history summaries with the
+ * an answered `forward_agent` call. `history`, when set, turns on history summaries with the
  * preset's summary prompt.
  */
 export const referenceSessionConfig = (
@@ -178,7 +169,7 @@ export const referenceSessionConfig = (
   speechFormat: AudioFormat,
   tools: ReadonlyArray<Tool>,
   continued?: { readonly answer: string },
-  compaction?: ConversationConfig['compaction'],
+  history?: ConversationConfig['history'],
 ): SessionConfig => {
   const walkthrough = guidedWalkthrough(preset);
   return {
@@ -186,11 +177,11 @@ export const referenceSessionConfig = (
     speechFormat,
     tools,
     ...(continued && { start: continueStart(continued.answer) }),
-    ...(compaction && {
+    ...(history && {
       history: {
         compaction: {
           enabled: true,
-          aboveInputTokens: compaction.aboveInputTokens,
+          aboveInputTokens: history.compaction.aboveInputTokens,
           prompt: guidedWalkthroughSummaryPrompt,
         },
       },
@@ -249,17 +240,18 @@ export const buildSession = (
 ): Effect.Effect<
   BuiltSession,
   StartFailed,
-  Scope.Scope | LanguageModel.LanguageModel | SpeechSynthesizer | FileSystem.FileSystem | Path.Path
+  | Scope.Scope
+  | LanguageModel.LanguageModel
+  | SummaryModel
+  | SpeechSynthesizer
+  | FileSystem.FileSystem
+  | Path.Path
 > =>
   Effect.gen(function* () {
-    // One model, shared: the voice wraps it below, with structured output and the generation log.
+    // Both plain. Only the voice is wrapped below, with structured output and the generation log;
+    // the progress writer and the summarizer use the summary model as it is.
     const model = yield* Effect.context<LanguageModel.LanguageModel>();
-    // The progress writer and the summarizer share the summary model: the configured one, else the
-    // voice model unwrapped. Without it, the Harness would summarize with the wrapped voice, forced
-    // into action output and recorded as voice generations.
-    const summaryModel = Option.getOrElse(yield* Effect.serviceOption(SummaryModel), () =>
-      Context.get(model, LanguageModel.LanguageModel),
-    );
+    const summaryModel = yield* SummaryModel;
     const progress = { prompt: guidedWalkthroughProgressPrompt };
     const continued =
       request.mode === 'continue'
@@ -289,7 +281,7 @@ export const buildSession = (
       speechFormat,
       referenceTools(forward.tool),
       continued && { answer: continued.answer },
-      config.compaction,
+      config.history,
     );
     // These layers must be built fresh for each start: layers are memoized by identity, so hoisting
     // them to module constants would share one Harness session and generation log between starts.

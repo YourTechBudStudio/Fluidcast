@@ -8,7 +8,13 @@ import { LanguageModel } from 'effect/ai';
 import { SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';
 
 import { ActiveSession, activeSessionLayer, makeActiveSession } from './active.ts';
-import { conversationConfig, fakeBuild, fakeSources, startNew } from './fixtures.test.ts';
+import {
+  conversationConfig,
+  fakeBuild,
+  fakeSources,
+  startNew,
+  voiceModels,
+} from './fixtures.test.ts';
 
 /** Runs `body` with an `ActiveSession` over `build`, discarding it afterwards. */
 const withActive = <A, E>(
@@ -181,7 +187,7 @@ describe('activeSessionLayer', () => {
         ) as never,
     });
     const providers = Layer.mergeAll(
-      Layer.effect(LanguageModel.LanguageModel, model),
+      voiceModels(Layer.effect(LanguageModel.LanguageModel, model)),
       Layer.succeed(
         SpeechSynthesizer,
         SpeechSynthesizer.of({ synthesize: () => Effect.die('unused') as never }),

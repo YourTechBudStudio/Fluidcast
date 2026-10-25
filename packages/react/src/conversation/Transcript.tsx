@@ -37,7 +37,7 @@ import { SPEAKER_TONES, type TimelineRow } from './presentation';
 import { bodyOf, showPanelAtom, showRenderAtom } from './shows';
 import { skillPrefixLength } from './skills';
 
-/** Every action up to the cursor as one timeline row. The raw action type sits on the right of each row. */
+/** Every listener-facing action up to the cursor as one timeline row. The raw action type sits on the right of each row. */
 export function Transcript({
   rows,
   visible,

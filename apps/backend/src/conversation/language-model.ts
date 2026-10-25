@@ -100,23 +100,27 @@ export const languageModelLayer = (
   }
 };
 
-/**
- * The configured models: `voice` as the `LanguageModel`, and `summary`, when set, as the Harness's
- * `SummaryModel` beside it. A `SummaryModel` the context lacks is filled in per session by
- * `buildSession`, from the unwrapped voice model.
- */
-export const languageModelsLayer = (llm: {
+/** The resolved `llm` section: the voice model, and the optional summary model. */
+export interface LlmConfigs {
   readonly voice: LlmConfig;
   readonly summary?: LlmConfig;
-}): Layer.Layer<
-  LanguageModel.LanguageModel,
+}
+
+/**
+ * The configured models, both plain: `voice` as the `LanguageModel`, and `summary`, else the same
+ * voice model, as the Harness's `SummaryModel`. Each session wraps only the voice.
+ */
+export const languageModelsLayer = (
+  llm: LlmConfigs,
+): Layer.Layer<
+  LanguageModel.LanguageModel | SummaryModel,
   never,
   HttpClient.HttpClient | FileSystem.FileSystem
 > => {
   const voice = languageModelLayer(llm.voice);
-  if (llm.summary === undefined) return voice;
+  // Layers are memoized by identity, so without `summary` the voice model is built once.
   const summary = Layer.effect(SummaryModel, Effect.service(LanguageModel.LanguageModel)).pipe(
-    Layer.provide(languageModelLayer(llm.summary)),
+    Layer.provide(llm.summary === undefined ? voice : languageModelLayer(llm.summary)),
   );
   return Layer.merge(voice, summary);
 };

@@ -5,7 +5,7 @@ import { LanguageModel } from 'effect/ai';
 
 import { routes, SessionStatusJson, StartFailed, type StartRequest } from '@fluidcast/app-contract';
 import { SpeechSynthesizer } from '@yourtechbudstudio/fluidcast-core/speech';
-import { layer as harnessLayer, Session } from '@yourtechbudstudio/fluidcast-harness';
+import { layer as harnessLayer, Session, SummaryModel } from '@yourtechbudstudio/fluidcast-harness';
 import {
   WorkerSetupError,
   type WorkerHandle,
@@ -27,9 +27,17 @@ export const unusedModel = LanguageModel.make({
   streamText: () => Effect.die('unused') as never,
 });
 
+/** A voice model layer, also provided as the `SummaryModel`, as `languageModelsLayer` does without `llm.summary`. */
+export const voiceModels = <E, R>(
+  voice: Layer.Layer<LanguageModel.LanguageModel, E, R>,
+): Layer.Layer<LanguageModel.LanguageModel | SummaryModel, E, R> =>
+  Layer.effect(SummaryModel, Effect.service(LanguageModel.LanguageModel)).pipe(
+    Layer.provideMerge(voice),
+  );
+
 /** A model and a synthesizer that fail if used, as layers. */
 export const unusedProviders = Layer.merge(
-  Layer.effect(LanguageModel.LanguageModel, unusedModel),
+  voiceModels(Layer.effect(LanguageModel.LanguageModel, unusedModel)),
   Layer.succeed(
     SpeechSynthesizer,
     SpeechSynthesizer.of({ synthesize: () => Effect.die('unused') as never }),

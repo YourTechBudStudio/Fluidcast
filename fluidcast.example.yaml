@@ -94,11 +94,12 @@ preset:
 #   # Compaction: once the generation that writes a forward_agent call reads more than
 #   # aboveInputTokens of input (the total, including cache reads), everything before that episode
 #   # is replaced, for the voice only, by one rolling summary. The listener, the transcript and the
-#   # agent still get the full conversation. The default, 50000, keeps the total input under 64K. If
-#   # the provider reports no count, every forward compacts. llm.summary writes the summaries.
+#   # agent still get the full conversation. The default, 56000, keeps the total input within a 64K
+#   # context window; set it to suit your model. If the provider reports no count, every forward
+#   # compacts. llm.summary writes the summaries.
 #   compaction:
 #     enabled: true
-#     aboveInputTokens: 50000
+#     aboveInputTokens: 56000
 
 # The agents behind the forward_agent tool: Claude Code or Codex, picked on the mode screen for each
 # session. Both run the CLI installed on this machine (`claude`, `codex app-server`).

@@ -10,7 +10,6 @@ import {
   FiberHandle,
   FiberSet,
   Layer,
-  Option,
   Queue,
   Ref,
   Result,
@@ -34,7 +33,6 @@ import {
 import {
   checkTools,
   decodeToolCall,
-  defaultSummaryPrompt,
   generate,
   summarize,
   type GenerateOptions,
@@ -50,9 +48,9 @@ import {
   type SpeechError,
 } from '@yourtechbudstudio/fluidcast-core/speech';
 
-import { SummaryModel } from '../summary-model.ts';
+import { summaryModel } from '../summary-model.ts';
 import { ToolError, ToolFault, type Tool } from '../tool.ts';
-import { defaultCompactionThreshold, type SessionConfig } from './config.ts';
+import type { SessionConfig } from './config.ts';
 import { answersProgress, episodeStart, modelView, summarySlice } from './conversation.ts';
 import {
   describeFailure,
@@ -179,19 +177,10 @@ export const make = (config: SessionConfig) =>
     const preloadedCall =
       preloaded?.call === undefined ? null : answeredCall(config.tools, preloaded.call);
     const languageModel = yield* LanguageModel.LanguageModel;
-    const summaryModel = Option.getOrElse(
-      yield* Effect.serviceOption(SummaryModel),
-      () => languageModel,
-    );
+    const helperModel = yield* summaryModel;
     const synthesizer = yield* SpeechSynthesizer;
-    const compactionConfig = config.history?.compaction;
     const compaction =
-      compactionConfig?.enabled === true
-        ? {
-            aboveInputTokens: compactionConfig.aboveInputTokens ?? defaultCompactionThreshold,
-            prompt: compactionConfig.prompt ?? defaultSummaryPrompt,
-          }
-        : undefined;
+      config.history?.compaction?.enabled === true ? config.history.compaction : undefined;
 
     // One lock serialises commands, generation appends, execution outcomes and subscription
     // changes. Every event is applied to `state` and offered to the subscriber inside it, so both
@@ -685,7 +674,9 @@ export const make = (config: SessionConfig) =>
             yield* settle;
           }),
         );
-      const conclude = (reply: Effect.Effect<void, GenerationError>): Effect.Effect<void> =>
+      const conclude = (
+        reply: Effect.Effect<void, GenerationError | typeof unexpectedFailure>,
+      ): Effect.Effect<void> =>
         reply.pipe(
           // A defect must still end the iteration truthfully rather than leave it running forever.
           Effect.catchDefect(() => Effect.fail(unexpectedFailure)),
@@ -749,9 +740,6 @@ export const make = (config: SessionConfig) =>
         );
         yield* Stream.fromQueue(reply).pipe(
           Stream.runForEach(onElement),
-          Effect.catch((error) =>
-            error._tag === 'UnexpectedError' ? Effect.die(error) : Effect.fail(error),
-          ),
           Effect.tap(() => Deferred.succeed(replied, undefined)),
           // An interrupt while the boundary generation still streams (`stop`), or a failure, ends
           // the reader too: no summary starts for that boundary. The next boundary's summary covers
@@ -815,7 +803,7 @@ export const make = (config: SessionConfig) =>
       inputTokens: number | undefined,
     ): Effect.Effect<void> =>
       Effect.gen(function* () {
-        if (compaction === undefined || !startedEpisode || closing) return;
+        if (compaction === undefined || !startedEpisode) return;
         if (inputTokens !== undefined && inputTokens <= compaction.aboveInputTokens) return;
         const current = yield* Ref.get(state);
         if (isHalted(current)) return;
@@ -840,13 +828,20 @@ export const make = (config: SessionConfig) =>
             history: slice,
             tools: config.tools,
           }).pipe(
-            Effect.provideService(LanguageModel.LanguageModel, summaryModel),
+            Effect.provideService(LanguageModel.LanguageModel, helperModel),
             Effect.catchDefect(() => Effect.fail(unexpectedFailure)),
             Effect.matchEffect({
               onSuccess: (text) =>
                 transact(
                   Effect.gen(function* () {
                     summaryFrom = undefined;
+                    // An empty summary would erase the earlier conversation from the model's view.
+                    if (text === '') {
+                      yield* Effect.logWarning('conversation summary failed').pipe(
+                        Effect.annotateLogs({ from, error: 'EmptySummary' }),
+                      );
+                      return;
+                    }
                     summaryReady = { from, text };
                     yield* Effect.logInfo('conversation summarized').pipe(
                       Effect.annotateLogs({ from, characters: text.length }),
