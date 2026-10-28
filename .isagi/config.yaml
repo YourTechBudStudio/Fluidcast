@@ -6,14 +6,14 @@ worktrees:
         cwd: .
         timeout: 10m
 commands:
-  - name: backend
-    command: pnpm backend:dev
+  - name: dev
+    command: pnpm dev
     ports:
-      - port: 4700
-  - name: web
-    command: pnpm web:dev
-    ports:
-      - port: 5334
+      - envVar: FLUIDCAST_PORT
+      - envVar: FLUIDCAST_WEB_PORT
         paths:
           - label: app
             path: /
+    lifecycle:
+      deactivate:
+        stop: false

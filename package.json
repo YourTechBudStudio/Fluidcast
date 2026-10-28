@@ -13,6 +13,7 @@
     "chatgpt:login": "pnpm --filter @fluidcast/backend chatgpt:login",
     "check": "pnpm lint && pnpm check:pure && pnpm typecheck && pnpm test && pnpm format:check",
     "check:pure": "node scripts/check-pure-exports.mjs",
+    "dev": "pnpm --filter '@fluidcast/web^...' --filter '@fluidcast/backend^...' build && pnpm --filter '@fluidcast/web...' --filter @fluidcast/backend --parallel --if-present dev",
     "fix": "pnpm lint:fix && pnpm format",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",

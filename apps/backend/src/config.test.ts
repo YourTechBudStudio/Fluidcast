@@ -84,6 +84,18 @@ describe('loadConfig', () => {
     assert.deepEqual(config.server, { host: '127.0.0.1', port: 4700 });
   });
 
+  it('takes the server port from FLUIDCAST_PORT over the file', async () => {
+    const config = await loaded(`${validYaml}server: { port: 4800 }\n`, {
+      ...keys,
+      FLUIDCAST_PORT: '4901',
+    });
+    assert.deepEqual(config.server, { host: '127.0.0.1', port: 4901 });
+    assert.match(
+      await failure(validYaml, { ...keys, FLUIDCAST_PORT: 'http' }),
+      /FLUIDCAST_PORT must be a TCP port/,
+    );
+  });
+
   it('turns structured output on only when an openai-compatible provider asks for it', async () => {
     const structuredOutput = (config: Config) => {
       const llm = config.conversation.llm.voice;

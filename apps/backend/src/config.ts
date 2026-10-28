@@ -380,6 +380,16 @@ const summaryConfig = (
   return llmConfig(file, section, 'llm.summary', environment, homeDirectory);
 };
 
+/** `FLUIDCAST_PORT` over `server.port`, so a dev runner can allocate the port per checkout. */
+const serverPort = (file: ConfigFile, environment: Environment): Effect.Effect<number, string> => {
+  const override = nonEmpty(environment['FLUIDCAST_PORT']);
+  if (override === undefined) return Effect.succeed(file.server?.port ?? 4700);
+  const port = Number(override);
+  return Number.isInteger(port) && port >= 1 && port <= 65535
+    ? Effect.succeed(port)
+    : Effect.fail(`FLUIDCAST_PORT must be a TCP port from 1 through 65535, not ${override}.`);
+};
+
 /** Applies defaults and resolves secrets. Fails with a message naming what is missing. */
 const resolve = (
   file: ConfigFile,
@@ -401,9 +411,10 @@ const resolve = (
         : yield* summaryConfig(file, file.llm.summary, environment, homeDirectory);
     const compaction = file.history?.compaction;
     const ttsConnection = yield* connection(file, environment, file.tts.provider.type);
+    const port = yield* serverPort(file, environment);
 
     return {
-      server: { host: file.server?.host ?? '127.0.0.1', port: file.server?.port ?? 4700 },
+      server: { host: file.server?.host ?? '127.0.0.1', port },
       conversation: {
         llm: { voice, ...(summary === undefined ? {} : { summary }) },
         ...(compaction?.enabled === true && {
