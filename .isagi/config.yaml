@@ -1,6 +1,12 @@
 worktrees:
   hooks:
     postCreate:
+      - type: copy
+        src: .env
+        dest: .env
+      - type: copy
+        src: fluidcast.yaml
+        dest: fluidcast.yaml
       - type: command
         run: pnpm install
         cwd: .
