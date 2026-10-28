@@ -5,3 +5,15 @@ worktrees:
         run: pnpm install
         cwd: .
         timeout: 10m
+commands:
+  - name: backend
+    command: pnpm backend:dev
+    ports:
+      - port: 4700
+  - name: web
+    command: pnpm web:dev
+    ports:
+      - port: 5334
+        paths:
+          - label: app
+            path: /
