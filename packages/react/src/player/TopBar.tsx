@@ -17,7 +17,7 @@ const VISUAL_OPTIONS = VISUAL_IDS.map((id) => ({
 const icon = { size: 16, strokeWidth: 1.8, 'aria-hidden': true } as const;
 
 /**
- * Below 1024 px of player width (`narrow:`) the buttons show their icon only, because the labelled row of Visual, Show, Transcript and Worker, with
+ * Below 1024 px of player width (`narrow:`, `NARROW_BELOW_PX`) the buttons show their icon only, because the labelled row of Visual, Show, Transcript and Worker, with
  * their key hints, would crowd the brand. Their 44 px minimum width is then the hit area, with no extra padding, so
  * every control fits even a 320 px wide player.
  */

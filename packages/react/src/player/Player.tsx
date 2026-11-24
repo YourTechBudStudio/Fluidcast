@@ -279,7 +279,7 @@ export function Player() {
           <aside
             aria-label="Show"
             inert={!panelOpen}
-            // Sized from the layout constants, so the panel renders only where `layoutFor` found it fits.
+            // Sized from the layout constants; `layoutFor` shows the panel only from `narrow` up, where its share fits.
             style={{ flexBasis: panelOpen ? `${SHOW_PANEL_SHARE * 100}%` : 0 }}
             className={`min-w-0 transition-[flex-basis,opacity] duration-(--duration-surface) ease-expo motion-reduce:transition-opacity ${panelOpen ? 'opacity-100' : 'opacity-0'}`}
           >
