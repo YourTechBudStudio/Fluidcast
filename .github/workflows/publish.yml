@@ -1,0 +1,63 @@
+# Publishes one package version per pushed tag of the form `<package>/<version>`, for example
+# `fluidcast-react/0.2.1`. Authentication is npm trusted publishing (OIDC): no npm token is stored
+# anywhere. The `publish` skill in `.agents/skills/publish` creates and pushes these tags.
+name: publish
+
+on:
+  push:
+    tags:
+      - 'fluidcast-*/*'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Require the tagged commit to be on main
+        run: |
+          git fetch --quiet origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+      - uses: pnpm/action-setup@v4
+
+      # No `registry-url`: it would set NODE_AUTH_TOKEN, which overrides the OIDC exchange.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Require npm with trusted publishing support
+        run: node -e "const [a,b,c]=process.argv[1].split('.').map(Number);process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)" "$(npm --version)"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Verify the tag
+        id: package
+        run: node .agents/skills/publish/scripts/verify-tag.mjs "$GITHUB_REF_NAME"
+
+      - name: Build the package and its workspace dependencies
+        if: steps.package.outputs.published == 'false'
+        run: pnpm --filter "${{ steps.package.outputs.name }}..." --workspace-concurrency=1 build
+
+      # `pnpm pack` rewrites `workspace:*` to the committed versions; `npm publish` does the OIDC exchange.
+      - name: Publish
+        if: steps.package.outputs.published == 'false'
+        working-directory: ${{ steps.package.outputs.dir }}
+        run: |
+          pnpm pack --pack-destination "$RUNNER_TEMP/pack"
+          npm publish "$RUNNER_TEMP"/pack/*.tgz --access public --tag "${{ steps.package.outputs.dist_tag }}"
+
+      - name: Report an existing version
+        if: steps.package.outputs.published == 'true'
+        run: echo "::notice::${{ steps.package.outputs.name }}@${{ steps.package.outputs.version }} is already on npm; nothing to publish."

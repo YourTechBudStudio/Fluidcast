@@ -19,7 +19,6 @@
     "format:check": "oxfmt --check .",
     "lint": "oxlint . --threads=8 --deny-warnings --no-error-on-unmatched-pattern",
     "lint:fix": "oxlint . --threads=8 --fix --no-error-on-unmatched-pattern",
-    "release": "pnpm check && pnpm build:libs && pnpm -r publish",
     "test": "pnpm build:libs && pnpm -r --workspace-concurrency=1 --if-present test",
     "typecheck": "pnpm build:libs && pnpm -r --workspace-concurrency=1 --if-present typecheck",
     "versions:sync": "node scripts/sync-versions.mjs",

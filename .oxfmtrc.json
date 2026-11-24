@@ -9,7 +9,8 @@
     ".turbo",
     "coverage",
     "**/tests/fixtures/**",
-    ".agents"
+    ".agents",
+    ".claude"
   ],
   "semi": true,
   "singleQuote": true,
