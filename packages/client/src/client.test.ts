@@ -185,7 +185,7 @@ const run = <A>(effect: Effect.Effect<A, unknown, Scope.Scope>) =>
   Effect.runPromise(Effect.scoped(effect));
 
 describe('Client', () => {
-  it('prefetches the next three speaks as they are appended, keeping the current and evicting played audio', () =>
+  it('prefetches the next three speaks as they are appended, keeping the current and played audio', () =>
     run(
       Effect.gen(function* () {
         const { client, connect, fetched, release, store } = yield* setup({ url: true });
@@ -228,10 +228,40 @@ describe('Client', () => {
           Result.succeed({ bytes: bytesOf('b'), mimeType: 'audio/ogg' }),
         );
 
-        // Once the cursor passes it, the line stops playing and its audio is evicted.
+        // Once the cursor passes it, the line stops playing but its audio stays, for Back.
         yield* connection.send({ _tag: 'CursorMoved', cursor: 3 });
         yield* eventually(client.playback.get, Option.isNone);
-        yield* eventually(store.keys, (keys) => !keys.includes('b'));
+        yield* settle;
+        assert.ok((yield* store.keys).includes('b'));
+      }),
+    ));
+
+  it('keeps the three speaks behind the presented one, fetching any that streamed, and evicts older ones', () =>
+    run(
+      Effect.gen(function* () {
+        const { connect, fetched, release, store } = yield* setup({ url: true });
+        const connection = yield* connect;
+        const lines = ['a', 'b', 'c', 'd', 'e'];
+        // `a` played from its URL, so it was never cached.
+        yield* connection.send({
+          _tag: 'Snapshot',
+          state: state([user, ...lines.map((id) => speak(id))], 1),
+        });
+        yield* eventually(Effect.sync(fetched), (ids) => ids.length === 3);
+        for (const id of ['b', 'c', 'd']) yield* release(id);
+        yield* eventually(store.keys, (keys) => keys.length === 3);
+
+        // Behind the cursor, `a` is fetched once for Back.
+        yield* connection.send({ _tag: 'CursorMoved', cursor: 4 });
+        yield* eventually(Effect.sync(fetched), (ids) => ids.includes('a') && ids.includes('e'));
+        yield* release('a');
+        yield* eventually(store.keys, (keys) => keys.includes('a'));
+        assert.deepEqual([...(yield* store.keys)].sort(), ['a', 'b', 'c', 'd']);
+
+        // A fourth line behind is evicted; the three nearest stay.
+        yield* connection.send({ _tag: 'CursorMoved', cursor: 5 });
+        yield* eventually(store.keys, (keys) => !keys.includes('a'));
+        assert.deepEqual([...(yield* store.keys)].sort(), ['b', 'c', 'd']);
       }),
     ));
 

@@ -10,6 +10,9 @@ import type { AudioStore } from './store.ts';
 /** How many speaks after the presented one are prefetched. */
 export const prefetchWindow = 3;
 
+/** How many speaks before the presented one stay cached, so Back starts at once. */
+export const retainWindow = 3;
+
 /**
  * Audio could not be obtained for a line: the line is gone (`SpeechNotFound`), synthesis failed
  * (`SpeechError`), or the backend could not be reached (`TransportError`).
@@ -33,19 +36,22 @@ export const makeAudio = (transport: Transport['Service'], store: AudioStore) =>
       Stream.runCollect(transport.speech(actionId)).pipe(Effect.map(concat));
 
     /**
-     * Fits cache and downloads to the state: prefetches the next speaks after the presented position
-     * (the cursor, or a replayed line) as soon as they are known, keeps the presented speak, and
-     * cancels or evicts everything else (played, trimmed, or no longer in the log).
+     * Fits cache and downloads to the state: keeps the presented speak, the next speaks after the presented position
+     * (the cursor, or a replayed line) and the speaks just before it, fetching any of them that is missing, and
+     * cancels or evicts everything else (played further back, trimmed, or no longer in the log). Lines ahead are
+     * fetched first; a line behind may have streamed straight to the player and never been cached, so it is fetched
+     * once for Back.
      */
     const reconcile = (state: SessionState) =>
       Effect.gen(function* () {
-        const ahead = state.actions
-          .slice(presentedPosition(state) + 1)
-          .filter((action) => action.type === 'speak')
-          .slice(0, prefetchWindow)
-          .map((action) => action.id as string);
+        const position = presentedPosition(state);
+        const speakIds = (actions: ReadonlyArray<SessionState['actions'][number]>) =>
+          actions.filter((action) => action.type === 'speak').map((action) => action.id as string);
+        const ahead = speakIds(state.actions.slice(position + 1)).slice(0, prefetchWindow);
+        const behind = speakIds(state.actions.slice(0, position)).slice(-retainWindow).reverse();
         const current = currentAction(state);
-        const keep = new Set(current?.type === 'speak' ? [...ahead, current.id] : ahead);
+        const wanted = [...ahead, ...behind];
+        const keep = new Set(current?.type === 'speak' ? [...wanted, current.id] : wanted);
 
         for (const [actionId] of [...prefetches]) {
           if (!keep.has(actionId)) yield* FiberMap.remove(prefetches, actionId);
@@ -53,7 +59,7 @@ export const makeAudio = (transport: Transport['Service'], store: AudioStore) =>
         for (const actionId of yield* store.keys) {
           if (!keep.has(actionId)) yield* store.remove(actionId);
         }
-        for (const actionId of ahead) {
+        for (const actionId of wanted) {
           if ((yield* store.get(actionId)) !== undefined) continue;
           yield* FiberMap.run(
             prefetches,

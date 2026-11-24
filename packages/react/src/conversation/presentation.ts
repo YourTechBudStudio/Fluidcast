@@ -456,10 +456,14 @@ function subtitleOf(
         : null;
     }
     case 'speaking': {
-      // A line appears when its audio starts. Until then the previous line of this turn stays, or your own message if
-      // none has played yet. After Back, the presented line is an earlier one.
-      if (presented && playback.kind === 'playing' && playback.actionId === presented.id)
-        return line(presented, 'current');
+      // The presented line shows at once, however it was reached: playing on, Back, Next or Play. Until its audio
+      // starts it is `loading`, so the subtitle never shows a line other than the one about to be heard.
+      if (presented)
+        return line(
+          presented,
+          playbackAtPresented(view, playback) === 'idle' ? 'loading' : 'current',
+        );
+      // Nothing presented yet: the last line of this turn stays, or your own message if none has played.
       const before = view.actions.slice(0, presentedIndex(view));
       const turnStart = lastIndexWhere(before, (a) => a.type === 'user_message');
       const earlier = before.slice(turnStart + 1).findLast(isSpeak);

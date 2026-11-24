@@ -602,6 +602,25 @@ describe('timeline rows', () => {
     expect(rowOf(p.timeline, 'speak').map((row) => row.now)).toEqual(['playing', null]);
     expect(p.subtitle).toMatchObject({ key: 's1', tone: 'current' });
   });
+
+  it('shows the presented line loading until its audio starts, after Back or moving on', () => {
+    const [first, second, third] = [speak('s1'), speak('s2'), speak('s3')];
+    const actions = [user('u1'), first, second, third];
+    // Back from s3 to s2: s3 was heard, s2 is about to be. Neither s1 nor s3 shows.
+    const back = presentOf(view({ actions, phase: 'speaking', presented: second }), {
+      playback: { kind: 'playing', actionId: 's3' },
+    });
+    expect(back.subtitle).toMatchObject({ key: 's2', tone: 'loading' });
+    expect(rowOf(back.timeline, 'speak').map((row) => row.now)).toEqual([null, 'queued', null]);
+    // Its audio starts: the same line, so it brightens in place.
+    const playing = presentOf(view({ actions, phase: 'speaking', presented: second }), {
+      playback: { kind: 'playing', actionId: 's2' },
+    });
+    expect(playing.subtitle).toMatchObject({ key: 's2', tone: 'current' });
+    // The first line of a turn loads too, in place of your message.
+    const opening = presentOf(view({ actions, phase: 'speaking', presented: first }));
+    expect(opening.subtitle).toMatchObject({ key: 's1', tone: 'loading' });
+  });
 });
 
 describe('a failed Show on the way back to the model', () => {

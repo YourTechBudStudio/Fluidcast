@@ -1,6 +1,7 @@
 export {
   memoryStore,
   prefetchWindow,
+  retainWindow,
   type AudioStore,
   type AudioUnavailable,
   type Playable,

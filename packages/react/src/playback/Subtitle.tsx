@@ -6,8 +6,11 @@ export interface SubtitleLine {
   /** Changes whenever a different line should crossfade in. */
   readonly key: string;
   readonly text: string;
-  /** `current`: the line being heard. `dim`: a finished or cut line. `you`: your own message, briefly, after sending. */
-  readonly tone: 'current' | 'dim' | 'you';
+  /**
+   * `current`: the line being heard. `loading`: the line about to be heard, while its audio arrives. `dim`: a finished
+   * or cut line. `you`: your own message, briefly, after sending.
+   */
+  readonly tone: 'current' | 'loading' | 'dim' | 'you';
   /** "You", or the speaker's name when more than one speaker is configured. */
   readonly label?: string;
   readonly interrupted?: boolean;
@@ -15,6 +18,8 @@ export interface SubtitleLine {
 
 const toneClass: Record<SubtitleLine['tone'], string> = {
   current: 'text-fg',
+  // Keeps the line's key, so it brightens in place when its audio starts.
+  loading: 'text-fg-subtle motion-safe:animate-breathe',
   dim: 'text-fg-subtle',
   you: 'text-fg-muted',
 };
