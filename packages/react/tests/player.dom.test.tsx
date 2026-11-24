@@ -333,14 +333,19 @@ describe('container layout', () => {
     expect(playerB.panel()).not.toBeNull();
     expect(playerB.controlsUnderComposer()).toBe(false);
 
-    // At 700 px the dock is wide again, but the panel does not fit: the Show stays a sheet.
+    // At 700 px the dock is wide again, but the player is narrow: the Show stays a sheet.
     await interact(() => browser.resize(playerA.root, 700));
     expect(playerA.controlsUnderComposer()).toBe(false);
     expect(playerA.panel()).toBeNull();
     expect(playerA.sheet()).not.toBeNull();
 
-    // From 734 px the panel fits.
-    await interact(() => browser.resize(playerA.root, 734));
+    // Just below 1024 px, half of a split desktop window, it is still the full-width sheet.
+    await interact(() => browser.resize(playerA.root, 1023));
+    expect(playerA.panel()).toBeNull();
+    expect(playerA.sheet()).not.toBeNull();
+
+    // From 1024 px the Show is the side panel.
+    await interact(() => browser.resize(playerA.root, 1024));
     expect(playerA.panel()).not.toBeNull();
   });
 });

@@ -15,7 +15,7 @@
 
 /*
  * Breakpoints follow the player root's own width, never the viewport: the root is the `fluidcast-player` container.
- * `compact` matches `COMPACT_BELOW_PX` in `player/layout.ts`; `narrow` makes the top bar icon-only.
+ * Both mirror the tiers in `player/layout.ts` (`COMPACT_BELOW_PX`, `NARROW_BELOW_PX`), which `layout.test.ts` checks.
  */
 @custom-variant compact {
   @container fluidcast-player (width < 640px) {
