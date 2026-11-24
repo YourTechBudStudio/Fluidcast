@@ -13,7 +13,8 @@
     "release",
     ".next",
     ".turbo",
-    "coverage"
+    "coverage",
+    ".claude"
   ],
   "rules": {
     "eslint/no-unused-vars": [
