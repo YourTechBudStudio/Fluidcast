@@ -10,7 +10,7 @@ import { join, relative } from 'node:path';
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
 /** Dependency fields that ship to consumers; dev dependencies do not affect what installs. */
-const RUNTIME_DEPENDENCY_FIELDS = ['dependencies', 'peerDependencies', 'optionalDependencies'];
+export const RUNTIME_DEPENDENCY_FIELDS = ['dependencies', 'peerDependencies', 'optionalDependencies'];
 
 export class ReleaseError extends Error {}
 
@@ -53,6 +53,25 @@ export const compareVersions = (a, b) => {
     left.patch - right.patch ||
     comparePrerelease(left.prerelease, right.prerelease)
   );
+};
+
+/**
+ * Whether a version is inside a published dependency range of the forms pnpm produces from
+ * `workspace:*`, `workspace:~` and `workspace:^`: an exact `x.y.z`, `~x.y.z` or `^x.y.z`. A
+ * prerelease is inside only an exact range naming it. `undefined` for a range of any other form.
+ */
+export const satisfiesRange = (version, range) => {
+  const match = /^([~^]?)(.+)$/.exec(range.trim());
+  const floor = parseSemver(match[2]);
+  const candidate = parseSemver(version);
+  if (floor === undefined || candidate === undefined) return undefined;
+  if (match[1] === '') return compareVersions(version, match[2]) === 0;
+  if (candidate.prerelease !== undefined || compareVersions(version, match[2]) < 0) return false;
+  if (match[1] === '~') return candidate.major === floor.major && candidate.minor === floor.minor;
+  // `^`: the leftmost non-zero part of the floor stays fixed.
+  if (floor.major > 0) return candidate.major === floor.major;
+  if (floor.minor > 0) return candidate.major === 0 && candidate.minor === floor.minor;
+  return candidate.major === 0 && candidate.minor === 0 && candidate.patch === floor.patch;
 };
 
 export const tagPrefix = (name) => name.split('/').pop();
@@ -140,6 +159,26 @@ export const isPublished = (name, version) => {
     if (/E404/.test(String(error.stderr ?? error.message))) return false;
     throw new ReleaseError(`could not read ${name}@${version} from npm: ${String(error.stderr ?? error.message).trim()}`);
   }
+};
+
+/**
+ * The runtime dependency ranges a published package version ships, by dependency name (a name in
+ * several fields keeps the first field's range, in `RUNTIME_DEPENDENCY_FIELDS` order).
+ */
+export const publishedDependencyRanges = (name, version) => {
+  let manifest;
+  try {
+    manifest = JSON.parse(run('npm', ['view', `${name}@${version}`, '--json']));
+  } catch (error) {
+    throw new ReleaseError(`could not read ${name}@${version} from npm: ${String(error.stderr ?? error.message).trim()}`);
+  }
+  const ranges = new Map();
+  for (const field of RUNTIME_DEPENDENCY_FIELDS) {
+    for (const [dependency, range] of Object.entries(manifest[field] ?? {})) {
+      if (!ranges.has(dependency)) ranges.set(dependency, range);
+    }
+  }
+  return ranges;
 };
 
 /** Parses `--flag` and `--key=value` arguments; everything else is positional. */

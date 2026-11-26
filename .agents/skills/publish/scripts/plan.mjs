@@ -4,7 +4,20 @@
 // publish order with its version, tags, npm state, and changes since its last tag, and the problems
 // that block tagging. A package is pending when its committed version has no tag yet. Reads only;
 // apart from fetching `origin`, it changes nothing.
-import { compareVersions, main, npmVersions, parseArgs, publicPackages, repoRoot, run, taggedVersions, tagFor } from './lib.mjs';
+import {
+  compareVersions,
+  main,
+  npmVersions,
+  parseArgs,
+  publicPackages,
+  publishedDependencyRanges,
+  repoRoot,
+  run,
+  RUNTIME_DEPENDENCY_FIELDS,
+  satisfiesRange,
+  taggedVersions,
+  tagFor,
+} from './lib.mjs';
 
 const RELEASE_BRANCH = 'main';
 
@@ -33,7 +46,8 @@ const plan = (root, fetch) => {
   if (git.behind > 0) problems.push(`HEAD is ${git.behind} commit(s) behind origin/${RELEASE_BRANCH}; pull first.`);
   if (git.ahead > 0) problems.push(`HEAD is ${git.ahead} commit(s) ahead of origin/${RELEASE_BRANCH}; push first so tags point at commits GitHub has.`);
 
-  const packages = publicPackages(root).map((pkg) => {
+  const workspace = publicPackages(root);
+  const packages = workspace.map((pkg) => {
     const tags = taggedVersions(root, pkg.name);
     const npm = npmVersions(pkg.name);
     const lastTag = tags[0] === undefined ? undefined : tagFor(pkg.name, tags[0]);
@@ -82,14 +96,36 @@ const plan = (root, fetch) => {
     }
   }
 
-  // `workspace:*` publishes as an exact pin, so a dependent that is not re-released stays on the old
-  // version of whatever is being released. That is sometimes intended, so it only warns.
+  // Internal runtime dependencies are `workspace:~`, which publishes as `~x.y.z`: patches reach
+  // dependents unreleased, and a minor or major bump re-releases them. Anything else is a slip.
+  for (const pkg of workspace) {
+    for (const field of RUNTIME_DEPENDENCY_FIELDS) {
+      for (const [dependency, specifier] of Object.entries(pkg.manifest[field] ?? {})) {
+        if (pkg.internalDependencies.includes(dependency) && specifier !== 'workspace:~') {
+          warnings.push(`${pkg.name} lists ${dependency} in ${field} as ${specifier}; internal dependencies use workspace:~.`);
+        }
+      }
+    }
+  }
+
+  // A dependent that is not re-released keeps the range it was published with. A version outside
+  // that range leaves consumers with two copies (or a peer conflict), so it warns; inside, it is fine.
+  const rangesOf = new Map();
+  const publishedRanges = (pkg) => {
+    if (!rangesOf.has(pkg.name)) rangesOf.set(pkg.name, publishedDependencyRanges(pkg.name, pkg.version));
+    return rangesOf.get(pkg.name);
+  };
   for (const pkg of packages) {
     if (!pkg.pending) continue;
-    const dependents = packages.filter((other) => !other.pending && other.internalDependencies.includes(pkg.name));
-    if (dependents.length > 0) {
+    const stranded = packages
+      .filter((other) => !other.pending && other.published && other.internalDependencies.includes(pkg.name))
+      .flatMap((other) => {
+        const range = publishedRanges(other).get(pkg.name);
+        return range === undefined || satisfiesRange(pkg.version, range) === true ? [] : [`${other.name}@${other.version} (${range})`];
+      });
+    if (stranded.length > 0) {
       warnings.push(
-        `${pkg.name} is being released, but ${dependents.map((other) => other.name).join(', ')} keep(s) depending on the version they were published with.`,
+        `${pkg.name}@${pkg.version} is outside the range these unreleased dependents were published with: ${stranded.join(', ')}. Consumers get two copies, or a peer conflict, unless they are released too.`,
       );
     }
   }
