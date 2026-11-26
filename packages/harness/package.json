@@ -42,7 +42,7 @@
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
-    "@yourtechbudstudio/fluidcast-core": "workspace:*"
+    "@yourtechbudstudio/fluidcast-core": "workspace:~"
   },
   "devDependencies": {
     "@types/node": "catalog:",

@@ -47,11 +47,11 @@
     "typescript": "catalog:"
   },
   "peerDependencies": {
-    "@yourtechbudstudio/fluidcast-core": "workspace:*",
-    "@yourtechbudstudio/fluidcast-harness": "workspace:*",
-    "@yourtechbudstudio/fluidcast-tool-agent": "workspace:*",
-    "@yourtechbudstudio/fluidcast-tool-ask": "workspace:*",
-    "@yourtechbudstudio/fluidcast-tool-show": "workspace:*",
+    "@yourtechbudstudio/fluidcast-core": "workspace:~",
+    "@yourtechbudstudio/fluidcast-harness": "workspace:~",
+    "@yourtechbudstudio/fluidcast-tool-agent": "workspace:~",
+    "@yourtechbudstudio/fluidcast-tool-ask": "workspace:~",
+    "@yourtechbudstudio/fluidcast-tool-show": "workspace:~",
     "effect": "catalog:"
   }
 }
