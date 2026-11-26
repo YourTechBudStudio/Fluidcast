@@ -186,10 +186,10 @@ catalogs:
       specifier: ^4.0.2
       version: 4.0.2
     markdown-it:
-      specifier: 15.0.3
+      specifier: ^15.0.3
       version: 15.0.3
     mermaid:
-      specifier: 12.2.0
+      specifier: ^12.2.0
       version: 12.2.0
     oxfmt:
       specifier: 0.74.0
