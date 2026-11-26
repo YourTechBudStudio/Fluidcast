@@ -237,8 +237,9 @@ describe('buildSession', () => {
     ]);
   });
 
-  it('snapshots a continued session ready, with the last answer as the preloaded answered call', async () => {
-    const { sources, workers } = fakeSources({ messages: stored });
+  it("snapshots a continued session ready, with the worker's attached last answer as the preloaded answered call", async () => {
+    // The attach's answer, not one read separately from the stored messages.
+    const { sources, workers } = fakeSources({ messages: stored, answer: 'The attached answer.' });
     const state = await snapshot(continueRequest, sources);
     assert.equal(derivePhase(state), 'ready');
     assert.deepEqual(state.actions, []);
@@ -246,7 +247,7 @@ describe('buildSession', () => {
     assert.equal(state.start?.context, null);
     assert.equal(state.start?.call?.label, continueCallLabel);
     assert.equal(state.start?.call?.call.tool, 'forward_agent');
-    assert.deepEqual(state.start?.call?.result.result, { messages: ['The answer.'] });
+    assert.deepEqual(state.start?.call?.result.result, { messages: ['The attached answer.'] });
     // No effort is recorded under the fake config directory, and none is configured.
     assert.deepEqual(workers, [claudeWorkerOptions(worker, { effort: undefined })]);
     assert.equal('model' in workers[0]!, false);
@@ -260,7 +261,7 @@ describe('buildSession', () => {
         join(claudeConfigDir, 'projects', 'p', `${storedId}.jsonl`),
         JSON.stringify({ type: 'assistant', effort: 'max' }),
       );
-      const { sources, workers } = fakeSources({ messages: stored });
+      const { sources, workers } = fakeSources({ messages: stored, answer: 'The answer.' });
       const conversation = conversationConfig({
         worker: { ...worker, claude: { model: 'opus', effort: 'low' }, claudeConfigDir },
       });
@@ -331,6 +332,7 @@ describe('buildSession', () => {
       ],
       [continueRequest, fakeSources({ messages: [] }), 'SessionNotFound'],
       [continueRequest, fakeSources({ messages: 'throw' }), 'SessionUnreadable'],
+      // The attach read no answer.
       [continueRequest, fakeSources({ messages: [storedMessage('user', 'Question')] }), 'NoAnswer'],
       [
         continueRequest,

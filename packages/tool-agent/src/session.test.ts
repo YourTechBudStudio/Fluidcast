@@ -761,7 +761,7 @@ describe('worker session preload', () => {
     { _tag: 'prompt', parentToolUseId: null, source: 'earlier', text: 'Earlier.' },
     text('Earlier answer.'),
   ];
-  const sessions = { 'session-1': { cwd: '/elsewhere', history } };
+  const sessions = { 'session-1': { cwd: '/elsewhere', history, lastAnswer: 'Done.' } };
 
   it('attaches a session: its history, directory and a resumed first message', () =>
     run(
@@ -776,6 +776,7 @@ describe('worker session preload', () => {
         });
         assert.equal(yield* ctx.context, undefined);
         assert.deepEqual(yield* ctx.snapshot, { _tag: 'TranscriptSnapshot', entries: history });
+        assert.equal(ctx.worker.lastAnswer, 'Done.');
         assert.equal((yield* ctx.fake.connections).length, 0, 'nothing is spawned');
         yield* ctx.send('call_1');
         const open = yield* ctx.connection();

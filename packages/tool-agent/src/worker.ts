@@ -31,6 +31,21 @@ export type WorkerEvent =
    */
   | { readonly _tag: 'SessionStarted'; readonly sessionId: string };
 
+/** A preloaded session, as `WorkerType.attach` reads it. */
+export interface Attached {
+  /** The session's recorded directory. */
+  readonly cwd: string;
+  /** The session's history, with subagents nested under the calls that started them. */
+  readonly history: ReadonlyArray<TranscriptEntry>;
+  /**
+   * The main agent's last answer: its texts after the last prompt of the session's active branch,
+   * joined with a blank line, or `undefined` when there is none. Read from the main agent alone, so
+   * no subagent's text is ever taken for it. Optional, so a worker type written before it was
+   * added still compiles; the session then has no last answer.
+   */
+  readonly lastAnswer?: string | undefined;
+}
+
 /** One kind of worker, such as Claude Code. */
 export interface WorkerType {
   /** Where a new worker runs. */
@@ -41,12 +56,7 @@ export interface WorkerType {
    */
   readonly composeMessage: (prompt: string, modifiers: ReadonlyArray<Modifier>) => string;
   /** Preload: checks an existing session and reads its directory and history. Starts no turn. */
-  readonly attach: (
-    sessionId: string,
-  ) => Effect.Effect<
-    { readonly cwd: string; readonly history: ReadonlyArray<TranscriptEntry> },
-    WorkerSetupError
-  >;
+  readonly attach: (sessionId: string) => Effect.Effect<Attached, WorkerSetupError>;
   /**
    * Runs one worker process for as long as the stream is consumed: it reads `input`, and its
    * finalizer closes the process. An end or failure of the process fails the stream with a

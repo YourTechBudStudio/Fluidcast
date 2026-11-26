@@ -36,7 +36,7 @@ import {
 import { askTool } from '@yourtechbudstudio/fluidcast-tool-ask';
 import { showTool } from '@yourtechbudstudio/fluidcast-tool-show';
 
-import { lastAnswer, recordedEffort } from './claude-session.ts';
+import { recordedEffort } from './claude-session.ts';
 import type { ClaudeEffort, PresetSection } from './config.ts';
 import { withGenerationLog } from './generation-log.ts';
 import type { LlmConfigs } from './language-model.ts';
@@ -79,7 +79,7 @@ export interface SessionSources {
   /** Claude Code's stored session messages. */
   readonly sessionMessages: (sessionId: string) => Promise<ReadonlyArray<SessionMessage>>;
   readonly codexWorker: (options: CodexWorkerOptions) => WorkerType;
-  /** A stored Codex thread's recorded effort and last answer. */
+  /** A stored Codex thread's recorded effort. */
   readonly readCodexThread: (
     threadId: string,
     options: { readonly environment: Readonly<Record<string, string | undefined>> },
@@ -229,8 +229,8 @@ export interface BuiltSession {
  * Builds one session in the current scope: the worker first, so the Harness is torn down first.
  * `request.agent` picks the worker type; this is the one place that maps an agent to one, and
  * everything from the Forward Agent tool on is agent-neutral. A new brainstorm gets a fresh worker
- * with the brainstorming hook; a continued one resumes the agent's stored session, with its last
- * answer as the preloaded start's context.
+ * with the brainstorming hook; a continued one resumes the agent's stored session, with the last
+ * answer its worker read on attaching as the preloaded start's context (`NoAnswer` without one).
  */
 export const buildSession = (
   config: ConversationConfig,
@@ -276,11 +276,17 @@ export const buildSession = (
       Effect.provideService(SummaryModel, summaryModel),
       Effect.mapError((error) => new StartFailed({ reason: error.reason })),
     );
+    // The answer replayed is the one the worker read when it attached the session it resumes, so
+    // the walkthrough and the worker's transcript come from one read.
+    const answer = forward.worker.lastAnswer;
+    if (continued !== undefined && answer === undefined) {
+      return yield* Effect.fail(new StartFailed({ reason: 'NoAnswer' }));
+    }
     const sessionConfig = referenceSessionConfig(
       config.preset,
       speechFormat,
       referenceTools(forward.tool),
-      continued && { answer: continued.answer },
+      continued && answer !== undefined ? { answer } : undefined,
       config.history,
     );
     // These layers must be built fresh for each start: layers are memoized by identity, so hoisting
@@ -308,10 +314,9 @@ const newWorker = (
     ? sources.claudeWorker(claudeWorkerOptions(worker))
     : sources.codexWorker(codexWorkerOptions(worker));
 
-/** A stored session to continue: its ID, last answer, and the worker type that resumes it. */
+/** A stored session to continue: its ID, and the worker type that resumes it. */
 interface StoredSession {
   readonly sessionId: string;
-  readonly answer: string;
   readonly worker: WorkerType;
 }
 
@@ -335,7 +340,7 @@ const openStoredSession = (
       : openCodexSession(worker, sessionId, sources);
   });
 
-/** A stored Claude Code session: its messages' last answer, and its recorded effort. */
+/** A stored Claude Code session that has messages, and its recorded effort. */
 const openClaudeSession = (
   worker: ConversationConfig['worker'],
   sessionId: string,
@@ -348,8 +353,6 @@ const openClaudeSession = (
     if (messages.length === 0) {
       return yield* Effect.fail(new StartFailed({ reason: 'SessionNotFound' }));
     }
-    const answer = lastAnswer(messages);
-    if (answer === undefined) return yield* Effect.fail(new StartFailed({ reason: 'NoAnswer' }));
     const effort = yield* recordedEffort(worker.claudeConfigDir, sessionId);
     if (effort._tag === 'Failure') {
       yield* Effect.logInfo('continue: no recorded effort').pipe(
@@ -359,13 +362,12 @@ const openClaudeSession = (
     const continued = { effort: effort._tag === 'Success' ? effort.success : undefined };
     return {
       sessionId,
-      answer,
       worker: sources.claudeWorker(claudeWorkerOptions(worker, continued)),
     };
   });
 
 /**
- * A stored Codex thread: its last answer and recorded effort, read through a short-lived
+ * A stored Codex thread: its recorded effort, read through a short-lived
  * app-server. Any read failure is `SessionUnreadable` (the reader logs Codex's error); Codex has no
  * stable not-found code.
  */
@@ -378,12 +380,8 @@ const openCodexSession = (
     const thread = yield* sources
       .readCodexThread(sessionId, { environment: worker.environment })
       .pipe(Effect.mapError((error) => new StartFailed({ reason: error.reason })));
-    if (thread.lastAnswer === undefined) {
-      return yield* Effect.fail(new StartFailed({ reason: 'NoAnswer' }));
-    }
     return {
       sessionId,
-      answer: thread.lastAnswer,
       worker: sources.codexWorker(codexWorkerOptions(worker, { effort: thread.effort })),
     };
   });

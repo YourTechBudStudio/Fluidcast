@@ -106,7 +106,11 @@ describe('attachWith', () => {
             ? { error: { code: -32601, message: 'list_turns is not supported yet' } }
             : undefined,
         );
-        assert.deepEqual(yield* attachWith(server.open)(main), { cwd: '/recorded', history: [] });
+        assert.deepEqual(yield* attachWith(server.open)(main), {
+          cwd: '/recorded',
+          history: [],
+          lastAnswer: undefined,
+        });
       }),
     ));
 

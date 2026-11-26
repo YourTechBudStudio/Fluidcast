@@ -70,6 +70,12 @@ export interface WorkerHandle {
    * included: a skill added later appears in the next session. An interrupted read is not kept.
    */
   readonly skills: Effect.Effect<ReadonlyArray<Skill>, SkillsUnavailable>;
+  /**
+   * The resumed session's last answer, read from its main agent when it was attached: what a host
+   * preloads as the session's latest reply. `undefined` for a new session or one with no answer.
+   * Optional, so a handle written before it was added (a test double) still compiles.
+   */
+  readonly lastAnswer?: string | undefined;
 }
 
 export interface ForwardAgentTool {
@@ -135,6 +141,7 @@ export const forwardAgentTool = (
         fault: session.fault,
         sessionId: session.sessionId,
         skills: session.skills,
+        lastAnswer: session.lastAnswer,
       },
     };
   });

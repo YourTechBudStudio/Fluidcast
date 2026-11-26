@@ -92,7 +92,14 @@ export const fakeWorkerType = (
     readonly cwd?: string;
     readonly composeMessage?: (prompt: string, modifiers: ReadonlyArray<Modifier>) => string;
     readonly sessions?: Readonly<
-      Record<string, { readonly cwd: string; readonly history: ReadonlyArray<TranscriptEntry> }>
+      Record<
+        string,
+        {
+          readonly cwd: string;
+          readonly history: ReadonlyArray<TranscriptEntry>;
+          readonly lastAnswer?: string;
+        }
+      >
     >;
     /** Default: no skills. */
     readonly listSkills?: WorkerType['listSkills'];

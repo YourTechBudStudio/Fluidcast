@@ -16,6 +16,7 @@ export {
 export { defaultProgressPrompt, defaultProgressSchedule } from './progress.ts';
 export {
   WorkerSetupError,
+  type Attached,
   type WorkerEvent,
   type WorkerMessage,
   type WorkerType,

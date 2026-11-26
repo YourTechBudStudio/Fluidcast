@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import type { SessionMessage } from '@anthropic-ai/claude-agent-sdk';
+
 import { maxContentLength } from '../content.ts';
 import type { TranscriptEntry } from '../schema.ts';
 import {
@@ -14,7 +16,7 @@ import {
   toolResults,
   toolUse,
 } from './frames.test.ts';
-import { frameEntries, historyEntries } from './transcript.ts';
+import { frameEntries, historyEntries, lastAnswer, unplacedSubagent } from './transcript.ts';
 
 const call = (
   toolUseId: string,
@@ -54,6 +56,19 @@ const thinking = (parentToolUseId: string | null = null): TranscriptEntry => ({
   _tag: 'thinking',
   parentToolUseId,
   summary: '',
+});
+
+/** A stored message recorded at `minute` past an arbitrary hour, as the SDK's readers pass it. */
+const at = (message: SessionMessage, minute: number): SessionMessage =>
+  ({
+    ...message,
+    timestamp: `2026-11-20T10:${String(minute).padStart(2, '0')}:00.000Z`,
+  }) as SessionMessage;
+
+const unplaced = (toolUseId: string): TranscriptEntry => ({
+  _tag: 'status',
+  parentToolUseId: toolUseId,
+  text: unplacedSubagent,
 });
 
 const line = (value: string, parentToolUseId: string | null = null): TranscriptEntry => ({
@@ -271,10 +286,10 @@ describe('history entries', () => {
       ],
       [{ agentId: 'sub1', messages: [stored('user', 'Explore.')] }],
     );
-    assert.equal(entries.at(-2)?._tag, 'status');
+    assert.deepEqual(entries, [call('call_a', 'Agent', '{}'), answer('call_a', 'agentId: sub10')]);
   });
 
-  it('shows a subagent it cannot place as unlinked, after the main chain', () => {
+  it('leaves out a subagent it cannot place', () => {
     assert.deepEqual(
       historyEntries(
         [stored('user', 'Start.')],
@@ -288,17 +303,183 @@ describe('history entries', () => {
           },
         ],
       ),
+      [prompt('Start.')],
+    );
+  });
+
+  it('after a rewind, keeps the active branch subagent and leaves out the abandoned ones', () => {
+    // The main chain is the active branch only: the abandoned branch's `Agent` call is not in it,
+    // but the subagent it started still has a file, as background agents report no parent.
+    const agentResult = (id: string) => `Async agent launched.\nagentId: ${id}`;
+    const entries = historyEntries(
       [
-        prompt('Start.'),
+        stored('user', 'Research the options.'),
+        stored('assistant', [toolUse('call_kept', 'Agent', { prompt: 'Look it up.' })]),
+        stored('user', [toolResult('call_kept', agentResult('kept'))]),
+        stored('assistant', [text('Here is what I found.')]),
+      ],
+      [
         {
-          _tag: 'status',
-          parentToolUseId: null,
-          text: 'Earlier subagent lost: the call that started it is not in this history.',
+          agentId: 'abandoned',
+          messages: [
+            stored('user', 'Look elsewhere.'),
+            stored('assistant', [text('Abandoned report.')]),
+          ],
         },
-        prompt('Explore.'),
-        line('Explored.'),
+        {
+          agentId: 'kept',
+          messages: [stored('user', 'Look it up.'), stored('assistant', [text('Kept report.')])],
+        },
       ],
     );
+    assert.deepEqual(entries, [
+      prompt('Research the options.'),
+      call('call_kept', 'Agent', '{"prompt":"Look it up."}'),
+      prompt('Look it up.', 'call_kept'),
+      line('Kept report.', 'call_kept'),
+      answer('call_kept', agentResult('kept')),
+      line('Here is what I found.'),
+    ]);
+  });
+
+  it('after a rewind, places the interrupted retry by its reported parent, not the abandoned run', () => {
+    // Both runs share a prompt and neither result was recorded; each reports its own call.
+    const main = [
+      at(stored('user', 'Start again.'), 10),
+      at(stored('assistant', [toolUse('call_retry', 'Agent', { prompt: 'Explore.' })]), 11),
+    ];
+    const abandoned = {
+      agentId: 'abandoned',
+      messages: [
+        at(stored('user', 'Explore.', 'call_old'), 2),
+        at(stored('assistant', [text('Old.')], 'call_old'), 3),
+      ],
+    };
+    const retry = {
+      agentId: 'retry',
+      messages: [
+        at(stored('user', 'Explore.', 'call_retry'), 11),
+        at(stored('assistant', [text('New.')], 'call_retry'), 12),
+      ],
+    };
+    const expected = [
+      prompt('Start again.'),
+      call('call_retry', 'Agent', '{"prompt":"Explore."}'),
+      prompt('Explore.', 'call_retry'),
+      line('New.', 'call_retry'),
+    ];
+    // The SDK's listing order decides nothing.
+    assert.deepEqual(historyEntries(main, [abandoned, retry]), expected);
+    assert.deepEqual(historyEntries(main, [retry, abandoned]), expected);
+  });
+
+  it('places nothing by prompt or time without a reported parent, and says so under the call', () => {
+    const main = [
+      at(stored('assistant', [toolUse('call_a', 'Agent', { prompt: 'Explore.' })]), 10),
+    ];
+    const expected = [call('call_a', 'Agent', '{"prompt":"Explore."}'), unplaced('call_a')];
+    // One run after the call, the only apparent match.
+    assert.deepEqual(
+      historyEntries(main, [
+        {
+          agentId: 'only',
+          messages: [at(stored('user', 'Explore.'), 11), at(stored('assistant', [text('R.')]), 12)],
+        },
+      ]),
+      expected,
+    );
+    // Only a run from before the call.
+    assert.deepEqual(
+      historyEntries(main, [{ agentId: 'old', messages: [at(stored('user', 'Explore.'), 2)] }]),
+      expected,
+    );
+    // Two runs after the call.
+    assert.deepEqual(
+      historyEntries(main, [
+        { agentId: 'one', messages: [at(stored('user', 'Explore.'), 11)] },
+        { agentId: 'two', messages: [at(stored('user', 'Explore.'), 12)] },
+      ]),
+      expected,
+    );
+  });
+
+  it('after a rewind without parent metadata, shows a surviving call as incomplete, not the abandoned report', () => {
+    // The rewind kept an older, interrupted call; the abandoned branch re-ran its prompt later.
+    assert.deepEqual(
+      historyEntries(
+        [at(stored('assistant', [toolUse('call_kept', 'Agent', { prompt: 'Explore.' })]), 1)],
+        [
+          {
+            agentId: 'abandoned',
+            messages: [
+              at(stored('user', 'Explore.'), 5),
+              at(stored('assistant', [text('Abandoned report.')]), 6),
+            ],
+          },
+        ],
+      ),
+      [call('call_kept', 'Agent', '{"prompt":"Explore."}'), unplaced('call_kept')],
+    );
+  });
+
+  it('never moves a subagent whose reported parent is missing to a surviving call', () => {
+    // The rewind kept an older, interrupted call with the same prompt; the report's own parent was
+    // on the abandoned branch, after it.
+    assert.deepEqual(
+      historyEntries(
+        [at(stored('assistant', [toolUse('call_kept', 'Agent', { prompt: 'Explore.' })]), 1)],
+        [
+          {
+            agentId: 'abandoned',
+            messages: [
+              at(stored('user', 'Explore.', 'call_abandoned'), 5),
+              at(stored('assistant', [text('Abandoned report.')], 'call_abandoned'), 6),
+            ],
+          },
+        ],
+      ),
+      [call('call_kept', 'Agent', '{"prompt":"Explore."}'), unplaced('call_kept')],
+    );
+  });
+
+  it('places nothing when one report fits parallel calls with the same prompt', () => {
+    const entries = historyEntries(
+      [
+        at(
+          stored('assistant', [
+            toolUse('call_1', 'Agent', { prompt: 'Explore.' }),
+            toolUse('call_2', 'Agent', { prompt: 'Explore.' }),
+          ]),
+          1,
+        ),
+      ],
+      [{ agentId: 'one', messages: [at(stored('user', 'Explore.'), 1)] }],
+    );
+    assert.deepEqual(entries, [
+      call('call_1', 'Agent', '{"prompt":"Explore."}'),
+      unplaced('call_1'),
+      call('call_2', 'Agent', '{"prompt":"Explore."}'),
+      unplaced('call_2'),
+    ]);
+  });
+
+  it('does not place a same-prompt run under an answered call', () => {
+    // After a rewind the agent re-ran the same subagent: the abandoned one shares its prompt.
+    const entries = historyEntries(
+      [
+        at(stored('assistant', [toolUse('call_a', 'Agent', { prompt: 'Explore.' })]), 10),
+        at(stored('user', [toolResult('call_a', 'agentId: kept')]), 11),
+      ],
+      [
+        { agentId: 'abandoned', messages: [at(stored('user', 'Explore.'), 12)] },
+        { agentId: 'kept', messages: [at(stored('user', 'Explore.'), 10)] },
+      ],
+    );
+    assert.deepEqual(entries, [
+      call('call_a', 'Agent', '{"prompt":"Explore."}'),
+      prompt('Explore.', 'call_a'),
+      answer('call_a', 'agentId: kept'),
+    ]);
   });
 
   it('nests a subagent started by a subagent under its parent subagent call', () => {
@@ -330,7 +511,7 @@ describe('history entries', () => {
     );
   });
 
-  it('shows subagents whose starting calls lead back to themselves as unlinked', () => {
+  it('leaves out subagents whose starting calls lead back to themselves', () => {
     const entries = historyEntries(
       [],
       [
@@ -344,16 +525,31 @@ describe('history entries', () => {
         },
       ],
     );
-    assert.deepEqual(
-      entries.filter((entry) => entry._tag === 'status').map((entry) => entry.text),
-      [
-        'Earlier subagent one: the call that started it is not in this history.',
-        'Earlier subagent two: the call that started it is not in this history.',
-      ],
+    assert.deepEqual(entries, []);
+  });
+});
+
+describe('last answer', () => {
+  it('joins the top-level texts after the last prompt, skipping tool results and subagent text', () => {
+    assert.equal(
+      lastAnswer([
+        stored('user', 'First.'),
+        stored('assistant', [text('Old answer.')]),
+        stored('user', [text('Second.')]),
+        stored('assistant', [text('Checking.'), toolUse('call_a', 'Agent')]),
+        stored('assistant', [text('Subagent text.')], 'call_a'),
+        stored('user', [toolResult('call_a', 'Done.')]),
+        stored('assistant', [text('Final answer.')]),
+      ]),
+      'Checking.\n\nFinal answer.',
     );
-    assert.deepEqual(
-      entries.filter((entry) => entry._tag === 'toolCall').map((entry) => entry.parentToolUseId),
-      [null, null],
+  });
+
+  it('is undefined when nothing was answered after the last prompt', () => {
+    assert.equal(lastAnswer([]), undefined);
+    assert.equal(
+      lastAnswer([stored('assistant', [text('Earlier.')]), stored('user', 'Next.')]),
+      undefined,
     );
   });
 });

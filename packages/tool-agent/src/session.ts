@@ -164,6 +164,8 @@ export interface WorkerSession {
   readonly sessionId: Effect.Effect<string | null>;
   /** The skills in the worker's directory, listed on the first read and kept for the session. */
   readonly skills: Effect.Effect<ReadonlyArray<Skill>, SkillsUnavailable>;
+  /** The preloaded session's last answer (`Attached.lastAnswer`); `undefined` for a new session. */
+  readonly lastAnswer: string | undefined;
 }
 
 /** Builds the worker session in the current scope, attaching a preloaded session. Nothing connects. */
@@ -457,6 +459,7 @@ export const makeWorkerSession = (
       fault,
       sessionId,
       skills,
+      lastAnswer: attached?.lastAnswer,
     };
   });
 

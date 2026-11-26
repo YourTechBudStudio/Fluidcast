@@ -7,53 +7,9 @@ import { after, describe, it } from 'node:test';
 import * as NodeServices from '@effect/platform-node/NodeServices';
 import { Effect, Result } from 'effect';
 
-import { lastAnswer, recordedEffort } from './claude-session.ts';
-import { storedMessage } from './fixtures.test.ts';
+import { recordedEffort } from './claude-session.ts';
 
 const id = '0198f1a2-3b4c-7d5e-8f60-123456789abc';
-
-describe('lastAnswer', () => {
-  const text = (value: string) => ({ type: 'text', text: value });
-
-  it('joins every top-level assistant text since the last prompt with a blank line', () => {
-    const answer = lastAnswer([
-      storedMessage('user', 'First question'),
-      storedMessage('assistant', [text('Old answer.')]),
-      storedMessage('user', [text('Second question')]),
-      storedMessage('assistant', [text('One.')]),
-      storedMessage('assistant', [{ type: 'tool_use', id: 't', name: 'Read', input: {} }]),
-      // A tool result is not a prompt, so it does not bound the answer.
-      storedMessage('user', [{ type: 'tool_result', tool_use_id: 't', content: 'file' }]),
-      storedMessage('assistant', [{ type: 'thinking', thinking: 'hmm' }, text('Two.')]),
-    ]);
-    assert.equal(answer, 'One.\n\nTwo.');
-  });
-
-  it("ignores subagents' text and prompts", () => {
-    const answer = lastAnswer([
-      storedMessage('user', 'Question'),
-      storedMessage('assistant', [text('Mine.')]),
-      storedMessage('user', [text('Subagent prompt')], 'task_1'),
-      storedMessage('assistant', [text('Subagent text.')], 'task_1'),
-    ]);
-    assert.equal(answer, 'Mine.');
-  });
-
-  it('is undefined when no text follows the last prompt', () => {
-    assert.equal(lastAnswer([]), undefined);
-    assert.equal(
-      lastAnswer([
-        storedMessage('assistant', [text('Before.')]),
-        storedMessage('user', 'Question'),
-        storedMessage('assistant', [
-          { type: 'tool_use', id: 't', name: 'Read', input: {} },
-          text(''),
-        ]),
-      ]),
-      undefined,
-    );
-  });
-});
 
 describe('recordedEffort', () => {
   const directories: Array<string> = [];

@@ -176,6 +176,9 @@ const storedCalls = (messages: ReadonlyArray<SessionMessage>) => {
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** The status under an unanswered `Agent` call whose subagent history could not be placed. */
+export const unplacedSubagent = "This subagent's history could not be placed in this session.";
+
 /** Where a list's entries live: the main chain (`null`), or a subagent by ID. */
 type Owner = string | null;
 
@@ -190,8 +193,13 @@ type Owner = string | null;
  * 2. the earliest `Agent` (or older `Task`) call whose result has a line starting with exactly
  *    `agentId: <id>` followed by whitespace or the end of the line. Other tools mention agent IDs
  *    too (`SendMessage` results carry them in JSON), so nothing looser is accepted.
- * 3. Otherwise, including a subagent whose calls lead back to itself, it is shown unlinked: a
- *    top-level `status` line naming it, then its entries at the top level, after the main chain.
+ * A subagent matched by no rule, or whose calls lead back to itself, is left out: its call is not
+ * in this history (it was on a branch a rewind abandoned, for one), so it is not part of it. Its
+ * prompt and timing are not evidence of which branch it ran on, so nothing weaker places it. An
+ * unanswered `Agent` call with no subagent placed under it gets a `status` line under it saying so,
+ * so incomplete history is never shown as complete. (Claude Code records each subagent's starting
+ * call in a sidecar the SDK reports as `parent_tool_use_id`, so rule 1 places a subagent whose
+ * call was stopped before its result was recorded.)
  *
  * Consecutive thinking blocks of one agent are one stretch, so they show one marker.
  */
@@ -233,6 +241,9 @@ export const historyEntries = (
     const anchor = anchorOf(agentId, messages);
     if (anchor !== undefined) anchors.set(agentId, anchor);
   }
+  const unanswered = calls.filter(
+    (call) => (call.name === 'Agent' || call.name === 'Task') && call.result === undefined,
+  );
   // A subagent whose chain of starting calls leads back to itself cannot be placed.
   const inCycle = (agentId: string) => {
     const seen = new Set<Owner>();
@@ -252,6 +263,9 @@ export const historyEntries = (
     const anchor = anchors.get(agentId);
     if (anchor !== undefined) started.set(anchor, [...(started.get(anchor) ?? []), agentId]);
   }
+  const unplaced = new Set(
+    unanswered.filter((call) => !started.has(call.toolUseId)).map((call) => call.toolUseId),
+  );
   const messagesOf = new Map(subagents.map(({ agentId, messages }) => [agentId, messages]));
 
   const render = (
@@ -265,20 +279,50 @@ export const historyEntries = (
             ...(started.get(entry.toolUseId) ?? []).flatMap((agentId) =>
               render(messagesOf.get(agentId)!, entry.toolUseId),
             ),
+            ...(unplaced.has(entry.toolUseId)
+              ? [
+                  {
+                    _tag: 'status',
+                    parentToolUseId: entry.toolUseId,
+                    text: unplacedSubagent,
+                  } as const,
+                ]
+              : []),
           ]
         : [entry],
     );
 
-  const unlinked = subagents.filter(({ agentId }) => !anchors.has(agentId));
-  return oneThinkingPerStretch([
-    ...render(mainMessages, null),
-    ...unlinked.flatMap(({ agentId, messages }): ReadonlyArray<TranscriptEntry> => [
-      {
-        _tag: 'status',
-        parentToolUseId: null,
-        text: `Earlier subagent ${agentId}: the call that started it is not in this history.`,
-      },
-      ...render(messages, null),
-    ]),
-  ]);
+  return oneThinkingPerStretch(render(mainMessages, null));
+};
+
+/** `SessionMessage.message` is `unknown`: its `content`, if it has one. */
+const storedContent = (message: SessionMessage): unknown =>
+  isRecord(message.message) ? message.message['content'] : undefined;
+
+/** The non-empty `text` blocks of stored content, in order. */
+const storedTexts = (content: unknown): ReadonlyArray<string> =>
+  blocksOf(content).flatMap((block) => {
+    const value = block['type'] === 'text' ? stringField(block, 'text') : undefined;
+    return value === undefined || value === '' ? [] : [value];
+  });
+
+/**
+ * A stored session's last answer: every top-level assistant text after the last top-level prompt
+ * of the main chain, joined with a blank line (as a forward result reads), or `undefined` when there
+ * is none. A prompt is a top-level user message whose content is a string or has a text block, so
+ * one holding only tool results is not one. Subagents are not read.
+ */
+export const lastAnswer = (mainMessages: ReadonlyArray<SessionMessage>): string | undefined => {
+  const topLevel = mainMessages.filter((message) => message.parent_tool_use_id === null);
+  const start = topLevel.findLastIndex((message) => {
+    if (message.type !== 'user') return false;
+    const content = storedContent(message);
+    return typeof content === 'string' || storedTexts(content).length > 0;
+  });
+  const answer = topLevel
+    .slice(start + 1)
+    .filter((message) => message.type === 'assistant')
+    .flatMap((message) => storedTexts(storedContent(message)))
+    .join('\n\n');
+  return answer === '' ? undefined : answer;
 };

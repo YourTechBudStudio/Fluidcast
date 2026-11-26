@@ -156,12 +156,13 @@ export const storedMessage = (
 const fakeWorkerType = (
   cwd: string,
   attachFailure: WorkerSetupError['reason'] | undefined,
+  lastAnswer: string | undefined,
 ): WorkerType => ({
   cwd,
   composeMessage: (prompt) => prompt,
   attach: (sessionId) =>
     attachFailure === undefined
-      ? Effect.succeed({ cwd, history: [] })
+      ? Effect.succeed({ cwd, history: [], lastAnswer })
       : Effect.fail(new WorkerSetupError({ sessionId, reason: attachFailure })),
   connect: () => Stream.die('the fake worker never connects'),
   listSkills: () => Effect.succeed([]),
@@ -170,10 +171,12 @@ const fakeWorkerType = (
 /**
  * Fake `SessionSources`: stored Claude messages (or a throw), a stored Codex thread (or a read
  * failure), and worker types for both agents that record the options they were made with, plus
- * each read thread's ID and environment. Every `attach` succeeds, or fails with `attachFailure`.
+ * each read thread's ID and environment. Every `attach` succeeds, or fails with `attachFailure`;
+ * a Claude attach reads `answer` as the last answer, a Codex one the thread's `lastAnswer`.
  */
 export const fakeSources = (options: {
   readonly messages?: ReadonlyArray<SessionMessage> | 'throw';
+  readonly answer?: string;
   readonly thread?: CodexThread | 'fail';
   readonly attachFailure?: WorkerSetupError['reason'];
 }) => {
@@ -183,7 +186,7 @@ export const fakeSources = (options: {
   const sources: SessionSources = {
     claudeWorker: (workerOptions) => {
       workers.push(workerOptions);
-      return fakeWorkerType(workerOptions.cwd, options.attachFailure);
+      return fakeWorkerType(workerOptions.cwd, options.attachFailure, options.answer);
     },
     sessionMessages: async () => {
       if (options.messages === 'throw') throw new Error('unreadable');
@@ -191,7 +194,11 @@ export const fakeSources = (options: {
     },
     codexWorker: (workerOptions) => {
       codexWorkers.push(workerOptions);
-      return fakeWorkerType(workerOptions.cwd, options.attachFailure);
+      return fakeWorkerType(
+        workerOptions.cwd,
+        options.attachFailure,
+        typeof options.thread === 'object' ? options.thread.lastAnswer : undefined,
+      );
     },
     readCodexThread: (threadId, { environment }) => {
       threadReads.push({ threadId, environment });

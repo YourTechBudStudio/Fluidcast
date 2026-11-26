@@ -10,9 +10,8 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import { Effect } from 'effect';
 
-import type { TranscriptEntry } from '../schema.ts';
-import { WorkerSetupError } from '../worker.ts';
-import { historyEntries } from './transcript.ts';
+import { WorkerSetupError, type Attached } from '../worker.ts';
+import { historyEntries, lastAnswer } from './transcript.ts';
 
 /** The SDK's session readers. */
 export interface SessionStore {
@@ -23,17 +22,13 @@ export interface SessionStore {
 }
 
 /**
- * Checks a session exists and reads its directory (its recorded one, else `cwd`) and history,
- * with each earlier subagent nested under its starting call. Spawns nothing.
+ * Checks a session exists and reads its directory (its recorded one, else `cwd`), its history,
+ * with each earlier subagent nested under its starting call, and its main chain's last answer.
+ * Spawns nothing.
  */
 export const attachWith =
   (store: SessionStore, cwd: string) =>
-  (
-    sessionId: string,
-  ): Effect.Effect<
-    { readonly cwd: string; readonly history: ReadonlyArray<TranscriptEntry> },
-    WorkerSetupError
-  > =>
+  (sessionId: string): Effect.Effect<Attached, WorkerSetupError> =>
     Effect.gen(function* () {
       const read = <A>(promise: () => Promise<A>) =>
         Effect.tryPromise({
@@ -54,5 +49,5 @@ export const attachWith =
           Effect.map((messages) => ({ agentId, messages })),
         ),
       );
-      return { cwd: dir, history: historyEntries(main, subagents) };
+      return { cwd: dir, history: historyEntries(main, subagents), lastAnswer: lastAnswer(main) };
     });

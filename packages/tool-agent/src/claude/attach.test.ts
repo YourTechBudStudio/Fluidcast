@@ -6,7 +6,7 @@ import { Effect, Exit } from 'effect';
 
 import { WorkerSetupError } from '../worker.ts';
 import { attachWith, type SessionStore } from './attach.ts';
-import { stored, toolUse } from './frames.test.ts';
+import { stored, text, toolUse } from './frames.test.ts';
 
 const info = (cwd?: string): SDKSessionInfo => ({
   sessionId: 'session',
@@ -60,6 +60,21 @@ describe('attach', () => {
       ],
     );
     assert.deepEqual(fake.dirs, ['/recorded', '/recorded', '/recorded']);
+  });
+
+  it('reads the last answer from the main chain alone, never from a subagent', async () => {
+    const fake = store({
+      info: info('/recorded'),
+      main: [stored('user', 'Start.'), stored('assistant', [text('Main answer.')])],
+      // Unplaced, as a subagent started on a rewound-away branch is.
+      subagents: { sub1: [stored('user', 'Explore.'), stored('assistant', [text('Report.')])] },
+    });
+    const attached = await Effect.runPromise(attachWith(fake.sessions, '/configured')('session'));
+    assert.equal(attached.lastAnswer, 'Main answer.');
+    assert.deepEqual(
+      attached.history.map((entry) => entry._tag),
+      ['prompt', 'text'],
+    );
   });
 
   it('falls back to the configured directory', async () => {

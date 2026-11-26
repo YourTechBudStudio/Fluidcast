@@ -5,8 +5,7 @@
  */
 import { Effect, Schema } from 'effect';
 
-import type { TranscriptEntry } from '../schema.ts';
-import { WorkerSetupError } from '../worker.ts';
+import { WorkerSetupError, type Attached } from '../worker.ts';
 import type { OpenTransport } from './process.ts';
 import { itemOf, ThreadReadResponse, TurnsPage, type Item } from './protocol.ts';
 import { failureAnnotations, shortLived, type Rpc } from './rpc.ts';
@@ -66,17 +65,13 @@ const threadRecord = (rpc: Rpc, threadId: string) =>
   );
 
 /**
- * A stored thread's recorded directory and its history: the main thread, with each subagent thread
- * its items start read too (recursively) and nested under the item that started it.
+ * A stored thread's recorded directory, its history (the main thread, with each subagent thread
+ * its items start read too, recursively, and nested under the item that started it) and the main
+ * thread's last answer.
  */
 export const attachWith =
   (open: OpenTransport) =>
-  (
-    sessionId: string,
-  ): Effect.Effect<
-    { readonly cwd: string; readonly history: ReadonlyArray<TranscriptEntry> },
-    WorkerSetupError
-  > =>
+  (sessionId: string): Effect.Effect<Attached, WorkerSetupError> =>
     readThread(open, sessionId, (rpc) =>
       Effect.gen(function* () {
         const { cwd } = yield* threadRecord(rpc, sessionId);
@@ -89,7 +84,11 @@ export const attachWith =
           threads.set(threadId, items);
           toRead.push(...items.flatMap(spawnedThreads));
         }
-        return { cwd, history: historyEntries(sessionId, threads) };
+        return {
+          cwd,
+          history: historyEntries(sessionId, threads),
+          lastAnswer: lastAnswer(threads.get(sessionId) ?? []),
+        };
       }),
     );
 
